@@ -21,6 +21,8 @@ sdist/
 var/
 wheels/
 share/python-wheels/
+docs/
+AGENTS.md
 *.egg-info/
 .installed.cfg
 *.egg
@@ -216,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Go ---
+*.exe
+*.dll
+*.test
+*.out
+*.syso
+
+# --- TypeScript / Node ---
+node_modules/
+.next/
+*.js.map
+*.tsbuildinfo
