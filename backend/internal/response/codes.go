@@ -5,8 +5,9 @@ const (
 	CodeOK = 0
 
 	// 1000-1999 客户端错误
-	CodeInvalidParam = 1001
-	CodeMissingParam = 1002
+	CodeInvalidParam  = 1001
+	CodeMissingParam   = 1002
+	CodeNotImplemented = 1003
 
 	// 2000-2999 服务端错误
 	CodeInternalError = 2001
