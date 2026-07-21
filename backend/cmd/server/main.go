@@ -2,32 +2,32 @@
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/songhuang/flowpartner/backend/internal/config"
+	"github.com/songhuang/flowpartner/backend/internal/response"
 )
 
 func main() {
 	cfg := config.Load()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
-	})
+	mux := setupRoutes(cfg)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPPort,
 		Handler: mux,
 	}
 
-	// 启动服务器（非阻塞），通过 channel 传递启动错误
 	serverErr := make(chan error, 1)
 	go func() {
 		log.Printf("HTTP server listening on %s", cfg.HTTPPort)
@@ -37,7 +37,6 @@ func main() {
 		close(serverErr)
 	}()
 
-	// 等待退出信号或服务器错误
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -54,4 +53,65 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 	log.Println("Server exited")
+}
+
+// setupRoutes 配置所有 HTTP 路由，返回 handler
+func setupRoutes(cfg *config.Config) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.DevMode {
+			http.NotFound(w, r)
+			return
+		}
+		serveSPA(w, r, cfg.FrontendDir)
+	})
+
+	mux.HandleFunc("/api/", notImplementedHandler)
+
+	return mux
+}
+
+func serveSPA(w http.ResponseWriter, r *http.Request, frontendDir string) {
+	cleanPath := path.Clean(r.URL.Path)
+
+	if strings.HasPrefix(cleanPath, "/api/") {
+		notImplementedHandler(w, r)
+		return
+	}
+
+	if cleanPath == "/health" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+		return
+	}
+
+	if strings.HasPrefix(cleanPath, "/assets/") {
+		http.FileServer(http.Dir(frontendDir)).ServeHTTP(w, r)
+		return
+	}
+
+	fullPath := filepath.Join(frontendDir, cleanPath)
+	if _, err := os.Stat(fullPath); err == nil {
+		http.ServeFile(w, r, fullPath)
+		return
+	}
+
+	indexPath := filepath.Join(frontendDir, "index.html")
+	http.ServeFile(w, r, indexPath)
+}
+
+func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	resp := response.Error(response.CodeNotImplemented, "API not implemented yet")
+	resp.RequestID = uuid.NewString()
+	json.NewEncoder(w).Encode(resp)
 }

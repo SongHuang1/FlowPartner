@@ -228,6 +228,14 @@ __marimo__/
 
 # --- TypeScript / Node ---
 node_modules/
+dist/
 .next/
 *.js.map
 *.tsbuildinfo
+
+# --- Frontend Vite template files ---
+frontend/.oxlintrc.json
+frontend/README.md
+frontend/public/icons.svg
+frontend/src/App.css
+frontend/src/assets/
