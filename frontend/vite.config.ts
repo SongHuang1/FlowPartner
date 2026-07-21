@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/postcss'
 import path from 'path'
 
 export default defineConfig({
+  base: './',
   plugins: [react()],
   server: {
     port: 5173,

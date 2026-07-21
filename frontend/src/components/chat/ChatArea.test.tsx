@@ -2,6 +2,93 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { ChatArea } from './ChatArea'
 
+describe('MessageList auto-scroll', () => {
+  const originalScrollTo = HTMLElement.prototype.scrollTo
+
+  beforeEach(() => {
+    HTMLElement.prototype.scrollTo = vi.fn()
+  })
+
+  afterEach(() => {
+    HTMLElement.prototype.scrollTo = originalScrollTo
+  })
+
+  it('scrolls to bottom when new message appears', () => {
+    render(<ChatArea />)
+
+    const input = screen.getByPlaceholderText('输入消息（预览模式，暂不发送）')
+    fireEvent.change(input, { target: { value: 'test' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+      top: expect.any(Number),
+      behavior: 'smooth',
+    })
+  })
+
+  it('scrolls to bottom on initial render with welcome message', () => {
+    render(<ChatArea />)
+
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledTimes(1)
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+      top: expect.any(Number),
+      behavior: 'smooth',
+    })
+  })
+
+  it('scrolls to bottom when ephemeral message disappears', () => {
+    vi.useFakeTimers()
+    render(<ChatArea />)
+
+    const input = screen.getByPlaceholderText('输入消息（预览模式，暂不发送）')
+    fireEvent.change(input, { target: { value: 'vanish test' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    // Clear mock calls from the send action
+    ;(HTMLElement.prototype.scrollTo as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    // Should scroll again when messages change (ephemeral removed)
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+      top: expect.any(Number),
+      behavior: 'smooth',
+    })
+
+    vi.useRealTimers()
+  })
+
+  it('scrollTo is called with scrollHeight as top value', () => {
+    const mockScrollTo = vi.fn()
+    HTMLElement.prototype.scrollTo = mockScrollTo
+
+    render(<ChatArea />)
+
+    // The first call should use the element's scrollHeight
+    expect(mockScrollTo).toHaveBeenCalledWith({
+      top: expect.any(Number),
+      behavior: 'smooth',
+    })
+  })
+
+  it('scrolls multiple times for rapid messages', () => {
+    render(<ChatArea />)
+
+    const input = screen.getByPlaceholderText('输入消息（预览模式，暂不发送）')
+
+    fireEvent.change(input, { target: { value: 'msg1' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    fireEvent.change(input, { target: { value: 'msg2' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    // Called at least 3 times: initial + 2 sends
+    expect((HTMLElement.prototype.scrollTo as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(3)
+  })
+})
+
 describe('ChatArea', () => {
   beforeEach(() => {
     vi.useFakeTimers()

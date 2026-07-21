@@ -1,0 +1,14 @@
+appId: com.flowpartner.app
+productName: FlowPartner
+directories:
+  output: dist-electron
+files:
+  - dist/**
+  - electron/**
+extraResources:
+  - from: bin/
+    to: bin/
+    filter:
+      - "*.exe"
+win:
+  target: nsis

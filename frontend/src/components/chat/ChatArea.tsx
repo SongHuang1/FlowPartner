@@ -1,5 +1,5 @@
 import { Send } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useLayoutEffect, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -16,8 +16,17 @@ const WELCOME_MESSAGE: Message = {
 }
 
 export function MessageList({ messages }: { messages: Message[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [messages])
+
   return (
-    <div className="flex flex-col gap-3 p-4 overflow-y-auto">
+    <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto">
       {messages.map((msg) => (
         <div
           key={msg.id}

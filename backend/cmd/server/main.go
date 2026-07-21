@@ -3,7 +3,9 @@
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -29,10 +31,20 @@ func main() {
 	}
 
 	serverErr := make(chan error, 1)
+
+	listener, err := net.Listen("tcp", cfg.HTTPPort)
+	if err != nil {
+		log.Fatalf("Failed to bind %s: %v", cfg.HTTPPort, err)
+	}
+
+	log.Printf("HTTP server starting on %s", cfg.HTTPPort)
+
+	fmt.Fprintln(os.Stderr, "__FP_BACKEND_READY__")
+
 	go func() {
-		log.Printf("HTTP server listening on %s", cfg.HTTPPort)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
+			return
 		}
 		close(serverErr)
 	}()
@@ -54,6 +66,8 @@ func main() {
 	}
 	log.Println("Server exited")
 }
+
+// TODO(step4+): 加入 stdin EOF 检测，实现优雅退出（读取 stdin，收到 EOF 时调用 server.Shutdown）
 
 // setupRoutes 配置所有 HTTP 路由，返回 handler
 func setupRoutes(cfg *config.Config) http.Handler {
