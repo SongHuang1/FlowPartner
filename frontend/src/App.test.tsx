@@ -60,7 +60,8 @@ describe('App Integration', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
 
-    expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
+    const sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-0')
   })
 
   it('sidebar re-expands when clicking activity icon after collapse', () => {
@@ -68,26 +69,31 @@ describe('App Integration', () => {
 
     // Collapse sidebar
     fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
-    expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
+    let sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-0')
 
     // Click conversation icon to re-expand
     fireEvent.click(screen.getByRole('button', { name: '对话' }))
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-64')
   })
 
   it('clicking active view icon toggles sidebar visibility', () => {
     render(<App />)
 
     // Default: conversation selected, sidebar visible
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    let sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-64')
 
     // Click conversation icon again (same active view) → should collapse
     fireEvent.click(screen.getByRole('button', { name: '对话' }))
-    expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
+    sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-0')
 
     // Click conversation icon again → should expand
     fireEvent.click(screen.getByRole('button', { name: '对话' }))
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar?.className).toContain('w-64')
   })
 
   it('chat input works within the full app layout', () => {

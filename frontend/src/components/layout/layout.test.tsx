@@ -47,15 +47,76 @@ describe('Sidebar', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('renders null when not visible', () => {
+  it('has zero width when not visible', () => {
     const { container } = render(<Sidebar visible={false} activeView="conversation" onClose={() => {}} />)
-    expect(container.firstChild).toBeNull()
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el?.className).toContain('w-0')
+  })
+
+  it('always renders the sidebar panel element even when not visible', () => {
+    const { container } = render(<Sidebar visible={false} activeView="conversation" onClose={() => {}} />)
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el).not.toBeNull()
+  })
+
+  it('has w-64 width when visible', () => {
+    const { container } = render(<Sidebar visible={true} activeView="conversation" onClose={() => {}} />)
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el?.className).toContain('w-64')
+    expect(el?.className).not.toContain('w-0')
+  })
+
+  it('sets aria-hidden=true when not visible', () => {
+    const { container } = render(<Sidebar visible={false} activeView="conversation" onClose={() => {}} />)
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('sets aria-hidden=false when visible', () => {
+    const { container } = render(<Sidebar visible={true} activeView="conversation" onClose={() => {}} />)
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el).toHaveAttribute('aria-hidden', 'false')
+  })
+
+  it('has overflow-hidden class for transition clipping', () => {
+    const { container } = render(<Sidebar visible={false} activeView="conversation" onClose={() => {}} />)
+    const el = container.querySelector('[data-testid="sidebar-panel"]')
+    expect(el?.className).toContain('overflow-hidden')
   })
 })
 
 describe('StatusBar', () => {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'flowPartner')
+
+  afterEach(() => {
+    // Restore original descriptor after each test
+    if (originalDescriptor) {
+      Object.defineProperty(window, 'flowPartner', originalDescriptor)
+    } else {
+      delete (window as unknown as Record<string, unknown>)['flowPartner']
+    }
+  })
+
   it('renders correct preview mode text', () => {
+    delete (window as unknown as Record<string, unknown>)['flowPartner']
     render(<StatusBar />)
     expect(screen.getByText('浏览器中运行 · 仅 UI 预览')).toBeInTheDocument()
+  })
+
+  it('renders desktop text when running in Electron', () => {
+    Object.defineProperty(window, 'flowPartner', {
+      value: { platform: 'win32', version: '1.0.0' },
+      writable: true,
+      configurable: true,
+    })
+    render(<StatusBar />)
+    expect(screen.getByText('桌面端 · FlowPartner')).toBeInTheDocument()
+  })
+
+  it('renders preview text when window.flowPartner is undefined', () => {
+    delete (window as unknown as Record<string, unknown>)['flowPartner']
+    render(<StatusBar />)
+    expect(screen.getByText('浏览器中运行 · 仅 UI 预览')).toBeInTheDocument()
+    expect(screen.queryByText('桌面端 · FlowPartner')).not.toBeInTheDocument()
   })
 })

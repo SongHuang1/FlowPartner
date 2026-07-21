@@ -2,10 +2,11 @@
 PKG := ./...
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
+BINARY_NAME := flowpartner-backend.exe
 
 .PHONY: build-backend test-backend vet-backend run-backend clean
 .PHONY: build-frontend dev-frontend lint-frontend typecheck-frontend test-frontend
-.PHONY: test-all
+.PHONY: build-go-binary build-electron test-all
 
 build-backend:
 	cd $(BACKEND_DIR) && $(GO) build $(PKG)
@@ -37,5 +38,11 @@ test-frontend:
 clean:
 	$(GO) clean -cache -testcache
 
-test-all: build-frontend test-frontend build-backend vet-backend test-backend
+build-go-binary:
+	cd $(BACKEND_DIR) && GOOS=windows GOARCH=amd64 $(GO) build -o ../$(FRONTEND_DIR)/bin/$(BINARY_NAME) ./cmd/server/
+
+build-electron: build-frontend build-go-binary
+	cd $(FRONTEND_DIR) && npm run build:electron
+
+test-all: build-frontend test-frontend build-go-binary build-backend vet-backend test-backend
 	@echo "All tests passed!"

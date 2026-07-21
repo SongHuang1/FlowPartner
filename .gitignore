@@ -239,3 +239,11 @@ frontend/README.md
 frontend/public/icons.svg
 frontend/src/App.css
 frontend/src/assets/
+
+# --- Electron ---
+frontend/bin/
+frontend/dist-electron/
+
+# --- OS ---
+Thumbs.db
+.DS_Store

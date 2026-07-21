@@ -16,12 +16,12 @@ This leads to a few non-negotiables:
 
 ## Current status
 
-Early development. The project has a runnable Go backend and a React frontend, with the Python Agent layer still to come.
+Early development. The project has a runnable Go backend, an Electron + React desktop frontend, with the Python Agent layer still to come.
 
 **What's in the repo:**
 
 - `backend/` — Go HTTP server: config loading, standard response format, health check, SPA serving
-- `frontend/` — React + TypeScript + Tailwind CSS: desktop-style UI shell (title bar, activity bar, sidebar, chat area, status bar)
+- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, and dual dev/production modes
 - `proto/` — gRPC protocol definitions (placeholder, not yet populated)
 
 **What's not here yet:**
@@ -36,26 +36,73 @@ Early development. The project has a runnable Go backend and a React frontend, w
 ```
 flowpartner/
 ├── proto/              # gRPC proto definitions
-├── frontend/           # TypeScript frontend (React + Vite + Tailwind)
+├── frontend/           # Electron + React frontend (TypeScript + Vite + Tailwind)
 ├── backend/            # Go backend (HTTP server, safety layer)
 ├── agent/              # Python Agent orchestration (coming soon)
-├── docs/               # Design documents (not committed)
-└── Makefile
+├── .github/            # CI workflow, issue templates, PR template
+├── Makefile            # Build and test targets
+├── LICENSE             # MIT License
+├── SECURITY.md         # Security policy
+└── README.md           # This file
 ```
 
 ## Running locally
 
-```bash
-# Backend
-cd backend && go run cmd/server/main.go
+### Prerequisites
 
-# Frontend
+- Go 1.26+
+- Node.js 22+
+- npm 10+
+
+### Backend
+
+```bash
+cd backend && go run cmd/server/main.go
+```
+
+### Frontend (browser dev mode)
+
+```bash
 cd frontend && npm install && npm run dev
+```
+
+### Frontend (desktop dev mode)
+
+```bash
+# Terminal 1: Start Go backend
+cd backend && FP_DEV_MODE=true go run cmd/server/main.go
+
+# Terminal 2: Start Electron
+cd frontend && npm run dev:electron
+```
+
+### Build for production
+
+```bash
+# Build frontend + compile Go binary + package installer
+make build-electron
+```
+
+## Running tests
+
+```bash
+# All tests (backend + frontend)
+make test-all
+
+# Backend only
+cd backend && go test ./...
+
+# Frontend only
+cd frontend && npm run test
 ```
 
 ## Contributing
 
-We're in early development. Once the architecture stabilizes, we'll add a contributing guide. For now, feel free to open an issue if you have thoughts on the design.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute.
+
+## Security
+
+See [SECURITY.md](./SECURITY.md) for our security policy and how to report vulnerabilities.
 
 ## License
 

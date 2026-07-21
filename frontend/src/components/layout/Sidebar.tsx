@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { SidebarView } from './ActivityBar'
 import { Button } from '@/components/ui/button'
 
@@ -36,20 +37,27 @@ function SettingsPanel() {
 }
 
 export function Sidebar({ visible, activeView, onClose }: SidebarProps) {
-  if (!visible) return null
-
   return (
-    <div className="w-64 border-r border-neutral-200 bg-white flex flex-col shrink-0 transition-all duration-200">
-      <div className="flex items-center justify-between p-3 border-b border-neutral-100">
-        <span className="text-sm font-medium text-neutral-700">
-          {activeView === 'conversation' ? '对话' : '设置'}
-        </span>
-        <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="收起侧边栏">
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {activeView === 'conversation' ? <ConversationPanel /> : <SettingsPanel />}
+    <div
+      data-testid="sidebar-panel"
+      className={cn(
+        "border-r border-neutral-200 bg-white flex flex-col shrink-0 overflow-hidden transition-all duration-200",
+        visible ? "w-64" : "w-0"
+      )}
+      aria-hidden={!visible}
+    >
+      <div className="w-64 flex flex-col h-full">
+        <div className="flex items-center justify-between p-3 border-b border-neutral-100">
+          <span className="text-sm font-medium text-neutral-700">
+            {activeView === 'conversation' ? '对话' : '设置'}
+          </span>
+          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="收起侧边栏">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {activeView === 'conversation' ? <ConversationPanel /> : <SettingsPanel />}
+        </div>
       </div>
     </div>
   )
