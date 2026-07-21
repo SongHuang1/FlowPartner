@@ -33,7 +33,8 @@ func TestLoad_CustomPort(t *testing.T) {
 }
 
 func TestLoad_CustomFrontendDir(t *testing.T) {
-	t.Setenv("FP_FRONTEND_DIR", filepath.VolumeName("D:") + `\custom\path`)
+	customPath, _ := filepath.Abs(filepath.Join("custom", "path"))
+	t.Setenv("FP_FRONTEND_DIR", customPath)
 	defer os.Unsetenv("FP_FRONTEND_DIR")
 
 	cfg := Load()
@@ -41,7 +42,7 @@ func TestLoad_CustomFrontendDir(t *testing.T) {
 	if !filepath.IsAbs(cfg.FrontendDir) {
 		t.Errorf("expected absolute path for FrontendDir, got %q", cfg.FrontendDir)
 	}
-	if cfg.FrontendDir != filepath.VolumeName("D:")+`\custom\path` {
+	if cfg.FrontendDir != customPath {
 		t.Errorf("expected custom path preserved, got %q", cfg.FrontendDir)
 	}
 }
