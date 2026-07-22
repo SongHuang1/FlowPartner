@@ -9,6 +9,48 @@ extraResources:
   - from: bin/
     to: bin/
     filter:
-      - "*.exe"
+      - flowpartner-backend*
 win:
-  target: nsis
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+    - target: portable
+      arch:
+        - x64
+        - arm64
+  artifactName: FlowPartner-Windows-${version}-${arch}.${ext}
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+        - universal
+  category: public.app-category.productivity
+  artifactName: FlowPartner-macOS-${version}-${arch}.${ext}
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+    - target: rpm
+      arch:
+        - x64
+        - arm64
+  category: Utility
+  artifactName: FlowPartner-Linux-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: FlowPartner

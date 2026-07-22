@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            go_os: windows
+            go_arch: amd64
+            arch: x64
+            ext: .exe
+          - platform: windows-latest
+            go_os: windows
+            go_arch: arm64
+            arch: arm64
+            ext: .exe
+          - platform: macos-13
+            go_os: darwin
+            go_arch: amd64
+            arch: x64
+            ext: ''
+          - platform: macos-latest
+            go_os: darwin
+            go_arch: arm64
+            arch: arm64
+            ext: ''
+          - platform: ubuntu-latest
+            go_os: linux
+            go_arch: amd64
+            arch: x64
+            ext: ''
+          - platform: ubuntu-latest
+            go_os: linux
+            go_arch: arm64
+            arch: arm64
+            ext: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: backend/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Go backend
+        working-directory: backend
+        shell: bash
+        run: |
+          OUTPUT="../frontend/bin/flowpartner-backend${{ matrix.ext }}"
+          GOOS=${{ matrix.go_os }} GOARCH=${{ matrix.go_arch }} go build -ldflags="-s -w" -o "$OUTPUT" ./cmd/server/
+          echo "Built: $OUTPUT"
+          ls -la "$OUTPUT"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Electron app
+        working-directory: frontend
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          if [ "${{ matrix.go_os }}" = "windows" ]; then
+            npx electron-builder --win --${{ matrix.arch }} --publish never
+          elif [ "${{ matrix.go_os }}" = "darwin" ]; then
+            npx electron-builder --mac --${{ matrix.arch }} --publish never
+          else
+            npx electron-builder --linux --${{ matrix.arch }} --publish never
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.go_os }}-${{ matrix.go_arch }}
+          path: frontend/dist-electron/**
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          name: FlowPartner ${{ github.ref_name || github.event.inputs.tag }}
+          draft: true
+          prerelease: false
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
