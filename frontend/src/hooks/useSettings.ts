@@ -36,6 +36,12 @@ export function useSettings(): UseSettingsReturn {
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
   const updateSettings = (patch: Partial<Settings>) => {
     const newSettings = { ...settingsRef.current, ...patch }
     settingsRef.current = newSettings
