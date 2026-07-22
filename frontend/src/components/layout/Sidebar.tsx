@@ -2,6 +2,8 @@ import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SidebarView } from './ActivityBar'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useSettings } from '@/hooks/useSettings'
 
 interface SidebarProps {
   visible: boolean
@@ -28,10 +30,59 @@ function ConversationPanel() {
 }
 
 function SettingsPanel() {
+  const { settings, updateSettings } = useSettings()
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <h2 className="font-semibold text-base text-neutral-800">设置</h2>
-      <p className="text-sm text-neutral-500">设置功能即将推出</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-600">模型</label>
+          <Input
+            value={settings.model}
+            onChange={(e) => updateSettings({ model: e.target.value })}
+            placeholder="gpt-4"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-600">Agent ID</label>
+          <Input
+            value={settings.agent_id}
+            onChange={(e) => updateSettings({ agent_id: e.target.value })}
+            placeholder="default"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-600">上下文窗口</label>
+          <Input
+            type="number"
+            value={settings.context_window}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10)
+              if (!isNaN(parsed) && parsed > 0) {
+                updateSettings({ context_window: parsed })
+              }
+            }}
+            placeholder="8192"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-600">工作目录</label>
+          <Input
+            value={settings.working_directory}
+            onChange={(e) => updateSettings({ working_directory: e.target.value })}
+            placeholder="留空表示未设置"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-600">语言</label>
+          <Input
+            value={settings.language}
+            onChange={(e) => updateSettings({ language: e.target.value })}
+            placeholder="zh-CN"
+          />
+        </div>
+      </div>
     </div>
   )
 }

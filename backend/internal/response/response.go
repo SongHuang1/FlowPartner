@@ -1,6 +1,12 @@
 ﻿package response
 
-import "time"
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // Response 所有 HTTP 响应的统一结构
 type Response struct {
@@ -29,4 +35,15 @@ func Success(data interface{}) Response {
 		Data:      data,
 		Timestamp: time.Now().Unix(),
 	}
+}
+
+// WriteJSON 将 Response 写入 HTTP 响应（统一 JSON 序列化 + 设置 header）
+func WriteJSON(w http.ResponseWriter, statusCode int, resp Response) {
+	if resp.RequestID == "" {
+		resp.RequestID = uuid.NewString()
+	}
+	resp.Timestamp = time.Now().Unix()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(resp)
 }

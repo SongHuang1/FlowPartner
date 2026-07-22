@@ -2,6 +2,8 @@
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -189,6 +191,89 @@ func TestSuccess_EmptyData(t *testing.T) {
 
 	if resp.Data != "" {
 		t.Errorf("expected empty string data, got '%v'", resp.Data)
+	}
+}
+
+// TestWriteJSON_SetsContentType 验证 WriteJSON 设置正确的 Content-Type
+func TestWriteJSON_SetsContentType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	resp := Success("test")
+	WriteJSON(rec, http.StatusOK, resp)
+
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type 'application/json', got %q", ct)
+	}
+}
+
+// TestWriteJSON_SetsStatusCode 验证 WriteJSON 设置正确的 HTTP 状态码
+func TestWriteJSON_SetsStatusCode(t *testing.T) {
+	rec := httptest.NewRecorder()
+	resp := Error(CodeInternalError, "server error")
+	WriteJSON(rec, http.StatusInternalServerError, resp)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", rec.Code)
+	}
+}
+
+// TestWriteJSON_AutoGeneratesRequestID 验证 WriteJSON 自动生成 RequestID
+func TestWriteJSON_AutoGeneratesRequestID(t *testing.T) {
+	rec := httptest.NewRecorder()
+	resp := Success("test")
+	resp.RequestID = "" // 确保为空
+	WriteJSON(rec, http.StatusOK, resp)
+
+	var result Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if result.RequestID == "" {
+		t.Error("RequestID should be auto-generated")
+	}
+
+	// 验证 UUID 格式 (简单检查长度和结构)
+	if len(result.RequestID) != 36 {
+		t.Errorf("expected UUID length 36, got %d: %q", len(result.RequestID), result.RequestID)
+	}
+}
+
+// TestWriteJSON_PreservesExistingRequestID 验证 WriteJSON 保留已有的 RequestID
+func TestWriteJSON_PreservesExistingRequestID(t *testing.T) {
+	rec := httptest.NewRecorder()
+	resp := Success("test")
+	resp.RequestID = "custom-request-id-123"
+	WriteJSON(rec, http.StatusOK, resp)
+
+	var result Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if result.RequestID != "custom-request-id-123" {
+		t.Errorf("expected preserved RequestID, got %q", result.RequestID)
+	}
+}
+
+// TestWriteJSON_OverwritesTimestamp 验证 WriteJSON 覆盖时间戳
+func TestWriteJSON_OverwritesTimestamp(t *testing.T) {
+	rec := httptest.NewRecorder()
+	resp := Success("test")
+	resp.Timestamp = 0 // 设置为 0
+	WriteJSON(rec, http.StatusOK, resp)
+
+	var result Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	now := time.Now().Unix()
+	if result.Timestamp == 0 {
+		t.Error("Timestamp should be overwritten to current time")
+	}
+	if result.Timestamp > now+1 {
+		t.Errorf("Timestamp %d is in the future (now: %d)", result.Timestamp, now)
 	}
 }
 

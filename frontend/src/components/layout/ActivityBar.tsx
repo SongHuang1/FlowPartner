@@ -1,6 +1,7 @@
 import { MessageSquare, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 export type SidebarView = 'conversation' | 'settings'
 
@@ -20,9 +21,12 @@ export function ActivityBar({ activeView, onSelect }: ActivityBarProps) {
       {items.map(({ view, icon: Icon, label }) => (
         <Tooltip key={view} content={label}>
           <Button
-            variant={activeView === view ? 'default' : 'ghost'}
+            variant="outline"
             size="icon"
-            className="w-9 h-9"
+            className={cn(
+              'w-9 h-9 border-neutral-200 bg-white shadow-sm',
+              activeView === view && 'bg-blue-500 text-white border-blue-500 hover:bg-blue-600 hover:border-blue-600'
+            )}
             onClick={() => onSelect(view)}
             aria-label={label}
           >
