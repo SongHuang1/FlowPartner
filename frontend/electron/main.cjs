@@ -32,9 +32,9 @@ function startGoProcess(port) {
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
 
   if (isDev) {
-    goProcess = spawn('go', ['run', 'backend/cmd/server/main.go'], {
+    goProcess = spawn('go', ['run', 'cmd/server/main.go'], {
       env: { ...process.env, FP_DEV_MODE: 'true' },
-      cwd: path.join(__dirname, '..', '..'),
+      cwd: path.join(__dirname, '..', '..', 'backend'),
       shell: true,
     })
   } else {
