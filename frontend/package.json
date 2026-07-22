@@ -4,6 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "main": "electron/main.cjs",
+  "description": "FlowPartner - AI Agent 桌面应用",
+  "author": {
+    "name": "SongHuang1",
+    "email": "138837991+SongHuang1@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/SongHuang1/FlowPartner",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

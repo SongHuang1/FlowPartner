@@ -30,7 +30,7 @@ jobs:
             go_arch: arm64
             arch: arm64
             ext: .exe
-          - platform: macos-13
+          - platform: macos-14
             go_os: darwin
             go_arch: amd64
             arch: x64
