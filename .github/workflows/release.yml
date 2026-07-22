@@ -105,7 +105,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.go_os }}-${{ matrix.go_arch }}
-          path: frontend/dist-electron/**
+          path: |
+            frontend/dist-electron/*.dmg
+            frontend/dist-electron/*.exe
+            frontend/dist-electron/*.deb
+            frontend/dist-electron/*.rpm
+            frontend/dist-electron/*.AppImage
+            frontend/dist-electron/*.blockmap
+            frontend/dist-electron/builder-debug.yml
           retention-days: 7
 
   release:
@@ -133,6 +140,12 @@ jobs:
           name: FlowPartner ${{ github.ref_name || github.event.inputs.tag }}
           draft: true
           prerelease: false
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+            artifacts/**/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
