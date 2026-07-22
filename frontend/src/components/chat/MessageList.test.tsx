@@ -1,11 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MessageList } from './ChatArea'
+import type { Message } from '@/types'
 
-interface Message {
-  id: string
-  role: 'system' | 'user-ephemeral'
-  content: string
+function msg(id: string, role: 'user' | 'assistant', content: string): Message {
+  return { id, role, content, timestamp: 1000 + parseInt(id, 10) || Date.now() }
 }
 
 describe('MessageList', () => {
@@ -16,58 +15,48 @@ describe('MessageList', () => {
     expect(list?.children.length).toBe(0)
   })
 
-  it('renders a single system message with left alignment', () => {
-    const messages: Message[] = [
-      { id: '1', role: 'system', content: 'Hello from system' },
-    ]
+  it('renders a single assistant message with left alignment', () => {
+    const messages: Message[] = [msg('1', 'assistant', 'Hello from AI')]
     render(<MessageList messages={messages} />)
 
-    const msg = screen.getByText('Hello from system')
-    expect(msg).toBeInTheDocument()
-    // System messages should be in a justify-start container
-    expect(msg.parentElement).toHaveClass('justify-start')
+    const el = screen.getByText('Hello from AI')
+    expect(el).toBeInTheDocument()
+    expect(el.parentElement?.parentElement).toHaveClass('justify-start')
   })
 
-  it('renders a single user-ephemeral message with right alignment', () => {
-    const messages: Message[] = [
-      { id: '1', role: 'user-ephemeral', content: 'Hello from user' },
-    ]
+  it('renders a single user message with right alignment', () => {
+    const messages: Message[] = [msg('1', 'user', 'Hello from user')]
     render(<MessageList messages={messages} />)
 
-    const msg = screen.getByText('Hello from user')
-    expect(msg).toBeInTheDocument()
-    // User messages should be in a justify-end container
-    expect(msg.parentElement).toHaveClass('justify-end')
+    const el = screen.getByText('Hello from user')
+    expect(el).toBeInTheDocument()
+    expect(el.parentElement?.parentElement).toHaveClass('justify-end')
   })
 
   it('renders mixed messages in correct order', () => {
     const messages: Message[] = [
-      { id: '1', role: 'system', content: 'First system' },
-      { id: '2', role: 'user-ephemeral', content: 'First user' },
-      { id: '3', role: 'system', content: 'Second system' },
+      msg('1', 'assistant', 'First AI'),
+      msg('2', 'user', 'First user'),
+      msg('3', 'assistant', 'Second AI'),
     ]
     render(<MessageList messages={messages} />)
 
-    expect(screen.getByText('First system')).toBeInTheDocument()
+    expect(screen.getByText('First AI')).toBeInTheDocument()
     expect(screen.getByText('First user')).toBeInTheDocument()
-    expect(screen.getByText('Second system')).toBeInTheDocument()
+    expect(screen.getByText('Second AI')).toBeInTheDocument()
   })
 
-  it('applies semi-transparent blue style to user-ephemeral messages', () => {
-    const messages: Message[] = [
-      { id: '1', role: 'user-ephemeral', content: 'Blue message' },
-    ]
+  it('applies blue style to user messages', () => {
+    const messages: Message[] = [msg('1', 'user', 'Blue message')]
     render(<MessageList messages={messages} />)
 
     const bubble = screen.getByText('Blue message')
-    expect(bubble).toHaveClass('bg-blue-500/60')
+    expect(bubble).toHaveClass('bg-blue-500')
     expect(bubble).toHaveClass('text-white')
   })
 
-  it('applies neutral gray style to system messages', () => {
-    const messages: Message[] = [
-      { id: '1', role: 'system', content: 'Gray message' },
-    ]
+  it('applies neutral gray style to assistant messages', () => {
+    const messages: Message[] = [msg('1', 'assistant', 'Gray message')]
     render(<MessageList messages={messages} />)
 
     const bubble = screen.getByText('Gray message')
@@ -75,12 +64,26 @@ describe('MessageList', () => {
     expect(bubble).toHaveClass('text-neutral-800')
   })
 
+  it('shows FlowPartner name for assistant messages', () => {
+    const messages: Message[] = [msg('1', 'assistant', 'AI response')]
+    render(<MessageList messages={messages} />)
+
+    expect(screen.getByText('FlowPartner')).toBeInTheDocument()
+  })
+
+  it('does not show name for user messages', () => {
+    const messages: Message[] = [msg('1', 'user', 'User message')]
+    render(<MessageList messages={messages} />)
+
+    expect(screen.queryByText('FlowPartner')).not.toBeInTheDocument()
+  })
+
   it('renders multiple messages with correct count', () => {
     const messages: Message[] = [
-      { id: '1', role: 'system', content: 'Msg 1' },
-      { id: '2', role: 'user-ephemeral', content: 'Msg 2' },
-      { id: '3', role: 'system', content: 'Msg 3' },
-      { id: '4', role: 'user-ephemeral', content: 'Msg 4' },
+      msg('1', 'assistant', 'Msg 1'),
+      msg('2', 'user', 'Msg 2'),
+      msg('3', 'assistant', 'Msg 3'),
+      msg('4', 'user', 'Msg 4'),
     ]
     const { container } = render(<MessageList messages={messages} />)
     const list = container.querySelector('.flex.flex-col.gap-3')
@@ -89,10 +92,9 @@ describe('MessageList', () => {
 
   it('renders messages with unique keys (no React key warning)', () => {
     const messages: Message[] = [
-      { id: 'msg-1', role: 'system', content: 'Unique 1' },
-      { id: 'msg-2', role: 'system', content: 'Unique 2' },
+      msg('1', 'assistant', 'Unique 1'),
+      msg('2', 'assistant', 'Unique 2'),
     ]
-    // If keys are not unique, React will warn. This test verifies no crash.
     const consoleSpy = vi.spyOn(console, 'error')
     render(<MessageList messages={messages} />)
 

@@ -37,7 +37,7 @@ describe('Sidebar', () => {
 
   it('renders settings panel when activeView is settings', () => {
     render(<Sidebar visible={true} activeView="settings" onClose={() => {}} />)
-    expect(screen.getByText('设置功能即将推出')).toBeInTheDocument()
+    expect(screen.getByText('模型')).toBeInTheDocument()
   })
 
   it('calls onClose when clicking close button', () => {

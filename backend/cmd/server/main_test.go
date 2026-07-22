@@ -194,7 +194,7 @@ func TestSetupRoutes_Production_MissingAsset_Returns404(t *testing.T) {
 }
 
 // TestSetupRoutes_DevMode_APIEndpoint_StillReturns501 验证 DevMode 下 /api/ 仍返回 501
-func TestSetupRoutes_DevMode_APIEndpoint_StillReturns501(t *testing.T) {
+func TestSetupRoutes_DevMode_APIEndpoint_StillReturns404(t *testing.T) {
 	cfg := &config.Config{
 		DevMode:  true,
 		HTTPPort: ":0",
@@ -205,16 +205,8 @@ func TestSetupRoutes_DevMode_APIEndpoint_StillReturns501(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501 for /api/ in DevMode, got %d", rec.Code)
-	}
-
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	if resp.RequestID == "" {
-		t.Error("request_id must not be empty in DevMode")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown /api/ in DevMode, got %d", rec.Code)
 	}
 }
 
@@ -314,7 +306,7 @@ func TestSetupRoutes_Production_SPAFallback_AssetsPath_NoFallback(t *testing.T) 
 }
 
 // TestSetupRoutes_Production_MultipleAPIEndpoints_AllReturn501 验证多个 /api/ 子路径都返回 501
-func TestSetupRoutes_Production_MultipleAPIEndpoints_AllReturn501(t *testing.T) {
+func TestSetupRoutes_Production_NotImplementedEndpoint(t *testing.T) {
 	frontendDir := newTestFrontendDir(t)
 	cfg := &config.Config{
 		DevMode:     false,
@@ -323,34 +315,23 @@ func TestSetupRoutes_Production_MultipleAPIEndpoints_AllReturn501(t *testing.T) 
 	}
 	handler := setupRoutes(cfg)
 
-	paths := []string{
-		"/api/",
-		"/api/v1/chat",
-		"/api/not-implemented",
-		"/api/deep/nested/path",
+	req := httptest.NewRequest(http.MethodGet, "/api/not-implemented", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501 for /api/not-implemented, got %d", rec.Code)
 	}
 
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusNotImplemented {
-				t.Errorf("expected 501 for %s, got %d", path, rec.Code)
-			}
-
-			var resp response.Response
-			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-				t.Fatalf("failed to parse response for %s: %v", path, err)
-			}
-			if resp.Code != response.CodeNotImplemented {
-				t.Errorf("expected code %d for %s, got %d", response.CodeNotImplemented, path, resp.Code)
-			}
-			if resp.Message != "API not implemented yet" {
-				t.Errorf("unexpected message for %s: %s", path, resp.Message)
-			}
-		})
+	var resp response.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Code != response.CodeNotImplemented {
+		t.Errorf("expected code %d, got %d", response.CodeNotImplemented, resp.Code)
+	}
+	if resp.Message != "API not implemented yet" {
+		t.Errorf("unexpected message: %s", resp.Message)
 	}
 }
 
@@ -464,5 +445,160 @@ func TestSetupRoutes_Production_PathTraversal_VariousAttacks(t *testing.T) {
 				t.Errorf("path traversal leaked system file for %s", path)
 			}
 		})
+	}
+}
+
+// TestSetupRoutes_API_SettingsEndpoint 验证 /api/settings 路由正确分发
+func TestSetupRoutes_API_SettingsEndpoint(t *testing.T) {
+	frontendDir := newTestFrontendDir(t)
+	cfg := &config.Config{
+		DevMode:     false,
+		FrontendDir: frontendDir,
+		HTTPPort:    ":0",
+	}
+	handler := setupRoutes(cfg)
+
+	// GET /api/settings 应该返回 200
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /api/settings expected 200, got %d", rec.Code)
+	}
+
+	var resp response.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+}
+
+// TestSetupRoutes_API_ConversationEndpoint 验证 /api/conversation 路由正确分发
+func TestSetupRoutes_API_ConversationEndpoint(t *testing.T) {
+	frontendDir := newTestFrontendDir(t)
+	cfg := &config.Config{
+		DevMode:     false,
+		FrontendDir: frontendDir,
+		HTTPPort:    ":0",
+	}
+	handler := setupRoutes(cfg)
+
+	// GET /api/conversation 应该返回 200
+	req := httptest.NewRequest(http.MethodGet, "/api/conversation", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /api/conversation expected 200, got %d", rec.Code)
+	}
+
+	var resp response.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Errorf("expected code 0, got %d", resp.Code)
+	}
+}
+
+// TestSetupRoutes_API_MethodNotAllowed 验证不支持的 HTTP 方法返回 501
+func TestSetupRoutes_API_MethodNotAllowed(t *testing.T) {
+	frontendDir := newTestFrontendDir(t)
+	cfg := &config.Config{
+		DevMode:     false,
+		FrontendDir: frontendDir,
+		HTTPPort:    ":0",
+	}
+	handler := setupRoutes(cfg)
+
+	// DELETE /api/settings 应该返回 501
+	req := httptest.NewRequest(http.MethodDelete, "/api/settings", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("DELETE /api/settings expected 501, got %d", rec.Code)
+	}
+
+	// PUT /api/conversation 应该返回 501
+	req = httptest.NewRequest(http.MethodPut, "/api/conversation", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("PUT /api/conversation expected 501, got %d", rec.Code)
+	}
+}
+
+// TestSetupRoutes_Production_HealthEndpoint_ExactBody 验证 /health 响应体精确匹配
+func TestSetupRoutes_Production_HealthEndpoint_ExactBody(t *testing.T) {
+	frontendDir := newTestFrontendDir(t)
+	cfg := &config.Config{
+		DevMode:     false,
+		FrontendDir: frontendDir,
+		HTTPPort:    ":0",
+	}
+	handler := setupRoutes(cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	expected := `{"status":"ok"}`
+	if body != expected {
+		t.Errorf("expected body %q, got %q", expected, body)
+	}
+}
+
+// TestSetupRoutes_DevMode_AllRoutesWork 验证 DevMode 下所有路由正常工作
+func TestSetupRoutes_DevMode_AllRoutesWork(t *testing.T) {
+	cfg := &config.Config{
+		DevMode:  true,
+		HTTPPort: ":0",
+	}
+	handler := setupRoutes(cfg)
+
+	// /health 在 DevMode 下仍然可用
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /health in DevMode expected 200, got %d", rec.Code)
+	}
+
+	// /api/settings 在 DevMode 下仍然可用
+	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /api/settings in DevMode expected 200, got %d", rec.Code)
+	}
+
+	// /api/conversation 在 DevMode 下仍然可用
+	req = httptest.NewRequest(http.MethodGet, "/api/conversation", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /api/conversation in DevMode expected 200, got %d", rec.Code)
+	}
+}
+
+// TestServeSPA_DirectCall_HealthPath 验证 serveSPA 直接调用时 /health 正常返回
+func TestServeSPA_DirectCall_HealthPath(t *testing.T) {
+	frontendDir := newTestFrontendDir(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	serveSPA(rec, req, frontendDir)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 from serveSPA for /health, got %d", rec.Code)
+	}
+	if rec.Body.String() != `{"status":"ok"}` {
+		t.Errorf("unexpected body: %s", rec.Body.String())
 	}
 }

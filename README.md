@@ -16,20 +16,21 @@ This leads to a few non-negotiables:
 
 ## Current status
 
-Early development. The project has a runnable Go backend, an Electron + React desktop frontend, with the Python Agent layer still to come.
+Early development. The project has a runnable Go backend with data persistence, an Electron + React desktop frontend with a full UI shell, settings panel, and chat interface. The Python Agent layer is still to come.
 
 **What's in the repo:**
 
-- `backend/` — Go HTTP server: config loading, standard response format, health check, SPA serving
-- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, and dual dev/production modes
+- `backend/` — Go HTTP server: config loading, standard response format, health check, SPA serving, settings API, conversation API, JSON file storage with atomic writes
+- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, activity bar, sidebar settings panel, chat area with empty/conversation state switching, and persistent data via REST API
 - `proto/` — gRPC protocol definitions (placeholder, not yet populated)
 
 **What's not here yet:**
 
 - Python Agent orchestration layer
-- Business logic and API endpoints
+- Agent execution and real AI responses
 - WebSocket real-time communication
 - Safety mechanisms (dangerous-op blacklist, auto-backup, operation logs)
+- Multi-conversation management
 
 ## Project structure
 
@@ -37,8 +38,9 @@ Early development. The project has a runnable Go backend, an Electron + React de
 flowpartner/
 ├── proto/              # gRPC proto definitions
 ├── frontend/           # Electron + React frontend (TypeScript + Vite + Tailwind)
-├── backend/            # Go backend (HTTP server, safety layer)
+├── backend/            # Go backend (HTTP server, safety layer, data persistence)
 ├── agent/              # Python Agent orchestration (coming soon)
+├── docs/               # Design documents (not committed to GitHub)
 ├── .github/            # CI workflow, issue templates, PR template
 ├── Makefile            # Build and test targets
 ├── LICENSE             # MIT License
@@ -66,15 +68,15 @@ cd backend && go run cmd/server/main.go
 cd frontend && npm install && npm run dev
 ```
 
+Then open http://localhost:5173 in your browser.
+
 ### Frontend (desktop dev mode)
 
 ```bash
-# Terminal 1: Start Go backend
-cd backend && FP_DEV_MODE=true go run cmd/server/main.go
-
-# Terminal 2: Start Electron
 cd frontend && npm run dev:electron
 ```
+
+This starts both the Vite dev server and Electron, with the Go backend auto-launched.
 
 ### Build for production
 
@@ -95,6 +97,17 @@ cd backend && go test ./...
 # Frontend only
 cd frontend && npm run test
 ```
+
+## Data storage
+
+User data is stored in the OS user directory:
+
+- Windows: `%USERPROFILE%\.flowpartner\`
+- macOS/Linux: `~/.flowpartner/`
+
+Files:
+- `settings.json` — User preferences (model, agent, context window, working directory, language)
+- `conversations.json` — Chat message history
 
 ## Contributing
 

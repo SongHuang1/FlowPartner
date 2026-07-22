@@ -2,7 +2,6 @@
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -15,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/songhuang/flowpartner/backend/internal/config"
+	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/response"
 )
 
@@ -87,7 +86,30 @@ func setupRoutes(cfg *config.Config) http.Handler {
 		serveSPA(w, r, cfg.FrontendDir)
 	})
 
-	mux.HandleFunc("/api/", notImplementedHandler)
+	settingsHandler := &handler.SettingsHandler{}
+	conversationHandler := &handler.ConversationHandler{}
+
+	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			settingsHandler.Get(w, r)
+		case http.MethodPut:
+			settingsHandler.Put(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/conversation", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			conversationHandler.Get(w, r)
+		case http.MethodPost:
+			conversationHandler.Post(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/not-implemented", notImplementedHandler)
 
 	return mux
 }
@@ -123,9 +145,5 @@ func serveSPA(w http.ResponseWriter, r *http.Request, frontendDir string) {
 }
 
 func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	resp := response.Error(response.CodeNotImplemented, "API not implemented yet")
-	resp.RequestID = uuid.NewString()
-	json.NewEncoder(w).Encode(resp)
+	response.WriteJSON(w, http.StatusNotImplemented, response.Error(response.CodeNotImplemented, "API not implemented yet"))
 }

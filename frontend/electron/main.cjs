@@ -32,9 +32,9 @@ function startGoProcess(port) {
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
 
   if (isDev) {
-    goProcess = spawn('go', ['run', 'backend/cmd/server/main.go'], {
+    goProcess = spawn('go', ['run', 'cmd/server/main.go'], {
       env: { ...process.env, FP_DEV_MODE: 'true' },
-      cwd: path.join(__dirname, '..', '..'),
+      cwd: path.join(__dirname, '..', '..', 'backend'),
       shell: true,
     })
   } else {
@@ -97,11 +97,12 @@ function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
   return new Promise((resolve) => {
+    const pid = goProcess.pid
     const timeout = setTimeout(() => {
-      goProcess.kill()
+      try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
       goProcess = null
       resolve()
-    }, 5000)
+    }, 3000)
 
     goProcess.on('exit', () => {
       clearTimeout(timeout)
@@ -109,7 +110,7 @@ function stopGoProcess() {
       resolve()
     })
 
-    goProcess.stdin.end()
+    try { process.kill(pid, 'SIGTERM') } catch { /* already dead */ }
   })
 }
 
@@ -260,6 +261,19 @@ app.whenReady().then(async () => {
   let port
   if (isDev) {
     port = 8080
+    try {
+      const testServer = http.createServer()
+      await new Promise((resolve, reject) => {
+        testServer.once('error', reject)
+        testServer.once('listening', () => {
+          testServer.close()
+          resolve()
+        })
+        testServer.listen(port)
+      })
+    } catch {
+      port = await findFreePort()
+    }
   } else {
     port = await findFreePort()
   }
