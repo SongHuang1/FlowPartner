@@ -6,9 +6,10 @@ interface WelcomeViewProps {
   inputValue: string
   onInputChange: (v: string) => void
   onSend: () => void
+  disabled?: boolean
 }
 
-export function WelcomeView({ settings, inputValue, onInputChange, onSend }: WelcomeViewProps) {
+export function WelcomeView({ settings, inputValue, onInputChange, onSend, disabled }: WelcomeViewProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">
       <h2 className="text-lg font-medium text-neutral-700 mb-4">
@@ -19,6 +20,7 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend }: Wel
           value={inputValue}
           onChange={onInputChange}
           onSend={onSend}
+          disabled={disabled}
         />
       </div>
       <div className="text-xs text-neutral-400 text-center mt-4">

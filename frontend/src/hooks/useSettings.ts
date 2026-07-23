@@ -9,6 +9,19 @@ export function DefaultSettings(): Settings {
     context_window: 8192,
     working_directory: '',
     language: 'zh-CN',
+    base_url: 'https://api.openai.com/v1',
+    encrypted_api_key: '',
+    model_name: 'gpt-4',
+    system_prompt: '你是一个有帮助的 AI 助手。',
+    temperature: 0.7,
+    close_behavior: 'ask',
+    close_remembered: false,
+    window_x: 100,
+    window_y: 100,
+    window_width: 1200,
+    window_height: 800,
+    sidebar_visible: true,
+    sidebar_view: 'conversation',
   }
 }
 

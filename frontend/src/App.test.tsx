@@ -27,7 +27,7 @@ describe('App Integration', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
 
-    expect(screen.getByText('模型')).toBeInTheDocument()
+    expect(screen.getByText('API 配置')).toBeInTheDocument()
     expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
   })
 
@@ -35,7 +35,7 @@ describe('App Integration', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    expect(screen.getByText('模型')).toBeInTheDocument()
+    expect(screen.getByText('API 配置')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '对话' }))
     expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
