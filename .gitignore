@@ -244,8 +244,6 @@ frontend/src/assets/
 frontend/bin/
 frontend/dist-electron/
 
-# --- Agent (不提交到GitHub) ---
-agent/
 
 # --- OS ---
 Thumbs.db
