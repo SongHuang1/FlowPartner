@@ -23,6 +23,7 @@ A clear and concise description of what you expected to happen.
 - OS: [e.g. Windows 11]
 - Go version: [e.g. 1.26]
 - Node version: [e.g. 22.0]
+- Python version: [e.g. 3.12]
 
 **Additional context**
 Add any other context about the problem here.
