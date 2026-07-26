@@ -3,6 +3,11 @@
 on:
   push:
     branches: [main, develop]
+    paths: 
+      - backend/**
+      - frontend/**
+      - agent/**
+      - .github/workflows/**
   pull_request:
     branches: [main]
 
@@ -14,10 +19,10 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.26"
           cache: true
@@ -39,10 +44,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -66,3 +71,15 @@ jobs:
         run: npm run build
         env:
           CI: true
+  
+  # build-agent:
+  #   runs-on: unbuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: agent
+      
+  #   steps:
+  #     - uses: actions/setup-python@v7
+    
+  #     - name: 
+      
