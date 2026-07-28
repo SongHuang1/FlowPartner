@@ -244,6 +244,7 @@ frontend/src/assets/
 frontend/bin/
 frontend/dist-electron/
 
+
 # --- OS ---
 Thumbs.db
 .DS_Store

@@ -3,8 +3,13 @@
 on:
   push:
     branches: [main, develop]
+    paths: 
+      - backend/**
+      - frontend/**
+      - agent/**
+      - .github/workflows/**
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   build-backend:
@@ -14,10 +19,10 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.26"
           cache: true
@@ -39,10 +44,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -66,3 +71,37 @@ jobs:
         run: npm run build
         env:
           CI: true
+  
+  build-agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+      
+    steps:
+      - uses: actions/checkout@v7
+    
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      
+      - name: Install uv
+        run: pip install uv
+      
+      - name: Install Dependencies
+        run: uv sync --frozen
+      
+      - name: Lint
+        run: uv run ruff check .
+      
+      - name: Type check
+        run: uv run mypy . --explicit-package-bases
+      
+      - name: Run tests
+        run: uv run pytest -v --cov=.
+        env:
+          CI: true
+      
+      

@@ -27,6 +27,7 @@ mac:
       arch:
         - x64
         - arm64
+        - universal
   category: public.app-category.productivity
   artifactName: FlowPartner-macOS-${version}-${arch}.${ext}
 linux:

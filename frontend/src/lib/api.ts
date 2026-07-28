@@ -1,9 +1,9 @@
-import type { Settings, Conversation, Message } from '@/types'
+import type { Settings, Conversation, Message, LockStatus, ChatResponse } from '@/types'
 
 const BASE = '/api'
 const FETCH_TIMEOUT_MS = 5000
+const CHAT_TIMEOUT_MS = 35000
 
-// API 响应统一结构
 interface ApiResponse<T> {
   code: number
   message: string
@@ -12,10 +12,9 @@ interface ApiResponse<T> {
   request_id: string
 }
 
-// fetchWithTimeout 封装 fetch，添加超时和错误信息解析
-async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeout)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
     if (!res.ok) {
@@ -23,7 +22,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
       try {
         const errBody: ApiResponse<unknown> = await res.json()
         backendMsg = errBody.message || ''
-      } catch { /* 忽略解析失败 */ }
+      } catch { /* ignore */ }
       throw new Error(backendMsg || `Request failed: ${res.status}`)
     }
     return res
@@ -60,4 +59,58 @@ export async function saveConversation(messages: Message[]): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, updated_at: Date.now() }),
   })
+}
+
+export async function unlock(password: string): Promise<void> {
+  const res = await fetchWithTimeout(`${BASE}/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  const data: ApiResponse<unknown> = await res.json()
+  if (data.code !== 0) {
+    throw new Error(data.message || '解锁失败')
+  }
+}
+
+export async function lock(): Promise<void> {
+  await fetchWithTimeout(`${BASE}/lock`, { method: 'POST' })
+}
+
+export async function getLockStatus(): Promise<LockStatus> {
+  const res = await fetchWithTimeout(`${BASE}/lock_status`)
+  const data: ApiResponse<LockStatus> = await res.json()
+  return data.data
+}
+
+export async function sendMessage(content: string): Promise<ChatResponse> {
+  const res = await fetchWithTimeout(`${BASE}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  }, CHAT_TIMEOUT_MS)
+  const data: ApiResponse<ChatResponse> = await res.json()
+  return data.data
+}
+
+export async function saveApiKey(apiKey: string, password: string): Promise<void> {
+  const res = await fetchWithTimeout(`${BASE}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey, password }),
+  })
+  const data: ApiResponse<unknown> = await res.json()
+  if (data.code !== 0) {
+    throw new Error(data.message || '保存 API Key 失败')
+  }
+}
+
+export async function clearApiKey(): Promise<void> {
+  const res = await fetchWithTimeout(`${BASE}/settings/clear_api_key`, {
+    method: 'POST',
+  })
+  const data: ApiResponse<unknown> = await res.json()
+  if (data.code !== 0) {
+    throw new Error(data.message || '清除 API Key 失败')
+  }
 }

@@ -88,6 +88,8 @@ func setupRoutes(cfg *config.Config) http.Handler {
 
 	settingsHandler := &handler.SettingsHandler{}
 	conversationHandler := &handler.ConversationHandler{}
+	unlockHandler := &handler.UnlockHandler{}
+	chatHandler := &handler.ChatHandler{}
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -99,12 +101,52 @@ func setupRoutes(cfg *config.Config) http.Handler {
 			notImplementedHandler(w, r)
 		}
 	})
+	mux.HandleFunc("/api/settings/clear_api_key", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			settingsHandler.ClearAPIKey(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
 	mux.HandleFunc("/api/conversation", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			conversationHandler.Get(w, r)
 		case http.MethodPost:
 			conversationHandler.Post(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/unlock", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			unlockHandler.Post(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/lock", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			unlockHandler.Lock(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/lock_status", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			unlockHandler.Status(w, r)
+		default:
+			notImplementedHandler(w, r)
+		}
+	})
+	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			chatHandler.Post(w, r)
 		default:
 			notImplementedHandler(w, r)
 		}

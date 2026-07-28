@@ -16,4 +16,9 @@ const (
 	CodeDangerousAction  = 4001
 	CodePermissionDenied = 4002
 	CodeUserRejected     = 4003
+
+	// 5000-5999 API Key 锁定相关
+	CodeUnlockRateLimited  = 5001
+	CodeAPIKeyNotConfigured = 5002
+	CodeWrongPassword       = 5003
 )

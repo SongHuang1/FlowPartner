@@ -14,6 +14,7 @@ interface UseConversationReturn {
   loading: boolean
   error: string | null
   sendMessage: (content: string) => void
+  addAssistantMessage: (content: string) => void
 }
 
 export function useConversation(): UseConversationReturn {
@@ -57,5 +58,18 @@ export function useConversation(): UseConversationReturn {
     setMessages(updated)
   }
 
-  return { messages, loading, error, sendMessage }
+  const addAssistantMessage = (content: string) => {
+    const newMessage: Message = {
+      id: generateMessageId(),
+      role: 'assistant',
+      content,
+      timestamp: Date.now(),
+    }
+
+    const updated = [...messagesRef.current, newMessage]
+    messagesRef.current = updated
+    setMessages(updated)
+  }
+
+  return { messages, loading, error, sendMessage, addAssistantMessage }
 }

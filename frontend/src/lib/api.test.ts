@@ -27,6 +27,19 @@ describe('api', () => {
         context_window: 8192,
         working_directory: '/test',
         language: 'zh-CN',
+        base_url: 'https://api.openai.com/v1',
+        encrypted_api_key: '',
+        model_name: 'gpt-4',
+        system_prompt: '你是一个有帮助的 AI 助手。',
+        temperature: 0.7,
+        close_behavior: 'ask',
+        close_remembered: false,
+        window_x: 100,
+        window_y: 100,
+        window_width: 1200,
+        window_height: 800,
+        sidebar_visible: true,
+        sidebar_view: 'conversation',
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: mockSettings, timestamp: 123, request_id: 'uuid' })
@@ -64,6 +77,19 @@ describe('api', () => {
         context_window: 4096,
         working_directory: '',
         language: 'en-US',
+        base_url: 'https://api.openai.com/v1',
+        encrypted_api_key: '',
+        model_name: 'gpt-4',
+        system_prompt: '你是一个有帮助的 AI 助手。',
+        temperature: 0.7,
+        close_behavior: 'ask',
+        close_remembered: false,
+        window_x: 100,
+        window_y: 100,
+        window_width: 1200,
+        window_height: 800,
+        sidebar_visible: true,
+        sidebar_view: 'conversation',
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: null, timestamp: 123, request_id: 'uuid' })
@@ -153,6 +179,54 @@ describe('api', () => {
       )
 
       await expect(saveConversation([])).rejects.toThrow('Failed to save')
+    })
+  })
+
+  describe('saveApiKey', () => {
+    it('sends PUT request with api_key and password', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse({ code: 0, message: 'success', data: null, timestamp: 123, request_id: 'uuid' })
+      )
+
+      const { saveApiKey } = await import('@/lib/api')
+      await saveApiKey('sk-test-key-12345', 'StrongPass1')
+
+      expect(mockFetch).toHaveBeenCalledWith('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: 'sk-test-key-12345', password: 'StrongPass1' }),
+        signal: expect.any(AbortSignal),
+      })
+    })
+
+    it('throws error when backend returns non-zero code', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse({ code: 1001, message: 'password is required', data: null, timestamp: 123, request_id: 'uuid' }, false, 400)
+      )
+
+      const { saveApiKey } = await import('@/lib/api')
+      await expect(saveApiKey('sk-test-key-12345', '')).rejects.toThrow('password is required')
+    })
+
+    it('throws error with backend message when backend returns error', async () => {
+      // 注意：fetchWithTimeout 在 response.ok=false 时会优先抛出 HTTP 错误
+      // 只有当 response.ok=true 但 code!=0 时，才会使用后端 message
+      const errorResponse = {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 2001, message: '', data: null, timestamp: 123, request_id: 'uuid' }),
+      } as unknown as Response
+      mockFetch.mockResolvedValue(errorResponse)
+
+      const { saveApiKey } = await import('@/lib/api')
+      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('保存 API Key 失败')
+    })
+
+    it('throws error on network failure', async () => {
+      mockFetch.mockRejectedValue(new Error('Network error'))
+
+      const { saveApiKey } = await import('@/lib/api')
+      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('Network error')
     })
   })
 

@@ -10,9 +10,9 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 由此衍生出几个不可妥协的原则：
 
-- **防呆第一。** 任何可能让用户陷入不可恢复状态的设计，不管多优雅，直接否决。
+- **防呆第一。** 任何可能让用户陷入不可恢复状态的设计，直接否决。
 - **安全优先于功能。** 危险操作默认拦截。用户可以覆盖，但必须主动、有意识地选择。
-- **永远可恢复。** 文件被修改或删除前，系统自动备份。一键撤销。
+- **永远可恢复。** 
 
 ## 当前状态
 
@@ -46,55 +46,6 @@ flowpartner/
 └── README.md           # 本文件
 ```
 
-## 本地运行
-
-### 前置要求
-
-- Go 1.26+
-- Node.js 22+
-- npm 10+
-
-### 后端
-
-```bash
-cd backend && go run cmd/server/main.go
-```
-
-### 前端（浏览器开发模式）
-
-```bash
-cd frontend && npm install && npm run dev
-```
-
-### 前端（桌面开发模式）
-
-```bash
-# 终端 1：启动 Go 后端
-cd backend && FP_DEV_MODE=true go run cmd/server/main.go
-
-# 终端 2：启动 Electron
-cd frontend && npm run dev:electron
-```
-
-### 生产构建
-
-```bash
-# 构建前端 + 编译 Go 二进制 + 打包安装程序
-make build-electron
-```
-
-## 运行测试
-
-```bash
-# 全量测试（backend + frontend）
-make test-all
-
-# 仅后端
-cd backend && go test ./...
-
-# 仅前端
-cd frontend && npm run test
-```
 
 ## 贡献
 
@@ -103,7 +54,3 @@ cd frontend && npm run test
 ## 安全
 
 参见 [SECURITY.md](./SECURITY.md) 了解安全政策和漏洞报告方式。
-
-## 许可证
-
-[MIT](./LICENSE) © 2026 SongHuang
