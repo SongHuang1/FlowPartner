@@ -1,11 +1,11 @@
 """Agent 调度层 - HTTP 服务（不持有 API Key）"""
 
-import json
-import sys
 import argparse
-import socket
+import json
 import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import socket
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 DEFAULT_PORT = 8989
 MAX_PORT = 8999
@@ -52,7 +52,7 @@ class AgentHandler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(content_length))
         except json.JSONDecodeError as e:
-            self._send_json(400, {"error": f"Invalid JSON: {str(e)}"})
+            self._send_json(400, {"error": f"Invalid JSON: {e!s}"})
             return
 
         user_message = body.get("content", "")
@@ -70,7 +70,7 @@ class AgentHandler(BaseHTTPRequestHandler):
                 conversation_history=conversation_history,
             )
             self._send_json(200, llm_params)
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             error_msg = str(e)
             if "Bearer " in error_msg or "api_key" in error_msg.lower():
                 error_msg = "LLM 请求构建失败"
@@ -86,9 +86,9 @@ class AgentHandler(BaseHTTPRequestHandler):
 
     def _build_llm_request(self, user_message, model_name, system_prompt,
                            temperature, conversation_history):
-        is_safe, matched = self._validate_system_prompt(system_prompt)
+        is_safe, _ = self._validate_system_prompt(system_prompt)
         if not is_safe:
-            raise ValueError(f"系统提示词包含不安全内容，已被拦截")
+            raise ValueError("系统提示词包含不安全内容，已被拦截")
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history)

@@ -3,13 +3,13 @@
 import json
 import os
 import socket
+import sys
 import tempfile
 import threading
 import unittest
 from http.server import HTTPServer
 from unittest.mock import patch
 
-import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from main import AgentHandler, find_free_port, write_port_file
@@ -55,28 +55,26 @@ class TestWritePortFile(unittest.TestCase):
 
     def test_write_port_file_creates_file(self):
         """验证写入端口文件"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("main.os.path.expanduser", return_value=tmpdir):
-                write_port_file(9999)
+        with tempfile.TemporaryDirectory() as tmpdir, patch("main.os.path.expanduser", return_value=tmpdir):
+            write_port_file(9999)
 
-                port_file = os.path.join(tmpdir, "agent.port")
-                self.assertTrue(os.path.exists(port_file))
+            port_file = os.path.join(tmpdir, "agent.port")
+            self.assertTrue(os.path.exists(port_file))
 
-                with open(port_file, "r") as f:
-                    content = f.read()
-                self.assertEqual(content, "9999")
+            with open(port_file, "r") as f:
+                content = f.read()
+            self.assertEqual(content, "9999")
 
     def test_write_port_file_overwrites(self):
         """验证覆盖已有端口文件"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("main.os.path.expanduser", return_value=tmpdir):
-                write_port_file(1111)
-                write_port_file(2222)
+        with tempfile.TemporaryDirectory() as tmpdir, patch("main.os.path.expanduser", return_value=tmpdir):
+            write_port_file(1111)
+            write_port_file(2222)
 
-                port_file = os.path.join(tmpdir, "agent.port")
-                with open(port_file, "r") as f:
-                    content = f.read()
-                self.assertEqual(content, "2222")
+            port_file = os.path.join(tmpdir, "agent.port")
+            with open(port_file, "r") as f:
+                content = f.read()
+            self.assertEqual(content, "2222")
 
     def test_write_port_file_creates_directory(self):
         """验证自动创建目录"""
@@ -220,13 +218,13 @@ class TestAgentHandlerAuth(unittest.TestCase):
     def test_post_chat_without_auth(self):
         """验证无认证头返回 401"""
         AgentHandler.AUTH_TOKEN = "test-token"
-        code, body = self._post("/chat", {"content": "hi"})
+        code, _ = self._post("/chat", {"content": "hi"})
         self.assertEqual(code, 401)
 
     def test_post_chat_wrong_auth(self):
         """验证错误认证头返回 401"""
         AgentHandler.AUTH_TOKEN = "test-token"
-        code, body = self._post("/chat", {"content": "hi"}, {"Authorization": "Bearer wrong-token"})
+        code, _ = self._post("/chat", {"content": "hi"}, {"Authorization": "Bearer wrong-token"})
         self.assertEqual(code, 401)
 
     def test_post_chat_correct_auth(self):
@@ -241,13 +239,13 @@ class TestAgentHandlerAuth(unittest.TestCase):
     def test_post_wrong_path(self):
         """验证错误路径返回 404"""
         AgentHandler.AUTH_TOKEN = "test-token"
-        code, body = self._post("/wrong", {"content": "hi"}, {"Authorization": "Bearer test-token"})
+        code, _ = self._post("/wrong", {"content": "hi"}, {"Authorization": "Bearer test-token"})
         self.assertEqual(code, 404)
 
     def test_post_wrong_content_type(self):
         """验证错误 Content-Type 返回 400"""
         AgentHandler.AUTH_TOKEN = "test-token"
-        code, body = self._post("/chat", {"content": "hi"}, {"Authorization": "Bearer test-token", "Content-Type": "text/plain"})
+        code, _ = self._post("/chat", {"content": "hi"}, {"Authorization": "Bearer test-token", "Content-Type": "text/plain"})
         self.assertEqual(code, 400)
 
     def test_post_invalid_json(self):
@@ -293,7 +291,7 @@ class TestAgentHandlerAuth(unittest.TestCase):
     def test_post_missing_content(self):
         """验证缺少 content 字段（使用默认值空字符串）"""
         AgentHandler.AUTH_TOKEN = "test-token"
-        code, body = self._post("/chat", {}, {"Authorization": "Bearer test-token", "Content-Type": "application/json"})
+        code, _ = self._post("/chat", {}, {"Authorization": "Bearer test-token", "Content-Type": "application/json"})
         self.assertEqual(code, 200)
 
     def test_post_custom_model_name(self):
