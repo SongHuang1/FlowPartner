@@ -93,9 +93,7 @@ class TestBuildLLMRequest(unittest.TestCase):
     def _make_handler(self):
         """创建一个 AgentHandler 实例（不通过 HTTP）"""
         # 使用测试服务器创建 handler
-        server = HTTPServer(("127.0.0.1", 0), AgentHandler)
-        handler = server.get_request()[1]
-        server.server_close()
+        handler = AgentHandler.__new__(AgentHandler)
         return handler
 
     def test_build_llm_request_basic(self):
