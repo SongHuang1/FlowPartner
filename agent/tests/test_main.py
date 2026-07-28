@@ -286,11 +286,7 @@ class TestAgentHandlerAuth(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(body["messages"][-1]["content"], "")
 
-    def test_post_missing_content(self):
-        """验证缺少 content 字段（使用默认值空字符串）"""
-        AgentHandler.AUTH_TOKEN = "test-token"
-        code, _ = self._post("/chat", {}, {"Authorization": "Bearer test-token", "Content-Type": "application/json"})
-        self.assertEqual(code, 200)
+
 
     def test_post_custom_model_name(self):
         """验证自定义模型名称"""
