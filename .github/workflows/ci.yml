@@ -72,14 +72,35 @@ jobs:
         env:
           CI: true
   
-  # build-agent:
-  #   runs-on: unbuntu-latest
-  #   defaults:
-  #     run:
-  #       working-directory: agent
+  build-agent:
+    runs-on: unbuntu-latest
+    defaults:
+      run:
+        working-directory: agent
       
-  #   steps:
-  #     - uses: actions/setup-python@v7
+    steps:
+      - uses: actions/checkout@v7
     
-  #     - name: 
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with: 
+          python-version-file: .python-version
+      
+      - name: Install uv
+        run: pip install uv
+      
+      - name: Install Dependencies
+        run: uv sync --frozen
+      
+      - name: Lint
+        run: uv run ruff check .
+      
+      - name: Type check
+        run: uv run mypy .
+      
+      - name: Run tests
+        run: uv run pytest -v --cov=.
+        env:
+          CI: true
+      
       
