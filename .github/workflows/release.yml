@@ -30,7 +30,7 @@ jobs:
             go_arch: arm64
             arch: arm64
             ext: .exe
-          - platform: macos-14
+          - platform: macos-latest
             go_os: darwin
             go_arch: amd64
             arch: x64
@@ -55,16 +55,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26'
           cache-dependency-path: backend/go.sum
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -102,7 +102,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.go_os }}-${{ matrix.go_arch }}
           path: |
@@ -122,10 +122,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: false
@@ -134,7 +134,7 @@ jobs:
         run: find artifacts -type f | sort
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name || github.event.inputs.tag }}
           name: FlowPartner ${{ github.ref_name || github.event.inputs.tag }}
