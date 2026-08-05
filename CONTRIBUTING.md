@@ -89,7 +89,7 @@ We use the following format:
 <type>(<scope>): <subject>
 ```
 
-**Types:** `feat`, `fix`, `docs`, `test`, `style`, `refactor`, `perf`, `chore`
+**Types:** `feat`, `fix`, `docs`, `test`, `style`, `refactor`, `perf`, `chore` and so on
 
 **Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, and so on
 
