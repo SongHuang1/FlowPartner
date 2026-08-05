@@ -17,6 +17,7 @@ Before creating a bug report, please check the existing issues to avoid duplicat
 - Expected behavior vs actual behavior
 - Your environment (OS, Go version, Node version)
 - Any relevant logs or screenshots
+- **Attention** please! Your issue will not be processed if the issue is made by AI Agents.
 
 ### Suggesting Features
 
@@ -28,12 +29,13 @@ Feature requests are welcome. Please open an issue and describe:
 
 ### Pull Requests
 
-1. Fork the repository and create your branch from `develop`
+1. Fork the repository and create your branch from `main`
 2. Make your changes
 3. Add or update tests as needed
 4. Ensure all tests pass (`make test-all`)
-5. Update documentation if needed
-6. Submit a pull request to the `develop` branch
+5. Check if CI/CD (if needed) pass
+6. Update documentation if needed
+7. Submit a pull request to the `develop` branch
 
 ## Development Setup
 
@@ -87,18 +89,17 @@ We use the following format:
 <type>(<scope>): <subject>
 ```
 
-**Types:** `feat`, `fix`, `refactor`, `security`, `docs`, `test`
+**Types:** `feat`, `fix`, `docs`, `test`, `style`, `refactor`, `perf`, `chore`
 
-**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`
+**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, and so on
 
 Example: `feat(go): add health check endpoint`
 
 ## Branch Strategy
 
 - `main` — stable production code
-- `develop` — integration branch for features
-- Feature branches: `feature/<description>`
-- Bug fix branches: `fix/<description>`
+- Feature branches: `<description>`
+- Bug fix branches: `<description>`
 
 ## Questions?
 
