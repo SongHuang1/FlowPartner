@@ -9,7 +9,6 @@
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
 
-    /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -17,16 +16,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Composite for tsc -b */
     "composite": true,
 
-    /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
 
-    /* Path alias */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
