@@ -1,6 +1,6 @@
 name: Release
 
-# TODO: election-builder.yml gives us a better plan
+
 on:
   push:
     tags:
