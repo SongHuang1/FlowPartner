@@ -22,6 +22,7 @@ DANGEROUS_PATTERNS = [
 
 class AgentHandler(BaseHTTPRequestHandler):
     # 简单的共享密钥认证（Go 后端启动时生成，通过环境变量传入）
+    # 考虑一下这个步骤是否有必要，这是在main.cjs里面开始的
     AUTH_TOKEN = os.environ.get("AGENT_AUTH_TOKEN", "")
 
     def do_POST(self):
