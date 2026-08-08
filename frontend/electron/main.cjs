@@ -14,6 +14,7 @@ let isQuiting = false
 let agentAuthToken = null
 let cleanupDone = false
 
+// TODO: 本文件没有任何测试，需要添加
 function getBackendBinPath() {
   const exeName = process.platform === 'win32' ? 'flowpartner-backend.exe' : 'flowpartner-backend'
   return path.join(process.resourcesPath, 'bin', exeName)
