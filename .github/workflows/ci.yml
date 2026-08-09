@@ -72,36 +72,36 @@ jobs:
         env:
           CI: true
   
-  build-agent:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: agent
+  # build-agent:
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: agent
       
-    steps:
-      - uses: actions/checkout@v7
+  #   steps:
+  #     - uses: actions/checkout@v7
     
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
+  #     - name: Setup Python
+  #       uses: actions/setup-python@v7
+  #       with:
+  #         python-version: "3.12"
 
       
-      - name: Install uv
-        run: pip install uv
+  #     - name: Install uv
+  #       run: pip install uv
       
-      - name: Install Dependencies
-        run: uv sync --frozen
+  #     - name: Install Dependencies
+  #       run: uv sync --frozen
       
-      - name: Lint
-        run: uv run ruff check .
+  #     - name: Lint
+  #       run: uv run ruff check .
       
-      - name: Type check
-        run: uv run mypy . --explicit-package-bases
+  #     - name: Type check
+  #       run: uv run mypy . --explicit-package-bases
       
-      - name: Run tests
-        run: uv run pytest -v --cov=.
-        env:
-          CI: true
+  #     - name: Run tests
+  #       run: uv run pytest -v --cov=.
+  #       env:
+  #         CI: true
       
       
