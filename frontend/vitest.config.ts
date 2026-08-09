@@ -33,5 +33,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'electron/__tests__/**/*.{test,spec}.ts'],
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: process.env.SINGLE_FORK === 'true', // 默认 false
+      },
+    },
   },
 })

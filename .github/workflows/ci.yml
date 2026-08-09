@@ -63,7 +63,7 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        run: npm run test -- --run --pool=forks --poolOptions.forks.singleFork
+        run: npm run test -- --run
         env:
           CI: true
 
