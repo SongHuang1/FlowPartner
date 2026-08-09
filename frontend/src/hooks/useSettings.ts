@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { Settings } from '@/types'
 import { getSettings, saveSettings } from '@/lib/api'
 
+// TODO: 这怎么能直接写入呢……这个得改成setting文件
 export function DefaultSettings(): Settings {
   return {
     model: 'gpt-4',

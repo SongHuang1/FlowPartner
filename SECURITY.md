@@ -4,7 +4,7 @@ FlowPartner is a safety-focused AI Agent desktop application. Our security model
 
 ## Current Status
 
-**No code is deployed yet.** This project is in the design and early development phase. There is no running service, no user data, and no attack surface to speak of.
+This project is in the design and early development phase. 
 
 ## OurSecurity Philosophy
 
@@ -16,7 +16,7 @@ FlowPartner's core premise is that non-technical users tend to trust AI too much
 
 ## Reporting a Security Issue
 
-Once the project reaches a deployable state, we will accept security reports. For now, if you've found a design vulnerability, please open a GitHub issue or contact the maintainer directly.
+If you find a security vulnerability, please use the **"Report a vulnerability"** button on the Issues page. This creates a private issue that only you and the maintainers can see.
 
 ## Future Scope
 

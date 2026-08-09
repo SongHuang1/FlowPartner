@@ -14,10 +14,8 @@ let isQuiting = false
 let agentAuthToken = null
 let cleanupDone = false
 
+// TODO: 本文件没有任何测试，需要添加
 function getBackendBinPath() {
-  if (process.env.FP_BINARY_PATH) {
-    return process.env.FP_BINARY_PATH
-  }
   const exeName = process.platform === 'win32' ? 'flowpartner-backend.exe' : 'flowpartner-backend'
   return path.join(process.resourcesPath, 'bin', exeName)
 }
@@ -78,14 +76,14 @@ function startGoProcess(port) {
 
   goProcess.on('error', (err) => {
     if (!isQuiting) {
-      dialog.showErrorBox('启动失败', '开发环境未检测到 Go 编译器，请先安装 Go（https://go.dev/dl/）')
+      dialog.showErrorBox('Fail to find Golang', 'There is no Golang in the computer.')
       app.quit()
     }
   })
 
   goProcess.on('exit', (code) => {
     if (code !== 0 && !isQuiting) {
-      dialog.showErrorBox('后端异常退出', `Go 后端进程已退出，退出码：${code}`)
+      dialog.showErrorBox('Backend fail', `Go process has already exited, code: ${code}`)
     }
     goProcess = null
   })
@@ -111,25 +109,26 @@ function startPythonAgent() {
   }
 
   pythonProcess.stderr.on('data', (data) => {
-    process.stderr.write(`[Agent] ${data}`)
+    process.stderr.write(`[Python Agent] ${data}`)
   })
 
   pythonProcess.on('error', (err) => {
     if (err.code === 'ENOENT') {
-      dialog.showErrorBox('启动失败', '未检测到 Python，请先安装 Python 3.9 或更高版本。')
+      dialog.showErrorBox('Fail', 'Cannot find Python >= 3.9')
     } else if (!isQuiting) {
-      dialog.showErrorBox('Agent 启动失败', `无法启动 Python Agent：${err.message}`)
+      dialog.showErrorBox('Agent failed to startup', `Fail to startup Python Agent: ${err.message}`)
     }
   })
 
   pythonProcess.on('exit', (code) => {
     if (code !== 0 && !isQuiting) {
-      dialog.showErrorBox('Agent 异常退出', `Python Agent 已退出，退出码：${code}`)
+      dialog.showErrorBox('Agent abnormal termination', `Python Agent exited, code: ${code}`)
     }
     pythonProcess = null
   })
 }
 
+// TODO: 这个代码是没有windows的安全退出的
 function stopPythonAgent() {
   if (!pythonProcess) return Promise.resolve()
   return new Promise((resolve) => {
@@ -175,6 +174,7 @@ function waitForReady(timeoutMs) {
   })
 }
 
+// TODO: 这个代码需要和python的退出一起解决
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
@@ -202,7 +202,8 @@ function getDataPath() {
 }
 
 function getWindowState() {
-  const settingsPath = path.join(getDataPath(), 'settings.json')
+  const configPath = path.join(getDataPath(), 'config')
+  const settingsPath = path.join(configPath, 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -219,7 +220,8 @@ function getWindowState() {
 
 function saveWindowState(state) {
   try {
-    const settingsPath = path.join(getDataPath(), 'settings.json')
+    const configPath = path.join(getDataPath(), 'config')
+    const settingsPath = path.join(configPath, 'settings.json')
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
     if (state.window_x !== undefined) settings.window_x = state.window_x
@@ -232,11 +234,13 @@ function saveWindowState(state) {
     fs.renameSync(tmpPath, settingsPath)
   } catch (err) {
     console.error('Failed to save window state:', err)
+    // TODO: 这个部分可以专门写一个应用内报错的方案，现在只是在控制台写入错误
   }
 }
 
 function getCloseBehavior() {
-  const settingsPath = path.join(getDataPath(), 'settings.json')
+  const configPath = path.join(getDataPath(), 'config')
+  const settingsPath = path.join(configPath, 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -256,7 +260,7 @@ function showMainWindow() {
   } else if (goProcess && backendPort) {
     createWindow(backendPort)
   } else {
-    dialog.showErrorBox('后端已退出', '后端服务已停止运行，请重启应用。')
+    dialog.showErrorBox('Fail', 'Fail to start the app, please restart.')
   }
 }
 
@@ -270,14 +274,14 @@ async function quitAppWithCleanup() {
     const [width, height] = mainWindow.getSize()
 
     try {
-      const settingsPath = path.join(getDataPath(), 'settings.json')
+      const configPath = path.join(getDataPath(), 'config')
+      const settingsPath = path.join(configPath, 'settings.json')
       const data = fs.readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(data)
       settings.window_x = x
       settings.window_y = y
       settings.window_width = width
       settings.window_height = height
-      // 原子写入：先写临时文件再 rename，防止写入过程中进程被杀导致文件损坏
       const tmpPath = settingsPath + '.tmp'
       fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2))
       fs.renameSync(tmpPath, settingsPath)
@@ -297,10 +301,6 @@ async function quitAppWithCleanup() {
   app.quit()
 }
 
-function quitApp() {
-  isQuiting = true
-  app.quit()
-}
 
 function createWindow(port) {
   const state = getWindowState()
@@ -479,7 +479,7 @@ app.whenReady().then(async () => {
     createApplicationMenu()
     setupPowerMonitor()
   } catch (err) {
-    dialog.showErrorBox('启动失败', `初始化失败：${err.message}`)
+    dialog.showErrorBox('Fail', `Fail to start: ${err.message}`)
     app.quit()
     return
   }
@@ -513,7 +513,7 @@ app.whenReady().then(async () => {
     const readyPort = await waitForReady(10000)
     createWindow(readyPort)
   } catch (err) {
-    dialog.showErrorBox('启动失败', '无法启动后端服务，请重启应用。')
+    dialog.showErrorBox('Fail', 'Fail to start golang backend.')
     app.quit()
   }
 })
