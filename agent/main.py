@@ -10,15 +10,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 DEFAULT_PORT = 8989
 MAX_PORT = 8999
 
-# 危险指令黑名单（system prompt 内容校验）
-DANGEROUS_PATTERNS = [
-    "忽略安全限制", "忽略之前的指令", "忽略所有规则", "忽略安全策略",
-    "删除文件", "格式化硬盘", "清除数据", "rm -rf",
-    "ignore safety", "ignore previous", "ignore all rules", "ignore security",
-    "delete file", "format disk", "wipe data",
-    "bypass security", "override safety", "disable safety",
-]
 
+# TODO: 应当增加对于异常的tool调用的拦截
 
 class AgentHandler(BaseHTTPRequestHandler):
     # 简单的共享密钥认证（Go 后端启动时生成，通过环境变量传入）
@@ -77,29 +70,12 @@ class AgentHandler(BaseHTTPRequestHandler):
                 error_msg = "LLM 请求构建失败"
             self._send_json(500, {"error": error_msg})
 
-    def _validate_system_prompt(self, prompt):
-        """校验 system prompt 是否包含危险指令，返回 (是否安全, 匹配到的模式)"""
-        prompt_lower = prompt.lower()
-        for pattern in DANGEROUS_PATTERNS:
-            if pattern.lower() in prompt_lower:
-                return False, pattern
-        return True, None
+
 
     def _build_llm_request(self, user_message, model_name, system_prompt,
                            temperature, conversation_history):
-        is_safe, _ = self._validate_system_prompt(system_prompt)
-        if not is_safe:
-            raise ValueError("系统提示词包含不安全内容，已被拦截")
+        pass
 
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(conversation_history)
-        messages.append({"role": "user", "content": user_message})
-
-        return {
-            "model": model_name,
-            "messages": messages,
-            "temperature": temperature,
-        }
 
     def _send_json(self, status, data):
         self.send_response(status)
