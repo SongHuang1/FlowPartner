@@ -236,7 +236,6 @@ dist/
 # --- Frontend Vite template files ---
 frontend/.oxlintrc.json
 frontend/README.md
-frontend/src/App.css
 frontend/src/assets/
 
 # --- Electron ---

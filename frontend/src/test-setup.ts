@@ -6,8 +6,6 @@ if (!HTMLElement.prototype.scrollTo) {
   HTMLElement.prototype.scrollTo = vi.fn()
 }
 
-afterEach(() => {
-  cleanup()
-})
+afterEach(cleanup)
 
 export {}
