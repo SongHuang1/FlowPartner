@@ -97,12 +97,12 @@ function startPythonAgent() {
   safeEnv.AGENT_AUTH_TOKEN = agentAuthToken
 
   if (isDev) {
-    pythonProcess = spawn('python', ['agent/main.py'], {
+    pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
       cwd: path.join(__dirname, '..', '..'),
       env: safeEnv,
     })
   } else {
-    pythonProcess = spawn('python', ['agent/main.py'], {
+    pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
       cwd: process.resourcesPath,
       env: safeEnv,
     })
