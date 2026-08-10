@@ -1,191 +1,56 @@
 ﻿package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"path"
-	"path/filepath"
-	"strings"
 	"syscall"
-	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/config"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
-	"github.com/songhuang/flowpartner/backend/internal/response"
+	"github.com/songhuang/flowpartner/backend/proto"
+	"google.golang.org/grpc"
 )
 
 func main() {
-	cfg := config.Load()
-
-	mux := setupRoutes(cfg)
-
-	server := &http.Server{
-		Addr:    cfg.HTTPPort,
-		Handler: mux,
-	}
-
-	serverErr := make(chan error, 1)
-
-	listener, err := net.Listen("tcp", cfg.HTTPPort)
+	// 1. 监听 TCP 端口 (50051 是 Python 端配置的端口)
+	// TODO: 动态获取端口功能
+	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		log.Fatalf("Failed to bind %s: %v", cfg.HTTPPort, err)
+		log.Fatalf("Failed to listen on port 50051: %v", err)
 	}
 
-	log.Printf("HTTP server starting on %s", cfg.HTTPPort)
+	// 2. 创建 gRPC Server
+	grpcServer := grpc.NewServer()
 
+	// 3. 注册我们的 Handler
+	agentHandler := &handler.AgentHandler{}
+	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
+
+	// 4. 通知 Electron (或终端) 后端已就绪
 	fmt.Fprintln(os.Stderr, "__FP_BACKEND_READY__")
+	log.Println(" gRPC server starting on :50051")
 
+	// 5. 启动 Server (非阻塞，放入协程)
+	errChan := make(chan error, 1)
 	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			serverErr <- err
-			return
+		if err := grpcServer.Serve(lis); err != nil {
+			errChan <- err
 		}
-		close(serverErr)
 	}()
 
+	// 6. 优雅退出逻辑 (监听 Ctrl+C 或系统 kill 信号)
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
-	case err := <-serverErr:
-		log.Fatalf("HTTP server error: %v", err)
+	case err := <-errChan:
+		log.Fatalf("gRPC server error: %v", err)
 	case sig := <-quit:
-		log.Printf("Received signal %v, shutting down server...", sig)
+		log.Printf("Received signal %v, gracefully shutting down gRPC server...", sig)
+		grpcServer.GracefulStop() // 优雅关闭，处理完当前连接再退出
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
 	log.Println("Server exited")
-}
-
-// TODO(step4+): 加入 stdin EOF 检测，实现优雅退出（读取 stdin，收到 EOF 时调用 server.Shutdown）
-
-// setupRoutes 配置所有 HTTP 路由，返回 handler
-func setupRoutes(cfg *config.Config) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.DevMode {
-			http.NotFound(w, r)
-			return
-		}
-		serveSPA(w, r, cfg.FrontendDir)
-	})
-
-	settingsHandler := &handler.SettingsHandler{}
-	conversationHandler := &handler.ConversationHandler{}
-	unlockHandler := &handler.UnlockHandler{}
-	chatHandler := &handler.ChatHandler{}
-
-	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			settingsHandler.Get(w, r)
-		case http.MethodPut:
-			settingsHandler.Put(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/settings/clear_api_key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			settingsHandler.ClearAPIKey(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/conversation", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			conversationHandler.Get(w, r)
-		case http.MethodPost:
-			conversationHandler.Post(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/unlock", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			unlockHandler.Post(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/lock", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			unlockHandler.Lock(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/lock_status", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			unlockHandler.Status(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			chatHandler.Post(w, r)
-		default:
-			notImplementedHandler(w, r)
-		}
-	})
-	mux.HandleFunc("/api/not-implemented", notImplementedHandler)
-
-	return mux
-}
-
-func serveSPA(w http.ResponseWriter, r *http.Request, frontendDir string) {
-	cleanPath := path.Clean(r.URL.Path)
-
-	if strings.HasPrefix(cleanPath, "/api/") {
-		notImplementedHandler(w, r)
-		return
-	}
-
-	if cleanPath == "/health" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
-		return
-	}
-
-	if strings.HasPrefix(cleanPath, "/assets/") {
-		http.FileServer(http.Dir(frontendDir)).ServeHTTP(w, r)
-		return
-	}
-
-	fullPath := filepath.Join(frontendDir, cleanPath)
-	if _, err := os.Stat(fullPath); err == nil {
-		http.ServeFile(w, r, fullPath)
-		return
-	}
-
-	indexPath := filepath.Join(frontendDir, "index.html")
-	http.ServeFile(w, r, indexPath)
-}
-
-func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
-	response.WriteJSON(w, http.StatusNotImplemented, response.Error(response.CodeNotImplemented, "API not implemented yet"))
 }
