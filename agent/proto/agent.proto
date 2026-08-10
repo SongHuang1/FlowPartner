@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package flowpartner;
+
+// 这些数据都不能进行硬编码，暂时先这样吧
+message RegisterRequest {
+    string agent_version = 1;
+    string workspace_path = 2;
+}
+
+message RegisterResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// 定义 Agent 提交任务执行结果的接口
+message TaskResult {
+    string task_id = 1;
+    bool success = 2;
+    string message = 3;
+    string result_data = 4;
+}
+
+message SubmitResponse {
+    bool received = 1;
+}
+
+// 定义 Go Server 提供的服务 (Agent 作为 Client 来调用)
+service FlowPartnerService {
+    // Agent 启动时调用，告诉 Go 自己准备好了
+    rpc RegisterAgent (RegisterRequest) returns (RegisterResponse);
+    
+    // Agent 完成任务后调用，把结果给 Go
+    rpc SubmitResult (TaskResult) returns (SubmitResponse);
+}
