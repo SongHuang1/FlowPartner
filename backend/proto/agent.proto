@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
+package flowpartner;
+
+// --- 消息定义 ---
+message RegisterRequest {
+    string agent_version = 1;
+    string workspace_path = 2;
+}
+
+message RegisterResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Go 下发给 Agent 的任务
+message TaskCommand {
+    string task_id = 1;
+    string task_type = 2; // 比如 "chat_completion", "rpa_click"
+    string payload = 3;    // 任务的具体参数 (JSON 字符串)
+}
+
+message TaskResult {
+    string task_id = 1;
+    bool success = 2;
+    string message = 3;
+    string result_data = 4;
+}
+
+message SubmitResponse {
+    bool received = 1;
+}
+
+// --- 服务定义 ---
+service FlowPartnerService {
+    // 1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
+    rpc ReceiveTasks (RegisterRequest) returns (stream TaskCommand);
+    
+    // 2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
+    rpc SubmitResult (TaskResult) returns (SubmitResponse);
+}
