@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class FlowPartnerServiceStub:
-    """定义 Go Server 提供的服务 (Agent 作为 Client 来调用)
+    """--- 服务定义 ---
     """
 
     def __init__(self, channel):
@@ -35,10 +35,10 @@ class FlowPartnerServiceStub:
         Args:
             channel: A grpc.Channel.
         """
-        self.RegisterAgent = channel.unary_unary(
-                '/flowpartner.FlowPartnerService/RegisterAgent',
+        self.ReceiveTasks = channel.unary_stream(
+                '/flowpartner.FlowPartnerService/ReceiveTasks',
                 request_serializer=agent__pb2.RegisterRequest.SerializeToString,
-                response_deserializer=agent__pb2.RegisterResponse.FromString,
+                response_deserializer=agent__pb2.TaskCommand.FromString,
                 _registered_method=True)
         self.SubmitResult = channel.unary_unary(
                 '/flowpartner.FlowPartnerService/SubmitResult',
@@ -48,18 +48,18 @@ class FlowPartnerServiceStub:
 
 
 class FlowPartnerServiceServicer:
-    """定义 Go Server 提供的服务 (Agent 作为 Client 来调用)
+    """--- 服务定义 ---
     """
 
-    def RegisterAgent(self, request, context):
-        """Agent 启动时调用，告诉 Go 自己准备好了
+    def ReceiveTasks(self, request, context):
+        """1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def SubmitResult(self, request, context):
-        """Agent 完成任务后调用，把结果给 Go
+        """2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -68,10 +68,10 @@ class FlowPartnerServiceServicer:
 
 def add_FlowPartnerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'RegisterAgent': grpc.unary_unary_rpc_method_handler(
-                    servicer.RegisterAgent,
+            'ReceiveTasks': grpc.unary_stream_rpc_method_handler(
+                    servicer.ReceiveTasks,
                     request_deserializer=agent__pb2.RegisterRequest.FromString,
-                    response_serializer=agent__pb2.RegisterResponse.SerializeToString,
+                    response_serializer=agent__pb2.TaskCommand.SerializeToString,
             ),
             'SubmitResult': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitResult,
@@ -87,11 +87,11 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class FlowPartnerService:
-    """定义 Go Server 提供的服务 (Agent 作为 Client 来调用)
+    """--- 服务定义 ---
     """
 
     @staticmethod
-    def RegisterAgent(request,
+    def ReceiveTasks(request,
             target,
             options=(),
             channel_credentials=None,
@@ -101,12 +101,12 @@ class FlowPartnerService:
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
+        return grpc.experimental.unary_stream(
             request,
             target,
-            '/flowpartner.FlowPartnerService/RegisterAgent',
+            '/flowpartner.FlowPartnerService/ReceiveTasks',
             agent__pb2.RegisterRequest.SerializeToString,
-            agent__pb2.RegisterResponse.FromString,
+            agent__pb2.TaskCommand.FromString,
             options,
             channel_credentials,
             insecure,

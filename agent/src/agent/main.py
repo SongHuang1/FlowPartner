@@ -1,27 +1,31 @@
 import logging
+import asyncio
 from pathlib import Path
+from grpc_client import FlowPartnerClient
 
-# 配置标准日志，正规项目必备
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 def init_workspace():
-    """初始化 .flowpartner 工作目录"""
     home_dir = Path.home()
     workspace_dir = home_dir / ".flowpartner"
-
     if not workspace_dir.exists():
         workspace_dir.mkdir()
-        logging.info(f"已创建 workspace 目录: {workspace_dir}")
-    else:
-        logging.info(f"workspace 目录已存在: {workspace_dir}")
+    return str(workspace_dir)
 
-    return workspace_dir
-
-if __name__ == "__main__":
+async def main():
     logging.info("Agent 启动中...")
     workspace = init_workspace()
-    
     logging.info(f"Agent 初始化完成，工作目录为: {workspace}")
+
+    # 启动 gRPC 客户端 (目前 Go 还没写好 Server，所以连接会失败，这是预期的)
+    client = FlowPartnerClient(workspace_path=workspace)
+    await client.connect_and_listen()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Agent 收到退出信号，正在关闭...")
