@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/songhuang/flowpartner/backend/proto"
@@ -60,8 +62,65 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 	}
 }
 
-// CallLLM 保持之前的 Mock 实现
 func (h *AgentHandler) CallLLM(ctx context.Context, req *proto.LLMRequest) (*proto.LLMResponse, error) {
-	// ... (保持之前的 mock 代码不变，或者留空)
-	return &proto.LLMResponse{Success: true, JsonResponse: `{"mock": true}`}, nil
+	log.Printf("[CallLLM] Session: %s, Payload 长度: %d", req.SessionId, len(req.JsonPayload))
+
+	// 解析 Python 发来的 Payload，检查是否包含 messages
+	var payload map[string]interface{}
+	json.Unmarshal([]byte(req.JsonPayload), &payload)
+
+	messages, _ := payload["messages"].([]interface{})
+
+	// 模拟智能行为：
+	// - 如果消息列表中只有 user 消息（第一轮），返回 tool_call 让 Python 去读文件
+	// - 如果消息列表中已经有 tool 结果（第二轮），返回最终回答
+	hasToolResult := false
+	for _, msg := range messages {
+		if m, ok := msg.(map[string]interface{}); ok {
+			if role, _ := m["role"].(string); role == "tool" {
+				hasToolResult = true
+				break
+			}
+		}
+	}
+
+	var mockResponse string
+	if !hasToolResult {
+		// 第一轮：要求调用 read_file 工具
+		mockResponse = `{
+			"choices": [{
+				"message": {
+					"role": "assistant",
+					"content": null,
+					"tool_calls": [{
+						"id": "call_mock_01",
+						"type": "function",
+						"function": {
+							"name": "read_file",
+							"arguments": "{\"path\": \"` + strings.ReplaceAll(req.SessionId, `"`, `\"`) + `.txt\"}"
+						}
+					}]
+				},
+				"finish_reason": "tool_calls"
+			}]
+		}`
+		log.Println("[CallLLM] 返回: tool_call (read_file)")
+	} else {
+		// 第二轮：给出最终回答
+		mockResponse = `{
+			"choices": [{
+				"message": {
+					"role": "assistant",
+					"content": "我已经读取了文件内容，这是最终回答。"
+				},
+				"finish_reason": "stop"
+			}]
+		}`
+		log.Println("[CallLLM] 返回: final_answer")
+	}
+
+	return &proto.LLMResponse{
+		Success:      true,
+		JsonResponse: mockResponse,
+	}, nil
 }
