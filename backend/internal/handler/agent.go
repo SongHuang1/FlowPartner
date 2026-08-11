@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -22,13 +25,19 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 	// 开启一个协程，模拟 Go 主动向 Python 下发“开始对话”的指令
 	go func() {
 		time.Sleep(3 * time.Second) // 等待连接稳定
-		mockSessionID := "sess_from_go_12345"
+
+		// 生成高随机、不可预测的 Session ID
+		// 格式: sess_纳秒级时间戳_32位随机十六进制字符串
+		b := make([]byte, 16) // 16字节 = 32个十六进制字符
+		rand.Read(b)
+		realSessionID := fmt.Sprintf("sess_%d_%s", time.Now().UnixNano(), hex.EncodeToString(b))
+
 		cmd := &proto.ServerCommand{
-			SessionId:   mockSessionID,
+			SessionId:   realSessionID,
 			CommandType: "start_chat",
 			Payload:     `{"user_message": "帮我看看今天的天气"}`,
 		}
-		log.Printf("[Go 下发指令] start_chat | Session: %s", mockSessionID)
+		log.Printf("[Go 下发指令] start_chat | Session: %s", realSessionID)
 		if err := stream.Send(cmd); err != nil {
 			log.Printf("发送指令失败: %v", err)
 		}
