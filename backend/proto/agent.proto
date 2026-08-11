@@ -2,38 +2,24 @@ syntax = "proto3";
 option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
 package flowpartner;
 
-// --- 消息定义 ---
-message RegisterRequest {
-    string agent_version = 1;
-    string workspace_path = 2;
+// --- 1. Python 发给 Go 的事件 (实时汇报) ---
+message AgentEvent {
+    string session_id = 1;
+    string event_type = 2; // 例如: "status_update", "tool_call", "llm_chunk", "final_answer", "error"
+    string payload = 3;    // JSON 格式的具体内容
 }
 
-message RegisterResponse {
-    bool success = 1;
-    string message = 2;
+// --- 2. Go 发给 Python 的指令 (下发任务) ---
+message ServerCommand {
+    string session_id = 1;
+    string command_type = 2; // 例如: "start_chat", "cancel_task"
+    string payload = 3;      // JSON 格式，包含用户提问、历史上下文等
 }
 
-message TaskCommand {
-    string task_id = 1;
-    string task_type = 2; 
-    string payload = 3;    
-}
-
-message TaskResult {
-    string task_id = 1;
-    bool success = 2;
-    string message = 3;
-    string result_data = 4;
-}
-
-message SubmitResponse {
-    bool received = 1;
-}
-
-// --- 新增：Agent 请求 Go 调用大模型 ---
+// --- 3. Agent 请求 Go 代为调用大模型 (保持同步调用，方便 Go 控制 API Key 和计费) ---
 message LLMRequest {
     string session_id = 1;
-    string json_payload = 2; // Python 组装好的完整请求体 (包含 messages, tools 等)
+    string json_payload = 2; // Python 组装好的完整请求体
 }
 
 message LLMResponse {
@@ -42,14 +28,11 @@ message LLMResponse {
     string json_response = 3; // 大模型返回的原始响应体
 }
 
-// --- 服务定义 ---
+// --- 4. 核心服务定义 ---
 service FlowPartnerService {
-    // 1. Go 主动下发任务 (Server Streaming)
-    rpc ReceiveTasks (RegisterRequest) returns (stream TaskCommand);
+    // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+    rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
     
-    // 2. Agent 提交最终任务结果 (Unary)
-    rpc SubmitResult (TaskResult) returns (SubmitResponse);
-
-    // 3. Agent 请求 Go 代为调用大模型 API (Unary)
+    // 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
     rpc CallLLM (LLMRequest) returns (LLMResponse);
 }

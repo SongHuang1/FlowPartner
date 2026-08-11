@@ -19,22 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	FlowPartnerService_ReceiveTasks_FullMethodName = "/flowpartner.FlowPartnerService/ReceiveTasks"
-	FlowPartnerService_SubmitResult_FullMethodName = "/flowpartner.FlowPartnerService/SubmitResult"
-	FlowPartnerService_CallLLM_FullMethodName      = "/flowpartner.FlowPartnerService/CallLLM"
+	FlowPartnerService_SyncChannel_FullMethodName = "/flowpartner.FlowPartnerService/SyncChannel"
+	FlowPartnerService_CallLLM_FullMethodName     = "/flowpartner.FlowPartnerService/CallLLM"
 )
 
 // FlowPartnerServiceClient is the client API for FlowPartnerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// --- 服务定义 ---
+// --- 4. 核心服务定义 ---
 type FlowPartnerServiceClient interface {
-	// 1. Go 主动下发任务 (Server Streaming)
-	ReceiveTasks(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskCommand], error)
-	// 2. Agent 提交最终任务结果 (Unary)
-	SubmitResult(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*SubmitResponse, error)
-	// 3. Agent 请求 Go 代为调用大模型 API (Unary)
+	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+	SyncChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentEvent, ServerCommand], error)
+	// 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
 	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error)
 }
 
@@ -46,34 +43,18 @@ func NewFlowPartnerServiceClient(cc grpc.ClientConnInterface) FlowPartnerService
 	return &flowPartnerServiceClient{cc}
 }
 
-func (c *flowPartnerServiceClient) ReceiveTasks(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskCommand], error) {
+func (c *flowPartnerServiceClient) SyncChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentEvent, ServerCommand], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &FlowPartnerService_ServiceDesc.Streams[0], FlowPartnerService_ReceiveTasks_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &FlowPartnerService_ServiceDesc.Streams[0], FlowPartnerService_SyncChannel_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[RegisterRequest, TaskCommand]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
+	x := &grpc.GenericClientStream[AgentEvent, ServerCommand]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type FlowPartnerService_ReceiveTasksClient = grpc.ServerStreamingClient[TaskCommand]
-
-func (c *flowPartnerServiceClient) SubmitResult(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*SubmitResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SubmitResponse)
-	err := c.cc.Invoke(ctx, FlowPartnerService_SubmitResult_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
+type FlowPartnerService_SyncChannelClient = grpc.BidiStreamingClient[AgentEvent, ServerCommand]
 
 func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -89,13 +70,11 @@ func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, 
 // All implementations must embed UnimplementedFlowPartnerServiceServer
 // for forward compatibility.
 //
-// --- 服务定义 ---
+// --- 4. 核心服务定义 ---
 type FlowPartnerServiceServer interface {
-	// 1. Go 主动下发任务 (Server Streaming)
-	ReceiveTasks(*RegisterRequest, grpc.ServerStreamingServer[TaskCommand]) error
-	// 2. Agent 提交最终任务结果 (Unary)
-	SubmitResult(context.Context, *TaskResult) (*SubmitResponse, error)
-	// 3. Agent 请求 Go 代为调用大模型 API (Unary)
+	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+	SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error
+	// 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
 	CallLLM(context.Context, *LLMRequest) (*LLMResponse, error)
 	mustEmbedUnimplementedFlowPartnerServiceServer()
 }
@@ -107,11 +86,8 @@ type FlowPartnerServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedFlowPartnerServiceServer struct{}
 
-func (UnimplementedFlowPartnerServiceServer) ReceiveTasks(*RegisterRequest, grpc.ServerStreamingServer[TaskCommand]) error {
-	return status.Error(codes.Unimplemented, "method ReceiveTasks not implemented")
-}
-func (UnimplementedFlowPartnerServiceServer) SubmitResult(context.Context, *TaskResult) (*SubmitResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SubmitResult not implemented")
+func (UnimplementedFlowPartnerServiceServer) SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error {
+	return status.Error(codes.Unimplemented, "method SyncChannel not implemented")
 }
 func (UnimplementedFlowPartnerServiceServer) CallLLM(context.Context, *LLMRequest) (*LLMResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CallLLM not implemented")
@@ -137,34 +113,12 @@ func RegisterFlowPartnerServiceServer(s grpc.ServiceRegistrar, srv FlowPartnerSe
 	s.RegisterService(&FlowPartnerService_ServiceDesc, srv)
 }
 
-func _FlowPartnerService_ReceiveTasks_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(RegisterRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(FlowPartnerServiceServer).ReceiveTasks(m, &grpc.GenericServerStream[RegisterRequest, TaskCommand]{ServerStream: stream})
+func _FlowPartnerService_SyncChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FlowPartnerServiceServer).SyncChannel(&grpc.GenericServerStream[AgentEvent, ServerCommand]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type FlowPartnerService_ReceiveTasksServer = grpc.ServerStreamingServer[TaskCommand]
-
-func _FlowPartnerService_SubmitResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskResult)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FlowPartnerServiceServer).SubmitResult(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FlowPartnerService_SubmitResult_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FlowPartnerServiceServer).SubmitResult(ctx, req.(*TaskResult))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+type FlowPartnerService_SyncChannelServer = grpc.BidiStreamingServer[AgentEvent, ServerCommand]
 
 func _FlowPartnerService_CallLLM_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(LLMRequest)
@@ -192,19 +146,16 @@ var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*FlowPartnerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SubmitResult",
-			Handler:    _FlowPartnerService_SubmitResult_Handler,
-		},
-		{
 			MethodName: "CallLLM",
 			Handler:    _FlowPartnerService_CallLLM_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "ReceiveTasks",
-			Handler:       _FlowPartnerService_ReceiveTasks_Handler,
+			StreamName:    "SyncChannel",
+			Handler:       _FlowPartnerService_SyncChannel_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "proto/agent.proto",

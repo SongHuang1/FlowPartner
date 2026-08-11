@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class FlowPartnerServiceStub:
-    """--- 服务定义 ---
+    """--- 4. 核心服务定义 ---
     """
 
     def __init__(self, channel):
@@ -35,15 +35,10 @@ class FlowPartnerServiceStub:
         Args:
             channel: A grpc.Channel.
         """
-        self.ReceiveTasks = channel.unary_stream(
-                '/flowpartner.FlowPartnerService/ReceiveTasks',
-                request_serializer=agent__pb2.RegisterRequest.SerializeToString,
-                response_deserializer=agent__pb2.TaskCommand.FromString,
-                _registered_method=True)
-        self.SubmitResult = channel.unary_unary(
-                '/flowpartner.FlowPartnerService/SubmitResult',
-                request_serializer=agent__pb2.TaskResult.SerializeToString,
-                response_deserializer=agent__pb2.SubmitResponse.FromString,
+        self.SyncChannel = channel.stream_stream(
+                '/flowpartner.FlowPartnerService/SyncChannel',
+                request_serializer=agent__pb2.AgentEvent.SerializeToString,
+                response_deserializer=agent__pb2.ServerCommand.FromString,
                 _registered_method=True)
         self.CallLLM = channel.unary_unary(
                 '/flowpartner.FlowPartnerService/CallLLM',
@@ -53,25 +48,18 @@ class FlowPartnerServiceStub:
 
 
 class FlowPartnerServiceServicer:
-    """--- 服务定义 ---
+    """--- 4. 核心服务定义 ---
     """
 
-    def ReceiveTasks(self, request, context):
-        """1. Go 主动下发任务 (Server Streaming)
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def SubmitResult(self, request, context):
-        """2. Agent 提交最终任务结果 (Unary)
+    def SyncChannel(self, request_iterator, context):
+        """核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def CallLLM(self, request, context):
-        """3. Agent 请求 Go 代为调用大模型 API (Unary)
+        """代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -80,15 +68,10 @@ class FlowPartnerServiceServicer:
 
 def add_FlowPartnerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'ReceiveTasks': grpc.unary_stream_rpc_method_handler(
-                    servicer.ReceiveTasks,
-                    request_deserializer=agent__pb2.RegisterRequest.FromString,
-                    response_serializer=agent__pb2.TaskCommand.SerializeToString,
-            ),
-            'SubmitResult': grpc.unary_unary_rpc_method_handler(
-                    servicer.SubmitResult,
-                    request_deserializer=agent__pb2.TaskResult.FromString,
-                    response_serializer=agent__pb2.SubmitResponse.SerializeToString,
+            'SyncChannel': grpc.stream_stream_rpc_method_handler(
+                    servicer.SyncChannel,
+                    request_deserializer=agent__pb2.AgentEvent.FromString,
+                    response_serializer=agent__pb2.ServerCommand.SerializeToString,
             ),
             'CallLLM': grpc.unary_unary_rpc_method_handler(
                     servicer.CallLLM,
@@ -104,11 +87,11 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class FlowPartnerService:
-    """--- 服务定义 ---
+    """--- 4. 核心服务定义 ---
     """
 
     @staticmethod
-    def ReceiveTasks(request,
+    def SyncChannel(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -118,39 +101,12 @@ class FlowPartnerService:
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
+        return grpc.experimental.stream_stream(
+            request_iterator,
             target,
-            '/flowpartner.FlowPartnerService/ReceiveTasks',
-            agent__pb2.RegisterRequest.SerializeToString,
-            agent__pb2.TaskCommand.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SubmitResult(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/flowpartner.FlowPartnerService/SubmitResult',
-            agent__pb2.TaskResult.SerializeToString,
-            agent__pb2.SubmitResponse.FromString,
+            '/flowpartner.FlowPartnerService/SyncChannel',
+            agent__pb2.AgentEvent.SerializeToString,
+            agent__pb2.ServerCommand.FromString,
             options,
             channel_credentials,
             insecure,

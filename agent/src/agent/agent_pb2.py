@@ -24,27 +24,21 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"@\n\x0fRegisterRequest\x12\x15\n\ragent_version\x18\x01 \x01(\t\x12\x16\n\x0eworkspace_path\x18\x02 \x01(\t\"4\n\x10RegisterResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"B\n\x0bTaskCommand\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x11\n\ttask_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"T\n\nTaskResult\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x13\n\x0bresult_data\x18\x04 \x01(\t\"\"\n\x0eSubmitResponse\x12\x10\n\x08received\x18\x01 \x01(\x08\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"L\n\x0bLLMResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x15\n\rjson_response\x18\x03 \x01(\t2\xe2\x01\n\x12\x46lowPartnerService\x12H\n\x0cReceiveTasks\x12\x1c.flowpartner.RegisterRequest\x1a\x18.flowpartner.TaskCommand0\x01\x12\x44\n\x0cSubmitResult\x12\x17.flowpartner.TaskResult\x1a\x1b.flowpartner.SubmitResponse\x12<\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"E\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nevent_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"J\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0c\x63ommand_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"L\n\x0bLLMResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x15\n\rjson_response\x18\x03 \x01(\t2\x9a\x01\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12<\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'agent_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_REGISTERREQUEST']._serialized_start=28
-  _globals['_REGISTERREQUEST']._serialized_end=92
-  _globals['_REGISTERRESPONSE']._serialized_start=94
-  _globals['_REGISTERRESPONSE']._serialized_end=146
-  _globals['_TASKCOMMAND']._serialized_start=148
-  _globals['_TASKCOMMAND']._serialized_end=214
-  _globals['_TASKRESULT']._serialized_start=216
-  _globals['_TASKRESULT']._serialized_end=300
-  _globals['_SUBMITRESPONSE']._serialized_start=302
-  _globals['_SUBMITRESPONSE']._serialized_end=336
-  _globals['_LLMREQUEST']._serialized_start=338
-  _globals['_LLMREQUEST']._serialized_end=392
-  _globals['_LLMRESPONSE']._serialized_start=394
-  _globals['_LLMRESPONSE']._serialized_end=470
-  _globals['_FLOWPARTNERSERVICE']._serialized_start=473
-  _globals['_FLOWPARTNERSERVICE']._serialized_end=699
+  _globals['_AGENTEVENT']._serialized_start=28
+  _globals['_AGENTEVENT']._serialized_end=97
+  _globals['_SERVERCOMMAND']._serialized_start=99
+  _globals['_SERVERCOMMAND']._serialized_end=173
+  _globals['_LLMREQUEST']._serialized_start=175
+  _globals['_LLMREQUEST']._serialized_end=229
+  _globals['_LLMRESPONSE']._serialized_start=231
+  _globals['_LLMRESPONSE']._serialized_end=307
+  _globals['_FLOWPARTNERSERVICE']._serialized_start=310
+  _globals['_FLOWPARTNERSERVICE']._serialized_end=464
 # @@protoc_insertion_point(module_scope)
