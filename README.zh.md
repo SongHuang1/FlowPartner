@@ -12,40 +12,70 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 - **防呆第一。** 任何可能让用户陷入不可恢复状态的设计，直接否决。
 - **安全优先于功能。** 危险操作默认拦截。用户可以覆盖，但必须主动、有意识地选择。
-- **永远可恢复。** 
+- **永远可恢复。**
 
 ## 当前状态
 
-早期开发阶段。项目已有可运行的 Go backend 和 Electron + React 桌面前端，Python Agent 层尚待开发。
+早期开发阶段。项目三层架构已就位：
 
 **仓库中已有：**
 
-- `backend/` — Go HTTP 服务：配置加载、标准响应格式、健康检查、SPA 静态资源服务
-- `frontend/` — Electron + React + TypeScript + Tailwind：桌面应用，含系统托盘、原生菜单、开发/生产双模式
-- `proto/` — gRPC 协议定义（占位，尚未填充）
+- `frontend/` — Electron + React + TypeScript + Tailwind：桌面应用，含系统托盘、原生菜单、活动栏、侧边栏设置面板、聊天区域，通过 WebSocket + REST 持久化数据
+- `backend/` — Go：gRPC 服务器、WebSocket 服务器、bridge 管理器（WebSocket↔gRPC）、原子文件存储、API Key 加密与内存管理
+- `agent/` — Python：gRPC 客户端、ReAct Agent 循环、工具注册表（read_file, write_file, list_directory）
+- `proto/` — gRPC 协议定义及 Go/Python 两侧生成代码
+
+**通信流程：** 前端 → WebSocket → Go bridge → gRPC 双向流 → Python agent → gRPC CallLLM → Go → WebSocket → 前端
+
+**已知问题：**
+
+- 后端入口（`backend/cmd/server/main.go`）尚未完全接线：`bridge.Manager` 未注入，HTTP/WebSocket 服务器未启动。当前仅启动 gRPC 服务器。在修复之前，系统无法端到端服务前端请求。
+- 旧 HTTP handlers（`chat.go`、`settings.go`、`conversation.go`、`unlock.go`）来自上一代架构迭代，未接入当前入口。
+- `CallLLM` handler 返回 mock 响应 — 真实 LLM API 集成尚未连接。
 
 **尚未实现：**
 
-- Python Agent 编排层
-- 业务逻辑与 API 端点
-- WebSocket 实时通信
+- 真实 LLM API 集成（当前为 mock）
 - 安全机制（危险操作黑名单、自动备份、操作日志）
+- 多对话管理
+- Agent Skill 系统
 
 ## 项目结构
 
 ```
-flowpartner/
-├── proto/              # gRPC proto 定义
-├── frontend/           # Electron + React 前端（TypeScript + Vite + Tailwind）
-├── backend/            # Go 后端（HTTP 服务、安全层）
-├── agent/              # Python Agent 编排层（即将开发）
-├── .github/            # CI 工作流、Issue 模板、PR 模板
-├── Makefile            # 构建和测试目标
-├── LICENSE             # MIT 许可证
-├── SECURITY.md         # 安全政策
-└── README.md           # 本文件
+FlowPartner/
+├── .github/workflows/    # CI: ci.yml (Go + TS), release.yml (Electron 构建)
+├── agent/                # Python Agent 层 (uv)
+│   ├── proto/            # proto 文件（与 backend/proto/ 同步）
+│   ├── src/agent/        # main.py, grpc_client.py, core/, tools/
+│   ├── tests/
+│   └── pyproject.toml
+├── backend/              # Go 后端
+│   ├── cmd/server/main.go
+│   ├── internal/
+│   │   ├── bridge/       # WebSocket ↔ gRPC 桥接（核心）
+│   │   ├── handler/      # HTTP（旧）+ WebSocket/gRPC handlers
+│   │   ├── config/
+│   │   ├── crypto/       # API Key 加密/零化
+│   │   ├── keystore/     # API Key 内存管理
+│   │   ├── response/     # 标准响应格式
+│   │   └── storage/      # 原子 JSON 写入（~/.flowpartner/）
+│   └── proto/            # proto 定义 + 生成的 .pb.go
+├── docs/
+├── frontend/             # Electron + React + TypeScript + Tailwind
+│   ├── electron/main.cjs
+│   ├── src/
+│   │   ├── components/   # chat, layout, settings, ui
+│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState
+│   │   ├── lib/          # api.ts, utils.ts, validation.ts
+│   │   └── types/
+│   └── package.json
+├── Makefile
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── README.md
+└── README.zh.md
 ```
-
 
 ## 贡献
 

@@ -56,6 +56,8 @@ Python Agent (agent/src/agent/)
 
 **README.md 是过时的**：它声称 "Python Agent layer is still to come" 和 "WebSocket real-time communication" 尚未实现，但实际上两者都已存在。不要依赖 README 判断项目状态。
 
+目前为止，所有的测试文件都不值得信任，经过大量的更改之后，这些测试文件已经几乎不可用。
+
 ---
 
 ## 项目结构

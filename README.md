@@ -12,27 +12,70 @@ This leads to a few non-negotiables:
 
 - **Fool-proof first.** If a design can lead the user into an unrecoverable state, it's rejected.
 - **Safety over features.** Dangerous operations get blocked by default. The user can override, but they have to consciously choose to.
-- **Always recoverable.** 
+- **Always recoverable.**
 
 ## Current status
 
-Early development. The project has a runnable Go backend with data persistence, an Electron + React desktop frontend with a full UI shell, settings panel, and chat interface. The Python Agent layer is still to come.
+Early development. The project has three layers in place:
 
 **What's in the repo:**
 
-- `backend/` — Go HTTP server: config loading, standard response format, health check, SPA serving, settings API, conversation API, JSON file storage with atomic writes
-- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, activity bar, sidebar settings panel, chat area with empty/conversation state switching, and persistent data via REST API
-- `proto/` — gRPC protocol definitions (placeholder, not yet populated)
+- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, activity bar, sidebar settings panel, chat area, and persistent data via WebSocket + REST
+- `backend/` — Go: gRPC server, WebSocket server, bridge manager (WebSocket↔gRPC), atomic file storage, API Key encryption and memory management
+- `agent/` — Python: gRPC client, ReAct agent loop, tool registry (read_file, write_file, list_directory)
+- `proto/` — gRPC protocol definitions and generated code for both Go and Python
 
-**What's not here yet:**
+**Communication flow:** Frontend → WebSocket → Go bridge → gRPC bidirectional stream → Python agent → gRPC CallLLM → Go → WebSocket → Frontend
 
-- Python Agent orchestration layer
-- Agent execution and real AI responses
-- WebSocket real-time communication
+**Known issues:**
+
+- The backend entry point (`backend/cmd/server/main.go`) is not yet fully wired: the `bridge.Manager` is not injected, and the HTTP/WebSocket servers are not started. It currently only starts the gRPC server. The system cannot serve frontend requests end-to-end until this is fixed.
+- Old HTTP handlers (`chat.go`, `settings.go`, `conversation.go`, `unlock.go`) exist from a previous architecture iteration and are not connected to the current entry point.
+- The `CallLLM` handler returns mock responses — real LLM API integration is not yet connected.
+
+**Not yet implemented:**
+
+- Real LLM API integration (currently mocked)
 - Safety mechanisms (dangerous-op blacklist, auto-backup, operation logs)
 - Multi-conversation management
+- Agent Skill system
 
+## Project structure
 
+```
+FlowPartner/
+├── .github/workflows/    # CI: ci.yml (Go + TS), release.yml (Electron build)
+├── agent/                # Python Agent layer (uv)
+│   ├── proto/            # proto file (sync with backend/proto/)
+│   ├── src/agent/        # main.py, grpc_client.py, core/, tools/
+│   ├── tests/
+│   └── pyproject.toml
+├── backend/              # Go backend
+│   ├── cmd/server/main.go
+│   ├── internal/
+│   │   ├── bridge/       # WebSocket ↔ gRPC bridge (core)
+│   │   ├── handler/      # HTTP (legacy) + WebSocket/gRPC handlers
+│   │   ├── config/
+│   │   ├── crypto/       # API Key encryption/zeroing
+│   │   ├── keystore/     # API Key memory management
+│   │   ├── response/     # Standard response format
+│   │   └── storage/      # Atomic JSON writes (~/.flowpartner/)
+│   └── proto/            # proto definitions + generated .pb.go
+├── docs/
+├── frontend/             # Electron + React + TypeScript + Tailwind
+│   ├── electron/main.cjs
+│   ├── src/
+│   │   ├── components/   # chat, layout, settings, ui
+│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState
+│   │   ├── lib/          # api.ts, utils.ts, validation.ts
+│   │   └── types/
+│   └── package.json
+├── Makefile
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── README.md
+└── README.zh.md
+```
 
 ## Contributing
 

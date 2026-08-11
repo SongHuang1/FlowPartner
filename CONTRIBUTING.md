@@ -35,15 +35,16 @@ Feature requests are welcome. Please open an issue and describe:
 4. Ensure all tests pass (`make test-all`)
 5. Check if CI/CD (if needed) pass
 6. Update documentation if needed
-7. Submit a pull request to the `develop` branch
+7. Submit a pull request to the `main` branch
 
 ## Development Setup
 
 ### Prerequisites
 
 - Go 1.26+
-- Node.js 22+
+- Node.js 26+
 - npm 10+
+- Python 3.12+ (with uv)
 
 ### Getting Started
 
@@ -54,6 +55,9 @@ cd flowpartner
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
+
+# Install Python agent dependencies
+cd agent && uv sync --frozen && cd ..
 
 # Run tests to verify setup
 make test-all
@@ -75,11 +79,24 @@ make test-all
 - Wrap async operations in try-catch
 - Add TypeScript types to all function parameters and return values
 
-### Python (future)
+### Python
 
 - Use type annotations (parameters + return values)
-- Use `pathlib.Path` for file paths
+- Use `pathlib.Path` for file paths, never `os.path`
 - Catch specific exceptions, never bare `except:`
+- Package manager is uv: `uv sync --frozen` to install, `uv run` to execute
+
+## Proto / gRPC
+
+Proto definitions are duplicated in two locations:
+- `backend/proto/agent.proto` (with `go_package` option, source for Go codegen)
+- `agent/proto/agent.proto` (without `go_package`, source for Python codegen)
+
+**Any proto change must be applied to both files**, then regenerate:
+- Go: `agent.pb.go`, `agent_grpc.pb.go`
+- Python: `agent_pb2.py`, `agent_pb2_grpc.py`
+
+Never manually edit generated files.
 
 ## Commit Messages
 
@@ -89,17 +106,17 @@ We use the following format:
 <type>(<scope>): <subject>
 ```
 
-**Types:** `feat`, `fix`, `docs`, `test`, `style`, `refactor`, `perf`, `chore` and so on
+**Types:** `feat`, `fix`, `refactor`, `security`, `docs`, `test`, `chore`
 
-**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, and so on
+**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, `crypto`, `keystore`
 
 Example: `feat(go): add health check endpoint`
 
 ## Branch Strategy
 
-- `main` — stable production code
-- Feature branches: `<description>`
-- Bug fix branches: `<description>`
+- `main` — stable production code, PRs merge here
+- Feature branches: `feature/<description>`
+- Bug fix branches: `fix/<description>`
 
 ## Questions?
 

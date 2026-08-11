@@ -4,9 +4,24 @@ FlowPartner is a safety-focused AI Agent desktop application. Our security model
 
 ## Current Status
 
-This project is in the design and early development phase. 
+Early development. Some security mechanisms are already implemented; others are planned.
 
-## OurSecurity Philosophy
+**Already implemented:**
+- API Key encrypted at rest (AES-GCM with Argon2id key derivation)
+- API Key zeroed from memory after use
+- Unlock rate limiting (progressive lockout after failed attempts)
+- Internal/private network URL blocking for LLM base URL
+- Input validation on all API endpoints
+- Atomic file writes (temp + rename) to prevent data corruption
+- Path traversal protection on file operations
+
+**Planned:**
+- Dangerous operation blacklist (file deletion, system config changes, privilege escalation)
+- Automatic file backup before modification or deletion
+- Append-only operation logs
+- Per-session operation audit trail
+
+## Our Security Philosophy
 
 FlowPartner's core premise is that non-technical users tend to trust AI too much. The software must act as a safety gatekeeper. This means:
 
