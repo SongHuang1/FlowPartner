@@ -22,7 +22,6 @@ var/
 wheels/
 share/python-wheels/
 docs/
-AGENTS.md
 *.egg-info/
 .installed.cfg
 *.egg
