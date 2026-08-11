@@ -2,89 +2,74 @@ import grpc
 import asyncio
 import logging
 import json
+import time
+import uuid
+from pathlib import Path
 
 import agent_pb2
 import agent_pb2_grpc
 
-# --- 任务处理模块 (未来这里会拆分成独立的文件) ---
-
-async def handle_test_echo(payload: dict) -> str:
-    """处理测试回显任务"""
-    msg = payload.get("message", "empty")
-    logging.info(f"[执行 test_echo] 收到消息: {msg}")
-    await asyncio.sleep(1) # 模拟耗时
-    return f"Echo: {msg} (Processed by Python)"
-
-async def handle_read_file(payload: dict) -> str:
-    """(预留) 处理读取本地文件任务"""
-    file_path = payload.get("path")
-    logging.info(f"[执行 read_file] 准备读取: {file_path}")
-    # TODO: 未来在这里实现真实的文件读取
-    return "File content mock"
-
-# --- 任务分发器 ---
-
-class TaskDispatcher:
-    def __init__(self):
-        # 注册 task_type 到具体的处理函数
-        self._handlers = {
-            "test_echo": handle_test_echo,
-            "read_file": handle_read_file,
-            # 未来新增任务只需在这里加一行
-        }
-
-    async def dispatch(self, task_type: str, payload_str: str) -> tuple[bool, str, str]:
-        """
-        分发任务并返回结果
-        :return: (success: bool, message: str, result_data: str)
-        """
-        handler = self._handlers.get(task_type)
-        if not handler:
-            return False, f"未知的任务类型: {task_type}", ""
-
-        try:
-            payload = json.loads(payload_str) if payload_str else {}
-            # 执行具体的处理函数
-            result_data = await handler(payload)
-            return True, "执行成功", result_data
-        except Exception as e:
-            logging.error(f"任务执行异常: {e}", exc_info=True)
-            return False, f"执行异常: {str(e)}", ""
-
-# --- gRPC 客户端 ---
-
 class FlowPartnerClient:
     def __init__(self, workspace_path: str, server_address: str = "localhost:50051"):
-        self.workspace_path = workspace_path
+        self.workspace_path = Path(workspace_path)
+        self.history_dir = self.workspace_path / "history"
         self.server_address = server_address
         self.channel = None
         self.stub = None
-        self.dispatcher = TaskDispatcher() # 初始化分发器
+        
+        # 确保 history 目录存在
+        self.history_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(f"历史记录目录已就绪: {self.history_dir}")
+
+    def generate_session_id(self) -> str:
+        """生成唯一且较长的 Session ID"""
+        timestamp = int(time.time() * 1000)
+        random_str = uuid.uuid4().hex[:8]
+        return f"sess_{timestamp}_{random_str}"
+
+    async def send_event(self, queue: asyncio.Queue, session_id: str, event_type: str, payload: dict):
+        """将事件放入队列，由双向流发送给 Go"""
+        event = agent_pb2.AgentEvent(
+            session_id=session_id,
+            event_type=event_type,
+            payload=json.dumps(payload, ensure_ascii=False)
+        )
+        await queue.put(event)
+        logging.info(f"[发送事件] {event_type} | Session: {session_id}")
 
     async def connect_and_listen(self):
         logging.info(f"准备连接到 Go Server: {self.server_address}")
         self.channel = grpc.aio.insecure_channel(self.server_address)
         self.stub = agent_pb2_grpc.FlowPartnerServiceStub(self.channel)
 
-        request = agent_pb2.RegisterRequest(
-            agent_version="0.1.0",
-            workspace_path=self.workspace_path
-        )
+        # 创建一个异步队列，用于存放 Python 想要发给 Go 的消息
+        outgoing_queue = asyncio.Queue()
+
+        async def request_generator():
+            """生成器：不断从队列中取出消息发给 Go"""
+            while True:
+                event = await outgoing_queue.get()
+                yield event
 
         try:
-            task_stream = self.stub.ReceiveTasks(request)
-            logging.info("已成功连接，正在等待 Go 下发任务...")
+            # 建立双向流
+            stream = self.stub.SyncChannel(request_generator())
+            logging.info("双向流已建立，等待 Go 下发指令...")
 
-            async for task in task_stream:
-                logging.info(f"收到新任务! ID: {task.task_id}, 类型: {task.task_type}")
+            # 模拟：我们自己生成一个 Session ID，并主动向 Go 汇报“我准备好了”
+            # (在实际业务中，可能是 Go 先发指令，这里我们先发一个心跳/状态)
+            test_session = self.generate_session_id()
+            await self.send_event(outgoing_queue, test_session, "status_update", {"status": "ready"})
+
+            # 监听 Go 发来的指令
+            async for command in stream:
+                logging.info(f"[收到指令] Type: {command.command_type} | Session: {command.session_id}")
                 
-                # 使用分发器处理任务
-                success, message, result_data = await self.dispatcher.dispatch(
-                    task.task_type, task.payload
-                )
-                
-                # 汇报结果
-                await self.submit_result(task.task_id, success, message, result_data)
+                if command.command_type == "start_chat":
+                    # 开启一个异步任务来处理对话，不阻塞主接收流
+                    asyncio.create_task(self.handle_chat(command, outgoing_queue))
+                elif command.command_type == "cancel_task":
+                    logging.info("收到取消任务指令")
 
         except grpc.aio.AioRpcError as e:
             logging.error(f"连接断开或发生错误: {e.code()}, {e.details()}")
@@ -92,15 +77,27 @@ class FlowPartnerClient:
             if self.channel:
                 await self.channel.close()
 
-    async def submit_result(self, task_id: str, success: bool, message: str, result_data: str):
-        result = agent_pb2.TaskResult(
-            task_id=task_id,
-            success=success,
-            message=message,
-            result_data=result_data
-        )
-        try:
-            response = await self.stub.SubmitResult(result)
-            logging.info(f"结果提交成功: {response.received}")
-        except Exception as e:
-            logging.error(f"提交结果失败: {e}")
+    async def handle_chat(self, command, queue):
+        """处理一次对话的 ReAct 核心逻辑 (骨架)"""
+        session_id = command.session_id
+        history_file = self.history_dir / f"{session_id}.json"
+        
+        logging.info(f"开始处理对话 Session: {session_id}")
+        
+        # 1. 通知前端：开始思考
+        await self.send_event(queue, session_id, "status_update", {"status": "thinking"})
+        
+        # 2. 模拟 ReAct 过程：决定调用工具
+        await asyncio.sleep(1)
+        await self.send_event(queue, session_id, "tool_call", {"tool": "read_file", "args": {"path": "test.txt"}})
+        
+        # 3. 模拟工具执行完毕
+        await asyncio.sleep(1)
+        await self.send_event(queue, session_id, "tool_result", {"result": "File content..."})
+        
+        # 4. 最终回答
+        await self.send_event(queue, session_id, "final_answer", {"text": "这是最终回答"})
+        
+        # 5. 保存历史记录 (简单追加)
+        with open(history_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"role": "assistant", "content": "最终回答"}) + "\n")
