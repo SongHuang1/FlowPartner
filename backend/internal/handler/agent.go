@@ -46,3 +46,37 @@ func (h *AgentHandler) SubmitResult(ctx context.Context, req *proto.TaskResult) 
 	log.Printf("收到 Agent 提交的结果! TaskID: %s, 成功: %v, 消息: %s", req.TaskId, req.Success, req.Message)
 	return &proto.SubmitResponse{Received: true}, nil
 }
+
+// CallLLM 处理 Agent 请求调用大模型的逻辑
+func (h *AgentHandler) CallLLM(ctx context.Context, req *proto.LLMRequest) (*proto.LLMResponse, error) {
+	log.Printf("收到 Agent 的 LLM 调用请求! Session: %s, Payload 长度: %d", req.SessionId, len(req.JsonPayload))
+
+	// TODO: 未来这里 Go 会拿着 req.JsonPayload 和 解密后的 API Key 去请求真实的大模型 API
+	// 现在我们返回一个 Mock 的 Tool Call 响应 (OpenAI 格式)，用来测试 Python 的 ReAct 逻辑
+
+	mockResponse := `{
+		"id": "chatcmpl-mock",
+		"object": "chat.completion",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": null,
+				"tool_calls": [{
+					"id": "call_mock_01",
+					"type": "function",
+					"function": {
+						"name": "read_file",
+						"arguments": "{\"path\": \"test.txt\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}]
+	}`
+
+	return &proto.LLMResponse{
+		Success:      true,
+		JsonResponse: mockResponse,
+	}, nil
+}
