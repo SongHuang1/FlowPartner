@@ -126,12 +126,11 @@ func (x *RegisterResponse) GetMessage() string {
 	return ""
 }
 
-// Go 下发给 Agent 的任务
 type TaskCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	TaskType      string                 `protobuf:"bytes,2,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"` // 比如 "chat_completion", "rpa_click"
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                   // 任务的具体参数 (JSON 字符串)
+	TaskType      string                 `protobuf:"bytes,2,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
+	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -299,6 +298,119 @@ func (x *SubmitResponse) GetReceived() bool {
 	return false
 }
 
+// --- 新增：Agent 请求 Go 调用大模型 ---
+type LLMRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	JsonPayload   string                 `protobuf:"bytes,2,opt,name=json_payload,json=jsonPayload,proto3" json:"json_payload,omitempty"` // Python 组装好的完整请求体 (包含 messages, tools 等)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LLMRequest) Reset() {
+	*x = LLMRequest{}
+	mi := &file_proto_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LLMRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LLMRequest) ProtoMessage() {}
+
+func (x *LLMRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LLMRequest.ProtoReflect.Descriptor instead.
+func (*LLMRequest) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LLMRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *LLMRequest) GetJsonPayload() string {
+	if x != nil {
+		return x.JsonPayload
+	}
+	return ""
+}
+
+type LLMResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	JsonResponse  string                 `protobuf:"bytes,3,opt,name=json_response,json=jsonResponse,proto3" json:"json_response,omitempty"` // 大模型返回的原始响应体
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LLMResponse) Reset() {
+	*x = LLMResponse{}
+	mi := &file_proto_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LLMResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LLMResponse) ProtoMessage() {}
+
+func (x *LLMResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LLMResponse.ProtoReflect.Descriptor instead.
+func (*LLMResponse) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LLMResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *LLMResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *LLMResponse) GetJsonResponse() string {
+	if x != nil {
+		return x.JsonResponse
+	}
+	return ""
+}
+
 var File_proto_agent_proto protoreflect.FileDescriptor
 
 const file_proto_agent_proto_rawDesc = "" +
@@ -322,10 +434,20 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\vresult_data\x18\x04 \x01(\tR\n" +
 	"resultData\",\n" +
 	"\x0eSubmitResponse\x12\x1a\n" +
-	"\breceived\x18\x01 \x01(\bR\breceived2\xa4\x01\n" +
+	"\breceived\x18\x01 \x01(\bR\breceived\"N\n" +
+	"\n" +
+	"LLMRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
+	"\fjson_payload\x18\x02 \x01(\tR\vjsonPayload\"q\n" +
+	"\vLLMResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12#\n" +
+	"\rjson_response\x18\x03 \x01(\tR\fjsonResponse2\xe2\x01\n" +
 	"\x12FlowPartnerService\x12H\n" +
 	"\fReceiveTasks\x12\x1c.flowpartner.RegisterRequest\x1a\x18.flowpartner.TaskCommand0\x01\x12D\n" +
-	"\fSubmitResult\x12\x17.flowpartner.TaskResult\x1a\x1b.flowpartner.SubmitResponseB6Z4github.com/songhuang/flowpartner/backend/proto;protob\x06proto3"
+	"\fSubmitResult\x12\x17.flowpartner.TaskResult\x1a\x1b.flowpartner.SubmitResponse\x12<\n" +
+	"\aCallLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponseB6Z4github.com/songhuang/flowpartner/backend/proto;protob\x06proto3"
 
 var (
 	file_proto_agent_proto_rawDescOnce sync.Once
@@ -339,21 +461,25 @@ func file_proto_agent_proto_rawDescGZIP() []byte {
 	return file_proto_agent_proto_rawDescData
 }
 
-var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_proto_agent_proto_goTypes = []any{
 	(*RegisterRequest)(nil),  // 0: flowpartner.RegisterRequest
 	(*RegisterResponse)(nil), // 1: flowpartner.RegisterResponse
 	(*TaskCommand)(nil),      // 2: flowpartner.TaskCommand
 	(*TaskResult)(nil),       // 3: flowpartner.TaskResult
 	(*SubmitResponse)(nil),   // 4: flowpartner.SubmitResponse
+	(*LLMRequest)(nil),       // 5: flowpartner.LLMRequest
+	(*LLMResponse)(nil),      // 6: flowpartner.LLMResponse
 }
 var file_proto_agent_proto_depIdxs = []int32{
 	0, // 0: flowpartner.FlowPartnerService.ReceiveTasks:input_type -> flowpartner.RegisterRequest
 	3, // 1: flowpartner.FlowPartnerService.SubmitResult:input_type -> flowpartner.TaskResult
-	2, // 2: flowpartner.FlowPartnerService.ReceiveTasks:output_type -> flowpartner.TaskCommand
-	4, // 3: flowpartner.FlowPartnerService.SubmitResult:output_type -> flowpartner.SubmitResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	5, // 2: flowpartner.FlowPartnerService.CallLLM:input_type -> flowpartner.LLMRequest
+	2, // 3: flowpartner.FlowPartnerService.ReceiveTasks:output_type -> flowpartner.TaskCommand
+	4, // 4: flowpartner.FlowPartnerService.SubmitResult:output_type -> flowpartner.SubmitResponse
+	6, // 5: flowpartner.FlowPartnerService.CallLLM:output_type -> flowpartner.LLMResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -370,7 +496,7 @@ func file_proto_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_agent_proto_rawDesc), len(file_proto_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

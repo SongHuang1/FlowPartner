@@ -45,6 +45,11 @@ class FlowPartnerServiceStub:
                 request_serializer=agent__pb2.TaskResult.SerializeToString,
                 response_deserializer=agent__pb2.SubmitResponse.FromString,
                 _registered_method=True)
+        self.CallLLM = channel.unary_unary(
+                '/flowpartner.FlowPartnerService/CallLLM',
+                request_serializer=agent__pb2.LLMRequest.SerializeToString,
+                response_deserializer=agent__pb2.LLMResponse.FromString,
+                _registered_method=True)
 
 
 class FlowPartnerServiceServicer:
@@ -52,14 +57,21 @@ class FlowPartnerServiceServicer:
     """
 
     def ReceiveTasks(self, request, context):
-        """1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
+        """1. Go 主动下发任务 (Server Streaming)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def SubmitResult(self, request, context):
-        """2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
+        """2. Agent 提交最终任务结果 (Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CallLLM(self, request, context):
+        """3. Agent 请求 Go 代为调用大模型 API (Unary)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -77,6 +89,11 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
                     servicer.SubmitResult,
                     request_deserializer=agent__pb2.TaskResult.FromString,
                     response_serializer=agent__pb2.SubmitResponse.SerializeToString,
+            ),
+            'CallLLM': grpc.unary_unary_rpc_method_handler(
+                    servicer.CallLLM,
+                    request_deserializer=agent__pb2.LLMRequest.FromString,
+                    response_serializer=agent__pb2.LLMResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -134,6 +151,33 @@ class FlowPartnerService:
             '/flowpartner.FlowPartnerService/SubmitResult',
             agent__pb2.TaskResult.SerializeToString,
             agent__pb2.SubmitResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CallLLM(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/flowpartner.FlowPartnerService/CallLLM',
+            agent__pb2.LLMRequest.SerializeToString,
+            agent__pb2.LLMResponse.FromString,
             options,
             channel_credentials,
             insecure,

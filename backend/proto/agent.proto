@@ -1,5 +1,4 @@
 syntax = "proto3";
-
 option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
 package flowpartner;
 
@@ -14,11 +13,10 @@ message RegisterResponse {
     string message = 2;
 }
 
-// Go 下发给 Agent 的任务
 message TaskCommand {
     string task_id = 1;
-    string task_type = 2; // 比如 "chat_completion", "rpa_click"
-    string payload = 3;    // 任务的具体参数 (JSON 字符串)
+    string task_type = 2; 
+    string payload = 3;    
 }
 
 message TaskResult {
@@ -32,11 +30,26 @@ message SubmitResponse {
     bool received = 1;
 }
 
+// --- 新增：Agent 请求 Go 调用大模型 ---
+message LLMRequest {
+    string session_id = 1;
+    string json_payload = 2; // Python 组装好的完整请求体 (包含 messages, tools 等)
+}
+
+message LLMResponse {
+    bool success = 1;
+    string error_message = 2;
+    string json_response = 3; // 大模型返回的原始响应体
+}
+
 // --- 服务定义 ---
 service FlowPartnerService {
-    // 1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
+    // 1. Go 主动下发任务 (Server Streaming)
     rpc ReceiveTasks (RegisterRequest) returns (stream TaskCommand);
     
-    // 2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
+    // 2. Agent 提交最终任务结果 (Unary)
     rpc SubmitResult (TaskResult) returns (SubmitResponse);
+
+    // 3. Agent 请求 Go 代为调用大模型 API (Unary)
+    rpc CallLLM (LLMRequest) returns (LLMResponse);
 }

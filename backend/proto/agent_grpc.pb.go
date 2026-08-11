@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	FlowPartnerService_ReceiveTasks_FullMethodName = "/flowpartner.FlowPartnerService/ReceiveTasks"
 	FlowPartnerService_SubmitResult_FullMethodName = "/flowpartner.FlowPartnerService/SubmitResult"
+	FlowPartnerService_CallLLM_FullMethodName      = "/flowpartner.FlowPartnerService/CallLLM"
 )
 
 // FlowPartnerServiceClient is the client API for FlowPartnerService service.
@@ -29,10 +30,12 @@ const (
 //
 // --- 服务定义 ---
 type FlowPartnerServiceClient interface {
-	// 1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
+	// 1. Go 主动下发任务 (Server Streaming)
 	ReceiveTasks(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskCommand], error)
-	// 2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
+	// 2. Agent 提交最终任务结果 (Unary)
 	SubmitResult(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*SubmitResponse, error)
+	// 3. Agent 请求 Go 代为调用大模型 API (Unary)
+	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error)
 }
 
 type flowPartnerServiceClient struct {
@@ -72,16 +75,28 @@ func (c *flowPartnerServiceClient) SubmitResult(ctx context.Context, in *TaskRes
 	return out, nil
 }
 
+func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LLMResponse)
+	err := c.cc.Invoke(ctx, FlowPartnerService_CallLLM_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FlowPartnerServiceServer is the server API for FlowPartnerService service.
 // All implementations must embed UnimplementedFlowPartnerServiceServer
 // for forward compatibility.
 //
 // --- 服务定义 ---
 type FlowPartnerServiceServer interface {
-	// 1. Agent 注册并保持连接，Go 通过流主动下发任务 (Server Streaming)
+	// 1. Go 主动下发任务 (Server Streaming)
 	ReceiveTasks(*RegisterRequest, grpc.ServerStreamingServer[TaskCommand]) error
-	// 2. Agent 完成任务后，主动把结果交还给 Go (Unary 单向调用)
+	// 2. Agent 提交最终任务结果 (Unary)
 	SubmitResult(context.Context, *TaskResult) (*SubmitResponse, error)
+	// 3. Agent 请求 Go 代为调用大模型 API (Unary)
+	CallLLM(context.Context, *LLMRequest) (*LLMResponse, error)
 	mustEmbedUnimplementedFlowPartnerServiceServer()
 }
 
@@ -97,6 +112,9 @@ func (UnimplementedFlowPartnerServiceServer) ReceiveTasks(*RegisterRequest, grpc
 }
 func (UnimplementedFlowPartnerServiceServer) SubmitResult(context.Context, *TaskResult) (*SubmitResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitResult not implemented")
+}
+func (UnimplementedFlowPartnerServiceServer) CallLLM(context.Context, *LLMRequest) (*LLMResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CallLLM not implemented")
 }
 func (UnimplementedFlowPartnerServiceServer) mustEmbedUnimplementedFlowPartnerServiceServer() {}
 func (UnimplementedFlowPartnerServiceServer) testEmbeddedByValue()                            {}
@@ -148,6 +166,24 @@ func _FlowPartnerService_SubmitResult_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FlowPartnerService_CallLLM_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LLMRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FlowPartnerServiceServer).CallLLM(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FlowPartnerService_CallLLM_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FlowPartnerServiceServer).CallLLM(ctx, req.(*LLMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FlowPartnerService_ServiceDesc is the grpc.ServiceDesc for FlowPartnerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -158,6 +194,10 @@ var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitResult",
 			Handler:    _FlowPartnerService_SubmitResult_Handler,
+		},
+		{
+			MethodName: "CallLLM",
+			Handler:    _FlowPartnerService_CallLLM_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
