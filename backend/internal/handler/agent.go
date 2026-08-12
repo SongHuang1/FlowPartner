@@ -6,8 +6,10 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/sanitize"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,10 +30,29 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 	log.Println("🔗 Agent gRPC 双向流已建立")
 
 	// 协程 1：不断从 Manager.CmdChan 读取前端发来的指令，发给 Python
+	// 通过 stream.Context().Done() 退出，避免 Python 断开后 goroutine 永久泄漏
+	// 使用带超时的 send 避免 Python Agent 卡死不消费时 goroutine 永久阻塞
 	go func() {
-		for cmd := range h.manager.CmdChan {
-			if err := stream.Send(cmd); err != nil {
-				log.Printf("发送指令给 Python 失败: %v", err)
+		for {
+			select {
+			case cmd := <-h.manager.CmdChan:
+				sendDone := make(chan error, 1)
+				go func() {
+					sendDone <- stream.Send(cmd)
+				}()
+				select {
+				case err := <-sendDone:
+					if err != nil {
+						log.Printf("发送指令给 Python 失败: %s", sanitize.Error(err))
+						return
+					}
+				case <-stream.Context().Done():
+					return
+				case <-time.After(30 * time.Second):
+					log.Println("发送指令给 Python 超时，退出 goroutine")
+					return
+				}
+			case <-stream.Context().Done():
 				return
 			}
 		}
@@ -45,7 +66,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 			return nil
 		}
 		if err != nil {
-			return status.Errorf(codes.Internal, "接收事件失败: %v", err)
+			return status.Errorf(codes.Internal, "接收事件失败: %s", sanitize.Error(err))
 		}
 
 		// 将事件路由给对应的前端 WebSocket 连接
@@ -59,9 +80,14 @@ func (h *AgentHandler) CallLLM(ctx context.Context, req *proto.LLMRequest) (*pro
 
 	// 解析 Python 发来的 Payload，检查是否包含 messages
 	var payload map[string]interface{}
-	json.Unmarshal([]byte(req.JsonPayload), &payload)
+	if err := json.Unmarshal([]byte(req.JsonPayload), &payload); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "解析 JsonPayload 失败: %s", sanitize.Error(err))
+	}
 
-	messages, _ := payload["messages"].([]interface{})
+	messages, ok := payload["messages"].([]interface{})
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "JsonPayload 缺少 messages 字段或类型错误")
+	}
 
 	// 模拟智能行为：
 	// - 如果消息列表中只有 user 消息（第一轮），返回 tool_call 让 Python 去读文件

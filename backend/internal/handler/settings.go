@@ -106,6 +106,27 @@ func LoadSettings() Settings {
 
 type SettingsHandler struct{}
 
+// Handle 根据 HTTP 方法分发到 Get/Put
+func (h *SettingsHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.Get(w, r)
+	case http.MethodPut:
+		h.Put(w, r)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleClearAPIKey 校验 POST 方法后清除 API Key
+func (h *SettingsHandler) HandleClearAPIKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	h.ClearAPIKey(w, r)
+}
+
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	settings := LoadSettings()
 	response.WriteJSON(w, http.StatusOK, response.Success(settings))
@@ -118,6 +139,10 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 			response.Error(response.CodeInvalidParam, "Invalid JSON body"))
 		return
 	}
+
+	// 密码校验失败等所有提前返回路径都执行零化（仅零化 []byte 转换副本）
+	password, _ := rawReq["password"].(string)
+	defer flowcrypto.ZeroBytes([]byte(password))
 
 	settingsJSON, _ := json.Marshal(rawReq)
 	var settings Settings
@@ -201,11 +226,6 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 		ks := keystore.Instance()
 		ks.SetAPIKeyConfigured(true)
 		ks.Unlock([]byte(apiKey))
-
-		// 零化密码字节（仅零化 []byte 转换副本）
-		// 注意：Go string 不可变，原始 password 字符串仍驻留内存直到 GC 回收
-		// 这是语言层面的限制，无法在代码层面完全避免
-		defer flowcrypto.ZeroBytes([]byte(password))
 	}
 
 	if err := storage.WriteJSON("settings.json", settings); err != nil {

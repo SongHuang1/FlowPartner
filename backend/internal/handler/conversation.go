@@ -44,6 +44,18 @@ func EmptyConversation() Conversation {
 // ConversationHandler 处理对话相关请求
 type ConversationHandler struct{}
 
+// Handle 根据 HTTP 方法分发到 Get/Post
+func (h *ConversationHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.Get(w, r)
+	case http.MethodPost:
+		h.Post(w, r)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 // Get 返回当前对话（文件不存在则返回空对话）
 func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var conv Conversation

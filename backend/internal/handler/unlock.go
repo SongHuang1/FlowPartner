@@ -17,6 +17,32 @@ type UnlockRequest struct {
 
 type UnlockHandler struct{}
 
+// Handle 根据路径和方法分发到 Post/Lock/Status
+func (h *UnlockHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/unlock":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		h.Post(w, r)
+	case "/api/lock":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		h.Lock(w, r)
+	case "/api/lock_status":
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		h.Status(w, r)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
 func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	var req UnlockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -24,6 +50,9 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 			response.Error(response.CodeInvalidParam, "Invalid JSON body"))
 		return
 	}
+
+	// 无论解密成功与否都零化密码的 []byte 副本（Go string 不可变，仅能零化副本）
+	defer flowcrypto.ZeroBytes([]byte(req.Password))
 
 	ks := keystore.Instance()
 	status := ks.GetLockStatus()
@@ -57,11 +86,6 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ks.Unlock([]byte(apiKey))
-
-	// 零化密码字节（仅零化 []byte 转换副本）
-	// 注意：Go string 不可变，原始 password 字符串仍驻留内存直到 GC 回收
-	// 这是语言层面的限制，无法在代码层面完全避免
-	flowcrypto.ZeroBytes([]byte(req.Password))
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
 		"message": "解锁成功",

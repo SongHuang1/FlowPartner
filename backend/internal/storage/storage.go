@@ -20,6 +20,9 @@ var (
 // dataDirCache 缓存 DataDir 结果，避免重复 syscall
 var dataDirCache string
 
+// testDataDir 测试期间指定的数据目录（仅测试使用），ResetDataDirCache 后仍生效
+var testDataDir string
+
 // DataDir 返回用户数据目录路径，若不存在则创建。结果缓存，首次调用后后续直接返回缓存值。
 func DataDir() (string, error) {
 	if dataDirCache != "" {
@@ -37,9 +40,15 @@ func DataDir() (string, error) {
 	return dir, nil
 }
 
-// ResetDataDirCache 重置缓存（仅测试使用）
+// ResetDataDirCache 重置缓存（仅测试使用）。若已通过 SetDataDirForTest 指定目录，重置后回到该目录。
 func ResetDataDirCache() {
-	dataDirCache = ""
+	dataDirCache = testDataDir
+}
+
+// SetDataDirForTest 指定数据目录，避免测试污染真实用户目录（仅测试使用）
+func SetDataDirForTest(dir string) {
+	testDataDir = dir
+	dataDirCache = dir
 }
 
 // validateFilename 校验文件名安全性，防止路径遍历
