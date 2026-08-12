@@ -29,8 +29,6 @@ Early development. The project has three layers in place:
 
 **Known issues:**
 
-- The backend entry point (`backend/cmd/server/main.go`) is not yet fully wired: the `bridge.Manager` is not injected, and the HTTP/WebSocket servers are not started. It currently only starts the gRPC server. The system cannot serve frontend requests end-to-end until this is fixed.
-- Old HTTP handlers (`chat.go`, `settings.go`, `conversation.go`, `unlock.go`) exist from a previous architecture iteration and are not connected to the current entry point.
 - The `CallLLM` handler returns mock responses — real LLM API integration is not yet connected.
 
 **Not yet implemented:**
@@ -58,8 +56,10 @@ FlowPartner/
 │   │   ├── config/
 │   │   ├── crypto/       # API Key encryption/zeroing
 │   │   ├── keystore/     # API Key memory management
-│   │   ├── response/     # Standard response format
-│   │   └── storage/      # Atomic JSON writes (~/.flowpartner/)
+│   │   ├── response/         # Standard response format
+│   │   ├── sanitize/         # Error message sanitization (prevents credential leaking)
+│   │   ├── server/           # Port discovery
+│   │   └── storage/          # Atomic JSON writes (~/.flowpartner/)
 │   └── proto/            # proto definitions + generated .pb.go
 ├── docs/
 ├── frontend/             # Electron + React + TypeScript + Tailwind

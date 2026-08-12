@@ -29,8 +29,6 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 **已知问题：**
 
-- 后端入口（`backend/cmd/server/main.go`）尚未完全接线：`bridge.Manager` 未注入，HTTP/WebSocket 服务器未启动。当前仅启动 gRPC 服务器。在修复之前，系统无法端到端服务前端请求。
-- 旧 HTTP handlers（`chat.go`、`settings.go`、`conversation.go`、`unlock.go`）来自上一代架构迭代，未接入当前入口。
 - `CallLLM` handler 返回 mock 响应 — 真实 LLM API 集成尚未连接。
 
 **尚未实现：**
@@ -58,8 +56,10 @@ FlowPartner/
 │   │   ├── config/
 │   │   ├── crypto/       # API Key 加密/零化
 │   │   ├── keystore/     # API Key 内存管理
-│   │   ├── response/     # 标准响应格式
-│   │   └── storage/      # 原子 JSON 写入（~/.flowpartner/）
+│   │   ├── response/         # 标准响应格式
+│   │   ├── sanitize/         # 错误信息净化（防止凭证泄露）
+│   │   ├── server/           # 端口发现
+│   │   └── storage/          # 原子 JSON 写入（~/.flowpartner/）
 │   └── proto/            # proto 定义 + 生成的 .pb.go
 ├── docs/
 ├── frontend/             # Electron + React + TypeScript + Tailwind

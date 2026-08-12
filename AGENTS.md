@@ -40,21 +40,21 @@ Python Agent (agent/src/agent/)
     └── tools/: read_file, write_file, list_directory
 ```
 
-### 当前代码状态（重要！）
+### 当前代码状态
 
-**main.go 是坏的**，不能直接运行：
-- `backend/cmd/server\main.go` 创建 `&handler.AgentHandler{}` 但未注入 `bridge.Manager`，运行时会 nil panic
-- main.go 只启动了 gRPC server，没有启动 HTTP server 或 WebSocket server
-- 这意味着当前后端无法服务前端请求
+**main.go 已正常工作**：
+- `backend/cmd/server/main.go` 注入 `bridge.Manager`，同时启动 HTTP server 和 gRPC server
+- HTTP server 注册了 REST 路由（settings、conversation、unlock）和 WebSocket 端点（`/ws`）
+- gRPC server 注册了 `AgentHandler`，与 Python Agent 通过双向流通信
+- 端口通过 `server.FindAvailablePort` 动态发现，就绪信号格式：`__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
 
-**旧 HTTP handlers 是遗留代码**（不要基于它们开发）：
-- `internal/handler/chat.go` — 旧的 HTTP chat 端点，直接调 LLM
-- `internal/handler/settings.go` — 旧的 HTTP settings CRUD
-- `internal/handler/conversation.go` — 旧的 HTTP 对话存储
-- `internal/handler/unlock.go` — 旧的 HTTP API Key 解锁
-- 这些 handlers 功能完整但未接入 main.go，是上一代架构的残留
+**HTTP handlers 已接入**：
+- `internal/handler/settings.go` — settings CRUD（`/api/settings`）
+- `internal/handler/conversation.go` — 对话存储（`/api/conversation`）
+- `internal/handler/unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`）
+- 这些 handlers 通过 `registerRoutes` 注册到 HTTP server，已可正常使用
 
-**README.md 是过时的**：它声称 "Python Agent layer is still to come" 和 "WebSocket real-time communication" 尚未实现，但实际上两者都已存在。不要依赖 README 判断项目状态。
+**README.md 部分过时**：部分描述与实际状态有出入，判断项目状态以 AGENTS.md 为准。
 
 目前为止，所有的测试文件都不值得信任，经过大量的更改之后，这些测试文件已经几乎不可用。
 
@@ -79,6 +79,8 @@ FlowPartner/
 │   │   ├── crypto/           # API Key 加密/零化
 │   │   ├── keystore/         # API Key 内存管理
 │   │   ├── response/         # 标准响应格式
+│   │   ├── sanitize/         # 错误信息净化（防止凭证泄露）
+│   │   ├── server/           # 端口发现
 │   │   └── storage/          # JSON 文件原子写入 (~/.flowpartner/)
 │   └── proto/                # proto 定义 + 生成的 .pb.go 文件
 ├── docs/                   # 空目录
@@ -239,13 +241,13 @@ make test-all                                # 构建+测试所有层
 - 没有运行验证就声称代码可工作 — 用 `make test-all` 自证
 - 在等待用户确认前先破坏性操作 — 删除/覆盖后再问来不及
 - 修改 proto 后手动编辑生成的 `.pb.go` / `_pb2.py` 文件 — 用 `protoc` 重新生成
-- 基于旧 HTTP handlers 开发新功能 — 它们是遗留代码，新架构用 WebSocket+gRPC
+- 基于 chat.go 开发聊天功能 — 旧 HTTP chat 端点已废弃，新架构用 WebSocket（ws.go）
 
 ---
 
 ## 上下文与效率
 
-- >500 行的文件：先 grep 定位，再 read 指定范围
+- 长度>500 行的文件：先定位，再指定范围
 - 生成文件（node_modules/、dist/、*.pb.go、*_pb2.py、*_pb2_grpc.py）：只搜索，不读取
 - 不要不必要地重读最近 read 过的文件
 - 同一测试不要连续运行两次无改动的版本

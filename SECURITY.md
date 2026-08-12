@@ -14,6 +14,7 @@ Early development. Some security mechanisms are already implemented; others are 
 - Input validation on all API endpoints
 - Atomic file writes (temp + rename) to prevent data corruption
 - Path traversal protection on file operations
+- Error message sanitization (prevents credential/token leaking in error responses)
 
 **Planned:**
 - Dangerous operation blacklist (file deletion, system config changes, privilege escalation)
