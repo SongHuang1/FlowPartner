@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { unlock, lock, getLockStatus, sendMessage } from '@/lib/api'
+import { unlock, lock, getLockStatus, initApi } from '@/lib/api'
 import type { LockStatus } from '@/types'
 
 // Mock fetch globally
@@ -17,6 +17,7 @@ function mockResponse(data: unknown, ok = true, status = 200): Response {
 describe('api - unlock/lock/lockStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    initApi(8080)
   })
 
   describe('unlock', () => {
@@ -27,7 +28,7 @@ describe('api - unlock/lock/lockStatus', () => {
 
       await unlock('TestPass123')
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/unlock', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8080/api/unlock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: 'TestPass123' }),
@@ -82,7 +83,7 @@ describe('api - unlock/lock/lockStatus', () => {
 
       await lock()
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/lock', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8080/api/lock', {
         method: 'POST',
         signal: expect.any(AbortSignal),
       })
@@ -117,7 +118,7 @@ describe('api - unlock/lock/lockStatus', () => {
       const result = await getLockStatus()
 
       expect(result).toEqual(mockStatus)
-      expect(mockFetch).toHaveBeenCalledWith('/api/lock_status', expect.any(Object))
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:8080/api/lock_status', expect.any(Object))
     })
 
     it('returns locked status with locked_until', async () => {
@@ -170,69 +171,4 @@ describe('api - unlock/lock/lockStatus', () => {
     })
   })
 
-  describe('sendMessage', () => {
-    it('sends POST request with content', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: { content: 'AI response' }, timestamp: 123, request_id: 'uuid' })
-      )
-
-      const result = await sendMessage('Hello')
-
-      expect(mockFetch).toHaveBeenCalledWith('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: 'Hello' }),
-        signal: expect.any(AbortSignal),
-      })
-      expect(result).toEqual({ content: 'AI response' })
-    })
-
-    it('returns AI response content', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: { content: 'This is the AI response.' }, timestamp: 123, request_id: 'uuid' })
-      )
-
-      const result = await sendMessage('What is Python?')
-
-      expect(result.content).toBe('This is the AI response.')
-    })
-
-    it('throws error when API key locked', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 4002, message: '请先解锁 API Key', data: null, timestamp: 123, request_id: 'uuid' }, false, 403)
-      )
-
-      await expect(sendMessage('Hello')).rejects.toThrow('请先解锁 API Key')
-    })
-
-    it('throws error on agent unavailable', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 2001, message: 'Agent 服务不可用', data: null, timestamp: 123, request_id: 'uuid' }, false, 502)
-      )
-
-      await expect(sendMessage('Hello')).rejects.toThrow('Agent 服务不可用')
-    })
-
-    it('throws error on network failure', async () => {
-      mockFetch.mockRejectedValue(new Error('Network error'))
-
-      await expect(sendMessage('Hello')).rejects.toThrow('Network error')
-    })
-
-    it('uses longer timeout for chat requests', async () => {
-      const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: { content: 'response' }, timestamp: 123, request_id: 'uuid' })
-      )
-
-      await sendMessage('Hello')
-
-      // Verify that a longer timeout is used (35000ms for chat)
-      const timeoutCalls = setTimeoutSpy.mock.calls
-      const hasLongTimeout = timeoutCalls.some(call => call[1] === 35000)
-      expect(hasLongTimeout).toBe(true)
-
-      setTimeoutSpy.mockRestore()
-    })
-  })
 })

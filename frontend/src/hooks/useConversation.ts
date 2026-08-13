@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Message, Conversation } from '@/types'
 import { getConversation, saveConversation } from '@/lib/api'
 
@@ -58,7 +58,7 @@ export function useConversation(): UseConversationReturn {
     setMessages(updated)
   }
 
-  const addAssistantMessage = (content: string) => {
+  const addAssistantMessage = useCallback((content: string) => {
     const newMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
@@ -69,7 +69,7 @@ export function useConversation(): UseConversationReturn {
     const updated = [...messagesRef.current, newMessage]
     messagesRef.current = updated
     setMessages(updated)
-  }
+  }, [])
 
   return { messages, loading, error, sendMessage, addAssistantMessage }
 }

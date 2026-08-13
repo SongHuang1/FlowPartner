@@ -42,11 +42,6 @@ export interface LockStatus {
   has_api_key: boolean
 }
 
-export interface ChatResponse {
-  content: string
-  error?: string
-}
-
 export interface WindowState {
   x: number
   y: number
