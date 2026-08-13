@@ -473,6 +473,10 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion()
 })
 
+ipcMain.handle('get-backend-port', () => {
+  return backendPort
+})
+
 app.whenReady().then(async () => {
   try {
     createTray()
