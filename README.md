@@ -20,12 +20,12 @@ Early development. The project has three layers in place:
 
 **What's in the repo:**
 
-- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, activity bar, sidebar settings panel, chat area, and persistent data via WebSocket + REST
+- `frontend/` — Electron + React + TypeScript + Tailwind: desktop app with system tray, native menu, activity bar, sidebar settings panel, chat area (WebSocket), and persistent data via REST
 - `backend/` — Go: gRPC server, WebSocket server, bridge manager (WebSocket↔gRPC), atomic file storage, API Key encryption and memory management
 - `agent/` — Python: gRPC client, ReAct agent loop, tool registry (read_file, write_file, list_directory)
 - `proto/` — gRPC protocol definitions and generated code for both Go and Python
 
-**Communication flow:** Frontend → WebSocket → Go bridge → gRPC bidirectional stream → Python agent → gRPC CallLLM → Go → WebSocket → Frontend
+**Communication flow:** Electron (port discovery via IPC) → Frontend (bootstrap: fetchBackendPort → initApi) → WebSocket → Go bridge → gRPC bidirectional stream → Python agent → gRPC CallLLM → Go → WebSocket → Frontend
 
 **Known issues:**
 
@@ -64,10 +64,11 @@ FlowPartner/
 ├── docs/
 ├── frontend/             # Electron + React + TypeScript + Tailwind
 │   ├── electron/main.cjs
+│   ├── electron/preload.cjs
 │   ├── src/
-│   │   ├── components/   # chat, layout, settings, ui
-│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState
-│   │   ├── lib/          # api.ts, utils.ts, validation.ts
+│   │   ├── components/   # chat (ChatArea, ConnectionStatus, EventDetail), layout, settings, ui
+│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState, useWebSocket
+│   │   ├── lib/          # api.ts (HTTP client + dynamic port init), utils.ts, validation.ts
 │   │   └── types/
 │   └── package.json
 ├── Makefile

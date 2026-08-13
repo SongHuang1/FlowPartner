@@ -40,6 +40,28 @@ Python Agent (agent/src/agent/)
     └── tools/: read_file, write_file, list_directory
 ```
 
+### 前端启动流程
+
+```
+Electron main.cjs
+    │ 启动后端子进程，读取就绪信号 __FP_BACKEND_READY__ HTTP=:%d gRPC=:%d
+    │ 保存 backendPort
+    ↓
+preload.cjs
+    │ 暴露 window.flowPartner.fetchBackendPort() → backendPort
+    │ 暴露 window.flowPartner.onBackendPortChanged(cb) → 端口变化通知
+    ↓
+main.tsx bootstrap
+    │ await window.flowPartner.fetchBackendPort()
+    │ initApi(port) → 设置 BASE = http://localhost:{port}/api
+    │ 渲染 React 应用
+    ↓
+useWebSocket hook
+    │ 连接 ws://localhost:{port}/ws
+    │ 支持自动重连（最多 5 次，间隔 3s）、处理超时（60s）、安全端口校验（1024-65535）
+    │ 监听 onBackendPortChanged → 端口变化时重连
+```
+
 ### 当前代码状态
 
 **main.go 已正常工作**：
@@ -86,10 +108,11 @@ FlowPartner/
 ├── docs/                   # 空目录
 ├── frontend/               # Electron + React + TypeScript + Tailwind
 │   ├── electron/main.cjs     # Electron 主进程（CommonJS）
+│   ├── electron/preload.cjs   # preload（暴露 fetchBackendPort、onBackendPortChanged）
 │   ├── src/
-│   │   ├── components/       # chat, layout, settings, ui
-│   │   ├── hooks/            # useConversation, useLock, useSettings, useWindowState
-│   │   ├── lib/              # api.ts (HTTP 客户端), utils.ts, validation.ts
+│   │   ├── components/       # chat (ChatArea, ConnectionStatus, EventDetail), layout, settings, ui
+│   │   ├── hooks/            # useConversation, useLock, useSettings, useWindowState, useWebSocket
+│   │   ├── lib/              # api.ts (HTTP 客户端 + 动态端口初始化), utils.ts, validation.ts
 │   │   └── types/
 │   └── package.json
 ├── Makefile               # build/test/clean 目标
@@ -242,6 +265,7 @@ make test-all                                # 构建+测试所有层
 - 在等待用户确认前先破坏性操作 — 删除/覆盖后再问来不及
 - 修改 proto 后手动编辑生成的 `.pb.go` / `_pb2.py` 文件 — 用 `protoc` 重新生成
 - 基于 chat.go 开发聊天功能 — 旧 HTTP chat 端点已废弃，新架构用 WebSocket（ws.go）
+- 使用旧 `sendMessage` HTTP 函数 — 该函数已从 api.ts 移除，聊天通信全部走 WebSocket（useWebSocket hook）
 
 
 ---

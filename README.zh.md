@@ -20,12 +20,12 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 **仓库中已有：**
 
-- `frontend/` — Electron + React + TypeScript + Tailwind：桌面应用，含系统托盘、原生菜单、活动栏、侧边栏设置面板、聊天区域，通过 WebSocket + REST 持久化数据
+- `frontend/` — Electron + React + TypeScript + Tailwind：桌面应用，含系统托盘、原生菜单、活动栏、侧边栏设置面板、聊天区域（WebSocket），通过 REST 持久化数据
 - `backend/` — Go：gRPC 服务器、WebSocket 服务器、bridge 管理器（WebSocket↔gRPC）、原子文件存储、API Key 加密与内存管理
 - `agent/` — Python：gRPC 客户端、ReAct Agent 循环、工具注册表（read_file, write_file, list_directory）
 - `proto/` — gRPC 协议定义及 Go/Python 两侧生成代码
 
-**通信流程：** 前端 → WebSocket → Go bridge → gRPC 双向流 → Python agent → gRPC CallLLM → Go → WebSocket → 前端
+**通信流程：** Electron（IPC 端口发现）→ 前端（bootstrap：fetchBackendPort → initApi）→ WebSocket → Go bridge → gRPC 双向流 → Python agent → gRPC CallLLM → Go → WebSocket → 前端
 
 **已知问题：**
 
@@ -64,10 +64,11 @@ FlowPartner/
 ├── docs/
 ├── frontend/             # Electron + React + TypeScript + Tailwind
 │   ├── electron/main.cjs
+│   ├── electron/preload.cjs
 │   ├── src/
-│   │   ├── components/   # chat, layout, settings, ui
-│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState
-│   │   ├── lib/          # api.ts, utils.ts, validation.ts
+│   │   ├── components/   # chat (ChatArea, ConnectionStatus, EventDetail), layout, settings, ui
+│   │   ├── hooks/        # useConversation, useLock, useSettings, useWindowState, useWebSocket
+│   │   ├── lib/          # api.ts（HTTP 客户端 + 动态端口初始化）, utils.ts, validation.ts
 │   │   └── types/
 │   └── package.json
 ├── Makefile
