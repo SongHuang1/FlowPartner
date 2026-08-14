@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { X, Key, Bot, Settings } from 'lucide-react'
+import { X, Key, Bot, Settings, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useSettings } from '@/hooks/useSettings'
+import { saveSettings } from '@/lib/api'
 import { APISettings } from './APISettings'
 import { AgentSettings } from './AgentSettings'
 import { CloseBehaviorSettings } from './CloseBehaviorSettings'
@@ -20,6 +22,17 @@ const tabs: { id: TabId; label: string; icon: typeof Key }[] = [
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('api')
+  const { getCurrentSettings } = useSettings()
+  const [saving, setSaving] = useState(false)
+
+  const handleSaveAll = async () => {
+    setSaving(true)
+    try {
+      await saveSettings(getCurrentSettings())
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (!open) return null
 
@@ -58,6 +71,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           {activeTab === 'api' && <APISettings />}
           {activeTab === 'agent' && <AgentSettings />}
           {activeTab === 'behavior' && <CloseBehaviorSettings />}
+        </div>
+
+        <div className="flex justify-end px-6 py-4 border-t border-neutral-200 bg-neutral-50">
+          <Button onClick={handleSaveAll} disabled={saving}>
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? '保存中...' : '保存并应用'}
+          </Button>
         </div>
       </div>
     </div>

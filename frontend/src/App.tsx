@@ -20,6 +20,10 @@ export default function App() {
     window.flowPartner.sendCloseAction(action)
   }
 
+  const handleRememberAction = (behavior: 'minimize' | 'quit') => {
+    window.flowPartner.updateCloseBehavior(behavior, true)
+  }
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans">
       <TitleBar />
@@ -33,6 +37,7 @@ export default function App() {
           onMinimize={() => handleCloseAction('minimize')}
           onQuit={() => handleCloseAction('quit')}
           onClose={() => setCloseDialogOpen(false)}
+          onRememberAction={handleRememberAction}
         />
       )}
     </div>

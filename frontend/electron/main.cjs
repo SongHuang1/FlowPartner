@@ -392,6 +392,19 @@ function createWindow(port) {
 
   ipcMain.on('update-close-behavior', (_, behavior, remembered) => {
     closeBehaviorCache = { behavior, remembered }
+    try {
+      const configPath = path.join(getDataPath(), 'config')
+      const settingsPath = path.join(configPath, 'settings.json')
+      const data = fs.readFileSync(settingsPath, 'utf-8')
+      const settings = JSON.parse(data)
+      settings.close_behavior = behavior
+      settings.close_remembered = remembered
+      const tmpPath = settingsPath + '.tmp'
+      fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2))
+      fs.renameSync(tmpPath, settingsPath)
+    } catch (err) {
+      console.error('Failed to persist close behavior:', err)
+    }
   })
 
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'

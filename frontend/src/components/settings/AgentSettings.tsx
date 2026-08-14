@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useSettings } from '@/hooks/useSettings'
 import type { InputHTMLAttributes } from 'react'
 
@@ -5,6 +6,37 @@ const inputClass = 'flex w-full rounded-lg border border-neutral-200 bg-white px
 
 function Field({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={inputClass + ' ' + (className || '')} {...props} />
+}
+
+function ContextField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [local, setLocal] = useState(String(value))
+
+  useEffect(() => {
+    setLocal(String(value))
+  }, [value])
+
+  const handleBlur = () => {
+    const parsed = parseInt(local, 10)
+    if (isNaN(parsed) || parsed < 1) {
+      onChange(1)
+      setLocal('1')
+    } else {
+      onChange(parsed)
+      setLocal(String(parsed))
+    }
+  }
+
+  return (
+    <Field
+      id="context-window"
+      type="text"
+      inputMode="numeric"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={handleBlur}
+      placeholder="32768"
+    />
+  )
 }
 
 export function AgentSettings() {
@@ -65,14 +97,7 @@ export function AgentSettings() {
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="context-window" className="text-xs font-medium text-neutral-600">上下文窗口</label>
-          <Field
-            id="context-window"
-            type="number"
-            value={settings.context_window}
-            onChange={(e) => updateSettings({ context_window: parseInt(e.target.value) || 0 })}
-            placeholder="32768"
-            min={1}
-          />
+          <ContextField value={settings.context_window} onChange={(v) => updateSettings({ context_window: v })} />
           <p className="text-xs text-neutral-400">单位：tokens，可自由输入任意正整数（如 1000000 = 1M）</p>
         </div>
       </div>

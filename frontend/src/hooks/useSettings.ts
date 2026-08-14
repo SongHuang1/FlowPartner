@@ -32,6 +32,7 @@ interface UseSettingsReturn {
   error: string | null
   updateSettings: (patch: Partial<Settings>) => void
   getCurrentSettings: () => Settings
+  refreshSettings: () => Promise<void>
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -69,5 +70,15 @@ export function useSettings(): UseSettingsReturn {
 
   const getCurrentSettings = () => settingsRef.current
 
-  return { settings, loading, error, updateSettings, getCurrentSettings }
+  const refreshSettings = async () => {
+    try {
+      const s = await getSettings()
+      settingsRef.current = s
+      setSettings(s)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '刷新设置失败')
+    }
+  }
+
+  return { settings, loading, error, updateSettings, getCurrentSettings, refreshSettings }
 }

@@ -5,9 +5,10 @@ interface CloseDialogProps {
   onMinimize: () => void
   onQuit: () => void
   onClose: () => void
+  onRememberAction: (behavior: 'minimize' | 'quit') => void
 }
 
-export function CloseDialog({ onMinimize, onQuit, onClose }: CloseDialogProps) {
+export function CloseDialog({ onMinimize, onQuit, onClose, onRememberAction }: CloseDialogProps) {
   const [showQuitConfirm, setShowQuitConfirm] = useState(false)
   const [remember, setRemember] = useState(false)
 
@@ -22,7 +23,7 @@ export function CloseDialog({ onMinimize, onQuit, onClose }: CloseDialogProps) {
   const handleMinimize = () => {
     onMinimize()
     if (remember) {
-      window.flowPartner.updateCloseBehavior('minimize', true)
+      onRememberAction('minimize')
     }
   }
 
@@ -33,7 +34,7 @@ export function CloseDialog({ onMinimize, onQuit, onClose }: CloseDialogProps) {
     }
     onQuit()
     if (remember) {
-      window.flowPartner.updateCloseBehavior('quit', true)
+      onRememberAction('quit')
     }
   }
 
