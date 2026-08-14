@@ -6,9 +6,9 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。这些没�
 
 **核心优先级**：防呆 > 安全 > 可恢复 > 功能 > 性能。
 
-任何可能使用户误操作或陷入无法恢复状态的设计均视为不合格。
+任何可能使用户误操作或陷入不可恢复状态的设计均视为不合格。
 
-**所有的设计都是针对我们编写的软件来说的，要求软件实现这些功能；在代码编写中并不需要遵循这样的安全设计。在代码编写过程中，应该在不确定的时候，询问我的意见。**
+**所有的设计都是针对我们编写的软件来说的，要求软件实现这些功能；在代码编写中并不需要遵循这样的安全设计。在代码编写过程中，应该在不确定的时候，询问用户的意见。**
 
 所有的方案应该采用工业级、长久性、大型项目使用的方案，不要先用简单方案替代；想想如果你要跟他打交道很长时间，你会选择的方案。
 
@@ -16,7 +16,7 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。这些没�
 
 ## 架构概览（当前实际状态）
 
-### 预期架构：WebSocket + gRPC 双向通信
+### 预期架构：WebSocket + gRPC 双向通信 + LLM 流式调用
 
 ```
 Frontend (Electron + React + TypeScript)
@@ -32,10 +32,31 @@ Backend (Go)
     │       ↓ gRPC bidirectional stream (port 50051)
     ├── AgentHandler (internal/handler/agent.go)
     │       ├── SyncChannel: 接收 Python 事件 → 转发到 WebSocket
-    │       └── CallLLM: 代理调用大模型（当前为 mock）
+    │       └── CallLLM: 服务端流式 RPC → 调用 LLM Client
+    │
+    ├── LLM Client (internal/llm/client.go)
+    │       ├── HTTP POST → OpenAI 兼容 API
+    │       ├── SSE 流式解析 (internal/llm/sse.go)
+    │       ├── 错误分类 (internal/llm/error.go)
+    │       └── URL 规范化 (internal/llm/url.go)
+    │
+    ├── ModelConfig Handler (internal/handler/model_config.go)
+    │       ├── CRUD: /api/model_configs
+    │       ├── Activate: /api/model_configs/{id}/activate
+    │       └── 加密存储 API Key (internal/crypto)
+    │
+    ├── Keystore (internal/keystore/keystore.go)
+    │       ├── TryActivate: 解密 + 解锁（带速率限制）
+    │       ├── SwitchKey: 原子切换密钥
+    │       └── GetKey: 供 LLM Client 使用
     ▼
 Python Agent (agent/src/agent/)
-    ├── FlowPartnerClient (grpc_client.go): gRPC 客户端
+    ├── FlowPartnerClient (grpc_client.py): gRPC 客户端
+    │       ├── call_llm_via_go: 处理服务端流式响应
+    │       │       ├── 逐 chunk 接收 SSE JSON
+    │       │       ├── 重建 tool_calls delta
+    │       │       └── 发送 llm_chunk 事件到前端
+    │       └── connect_and_listen: 双向流事件循环
     ├── core/react_agent.py: ReAct 循环（思考→行动→观察）
     └── tools/: read_file, write_file, list_directory
 ```
@@ -66,19 +87,32 @@ useWebSocket hook
 
 **main.go 已正常工作**：
 - `backend/cmd/server/main.go` 注入 `bridge.Manager`，同时启动 HTTP server 和 gRPC server
-- HTTP server 注册了 REST 路由（settings、conversation、unlock）和 WebSocket 端点（`/ws`）
+- HTTP server 注册了 REST 路由（settings、conversation、unlock、model_configs）和 WebSocket 端点（`/ws`）
 - gRPC server 注册了 `AgentHandler`，与 Python Agent 通过双向流通信
 - 端口通过 `server.FindAvailablePort` 动态发现，就绪信号格式：`__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
 
 **HTTP handlers 已接入**：
-- `internal/handler/settings.go` — settings CRUD（`/api/settings`）
+- `internal/handler/settings.go` — settings CRUD（`/api/settings`），支持 ModelConfigs 迁移
 - `internal/handler/conversation.go` — 对话存储（`/api/conversation`）
 - `internal/handler/unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`）
+- `internal/handler/model_config.go` — 模型配置 CRUD（`/api/model_configs`）
 - 这些 handlers 通过 `registerRoutes` 注册到 HTTP server，已可正常使用
 
-**README.md 部分过时**：部分描述与实际状态有出入，判断项目状态以 AGENTS.md 为准。
+**LLM 集成已完成**：
+- `internal/llm/client.go` — HTTP 流式客户端，支持 SSE 解析、自动重试、超时控制
+- `internal/llm/error.go` — 错误分类（401/403/404/429/500/502/503），中文错误信息 + 猜测原因
+- `internal/llm/sse.go` — SSE 事件解析器
+- `internal/llm/url.go` — BaseURL 规范化（拼接 `/chat/completions`）
+- `internal/handler/agent.go` — `CallLLM` 现在是服务端流式 RPC，从 keystore 获取 API Key，调用 LLM Client
 
-目前为止，所有的测试文件都不值得信任，经过大量的更改之后，这些测试文件已经几乎不可用。
+**Keystore 已增强**：
+- `internal/keystore/keystore.go` — 新增 `TryActivate`（带速率限制 5 次/30s）、`SwitchKey`、`LockedUntil`
+
+**Proto 已更新**：
+- `LLMResponse` 改为 `is_error` + `json_response` + `message_id`
+- `CallLLM` 改为 `returns (stream LLMResponse)`（服务端流式）
+
+
 
 ---
 
@@ -93,27 +127,34 @@ FlowPartner/
 │   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go 后端
-│   ├── cmd/server/main.go    # 入口（当前是坏的）
+│   ├── cmd/server/main.go    # 入口
 │   ├── internal/
 │   │   ├── bridge/manager.go # WebSocket ↔ gRPC 桥接（核心）
-│   │   ├── handler/          # HTTP handlers（旧）+ WebSocket/gRPC handlers（新）
-│   │   ├── config/           # 配置加载
+│   │   ├── handler/          # HTTP handlers + WebSocket/gRPC handlers
+│   │   ├── config/           # 配置加载（环境变量：FP_HTTP_PORT, FP_DEV_MODE）
 │   │   ├── crypto/           # API Key 加密/零化
 │   │   ├── keystore/         # API Key 内存管理
+│   │   ├── llm/              # LLM HTTP 流式客户端
+│   │   │   ├── client.go     #   HTTP 流式调用 + 重试
+│   │   │   ├── error.go      #   错误分类 + 中文信息
+│   │   │   ├── sse.go        #   SSE 事件解析器
+│   │   │   └── url.go        #   URL 规范化
 │   │   ├── response/         # 标准响应格式
 │   │   ├── sanitize/         # 错误信息净化（防止凭证泄露）
 │   │   ├── server/           # 端口发现
-│   │   └── storage/          # JSON 文件原子写入 (~/.flowpartner/)
+│   │   └── storage/          # JSON 文件原子写入 (~/.flowpartner/config/)
 │   └── proto/                # proto 定义 + 生成的 .pb.go 文件
-├── docs/                   # 空目录
+├── docs/                   # 辅助文档
 ├── frontend/               # Electron + React + TypeScript + Tailwind
-│   ├── electron/main.cjs     # Electron 主进程（CommonJS）
-│   ├── electron/preload.cjs   # preload（暴露 fetchBackendPort、onBackendPortChanged）
+│   ├── electron/
+│   │   ├── main.cjs          # Electron 主进程（启动 Go + Python）
+│   │   └── preload.cjs       # preload（暴露 fetchBackendPort、onBackendPortChanged）
 │   ├── src/
-│   │   ├── components/       # chat (ChatArea, ConnectionStatus, EventDetail), layout, settings, ui
+│   │   ├── components/       # chat, layout, settings, ui
 │   │   ├── hooks/            # useConversation, useLock, useSettings, useWindowState, useWebSocket
-│   │   ├── lib/              # api.ts (HTTP 客户端 + 动态端口初始化), utils.ts, validation.ts
+│   │   ├── lib/              # api.ts, utils.ts, validation.ts
 │   │   └── types/
+│   ├── electron-builder.yml  # 打包配置（extraResources 包含 bin/）
 │   └── package.json
 ├── Makefile               # build/test/clean 目标
 ├── CONTRIBUTING.md
@@ -133,6 +174,84 @@ proto 定义在两个位置存在近乎相同的副本：
 ---
 
 ## 构建与验证
+
+### 从源码创建可执行程序
+
+#### 前置条件
+
+| 工具 | 版本 | 用途 |
+|------|------|------|
+| Go | 1.26+ | 后端编译 |
+| Node.js | 26+ | 前端 + Electron |
+| Python | 3.12+ | Agent 运行时（编译为独立可执行文件） |
+| uv | 最新 | Python 依赖管理 |
+| protoc | 3.21+ | gRPC 代码生成 |
+
+#### 快速构建（推荐）
+
+```bash
+# 构建 Go 后端 + Agent + Electron 安装包
+make build-electron
+
+# 跨平台编译 Go 后端（Windows/macOS/Linux × amd64/arm64）
+make cross-build-all
+```
+
+#### 分步构建
+
+```bash
+# 1. Go 后端
+cd backend
+go build -o flowpartner-backend ./cmd/server/
+
+# 2. Python Agent → 独立可执行文件
+cd agent
+uv sync --frozen
+uv run pyinstaller --onefile --name flowpartner-agent src/agent/main.py
+
+# 3. 前端
+cd frontend
+npm ci
+npm run build
+
+# 4. 复制二进制到 frontend/bin/
+cp backend/flowpartner-backend frontend/bin/
+cp agent/dist/flowpartner-agent frontend/bin/
+
+# 5. Electron 安装包
+cd frontend
+npm run build:electron
+```
+
+#### 开发模式（三层同时运行）
+
+```bash
+# 终端 1: 后端
+cd backend && go run cmd/server/main.go
+
+# 终端 2: Agent
+cd agent && uv run python -m src.agent.main
+
+# 终端 3: 前端
+cd frontend && npm run dev
+
+# 终端 4: Electron（可选）
+cd frontend && npm run dev:electron
+```
+
+#### 重新生成 protobuf 桩代码
+
+```bash
+# Go
+cd backend
+protoc --go_out=. --go-grpc_out=. proto/agent.proto
+
+# Python
+cd agent
+uv run python -m grpc_tools.protoc -I ../backend/proto --python_out=src/agent --grpc_python_out=src/agent agent.proto
+```
+
+### 验证命令
 
 ```bash
 # --- Go（backend 层）---
@@ -180,7 +299,7 @@ make test-all                                # 构建+测试所有层
 
 ### Golang（后端执行层）
 
-- **DO**：文件系统操作、危险操作拦截、gRPC 服务、WebSocket 服务、API Key 加密存储与内存管理、bridge 桥接
+- **DO**：文件系统操作、危险操作拦截、gRPC 服务、WebSocket 服务、API Key 加密存储与内存管理、bridge 桥接、LLM HTTP 流式调用
 - **DON'T**：包含 AI 推理逻辑、操作前端状态
 
 ---
@@ -225,7 +344,7 @@ make test-all                                # 构建+测试所有层
 
 **type**：`feat`、`fix`、`refactor`、`security`、`docs`、`test`
 
-**scope**：`ts`、`py`、`go`、`proto`、`ui`、`agent`、`rag`、`crypto`、`keystore`
+**scope**：`ts`、`py`、`go`、`proto`、`ui`、`agent`、`rag`、`crypto`、`keystore`、`llm`
 
 ---
 
