@@ -58,6 +58,9 @@ describe('useWebSocket', () => {
       onSystemLock: vi.fn(),
       fetchBackendPort: mockFetchBackendPort,
       onBackendPortChanged: mockOnBackendPortChanged,
+      onCloseAction: vi.fn(),
+      sendCloseAction: vi.fn(),
+      updateCloseBehavior: vi.fn(),
     }
 
     mockFetchBackendPort.mockResolvedValue(8080)

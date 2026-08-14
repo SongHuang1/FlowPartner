@@ -11,6 +11,7 @@ let mainWindow = null
 let tray = null
 let backendPort = null
 let isQuiting = false
+let closeBehaviorCache = null
 let agentAuthToken = null
 let cleanupDone = false
 
@@ -361,11 +362,11 @@ function createWindow(port) {
     mainWindow = null
   })
 
-  mainWindow.on('close', async (event) => {
+  mainWindow.on('close', (event) => {
     if (!isQuiting) {
       event.preventDefault()
 
-      const { behavior, remembered } = getCloseBehavior()
+      const { behavior, remembered } = closeBehaviorCache || getCloseBehavior()
 
       if (behavior === 'minimize' && remembered) {
         mainWindow.hide()
@@ -373,25 +374,24 @@ function createWindow(port) {
       }
 
       if (behavior === 'quit' && remembered) {
-        await quitAppWithCleanup()
+        quitAppWithCleanup()
         return
       }
 
-      const result = dialog.showMessageBoxSync(mainWindow, {
-        type: 'question',
-        title: '关闭窗口',
-        message: '点击关闭按钮后希望发生什么？',
-        buttons: ['最小化到托盘', '完全退出', '取消'],
-        cancelId: 2,
-        defaultId: 0,
-      })
-
-      if (result === 0) {
-        mainWindow.hide()
-      } else if (result === 1) {
-        await quitAppWithCleanup()
-      }
+      mainWindow.webContents.send('request-close-action')
     }
+  })
+
+  ipcMain.on('close-action-response', async (_, action) => {
+    if (action === 'minimize') {
+      mainWindow.hide()
+    } else if (action === 'quit') {
+      await quitAppWithCleanup()
+    }
+  })
+
+  ipcMain.on('update-close-behavior', (_, behavior, remembered) => {
+    closeBehaviorCache = { behavior, remembered }
   })
 
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'

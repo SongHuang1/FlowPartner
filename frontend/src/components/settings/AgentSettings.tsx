@@ -70,12 +70,10 @@ export function AgentSettings() {
             type="number"
             value={settings.context_window}
             onChange={(e) => updateSettings({ context_window: parseInt(e.target.value) || 0 })}
-            placeholder="8192"
-            min={1024}
-            max={128000}
-            step={1024}
+            placeholder="32768"
+            min={1}
           />
-          <p className="text-xs text-neutral-400">单位：tokens，推荐 4096 - 16384</p>
+          <p className="text-xs text-neutral-400">单位：tokens，可自由输入任意正整数（如 1000000 = 1M）</p>
         </div>
       </div>
     </div>

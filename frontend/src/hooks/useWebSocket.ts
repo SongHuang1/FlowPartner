@@ -39,17 +39,7 @@ export interface UseWebSocketReturn {
   onSecurityEvent: (cb: (message: string) => void) => () => void
 }
 
-declare global {
-  interface Window {
-    flowPartner: {
-      platform: NodeJS.Platform
-      getVersion: () => Promise<string>
-      onSystemLock: (callback: () => void) => void
-      fetchBackendPort: () => Promise<number>
-      onBackendPortChanged: (callback: (port: number) => void) => () => void
-    }
-  }
-}
+
 
 export function useWebSocket(): UseWebSocketReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')

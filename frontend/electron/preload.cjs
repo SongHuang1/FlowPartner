@@ -12,4 +12,13 @@ contextBridge.exposeInMainWorld('flowPartner', {
         ipcRenderer.on('backend-port-changed', listener)
         return () => ipcRenderer.removeListener('backend-port-changed', listener)
     },
+    onCloseAction: (callback) => {
+        ipcRenderer.on('request-close-action', () => callback())
+    },
+    sendCloseAction: (action) => {
+        ipcRenderer.send('close-action-response', action)
+    },
+    updateCloseBehavior: (behavior, remembered) => {
+        ipcRenderer.send('update-close-behavior', behavior, remembered)
+    },
 })

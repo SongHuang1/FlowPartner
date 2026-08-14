@@ -1,11 +1,24 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { ActivityBar } from '@/components/layout/ActivityBar'
 import { ChatArea } from '@/components/chat/ChatArea'
 import { SettingsModal } from '@/components/settings/SettingsModal'
+import { CloseDialog } from '@/components/layout/CloseDialog'
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+
+  useEffect(() => {
+    window.flowPartner.onCloseAction(() => {
+      setCloseDialogOpen(true)
+    })
+  }, [])
+
+  const handleCloseAction = (action: 'minimize' | 'quit') => {
+    setCloseDialogOpen(false)
+    window.flowPartner.sendCloseAction(action)
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans">
@@ -15,6 +28,13 @@ export default function App() {
         <ChatArea />
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {closeDialogOpen && (
+        <CloseDialog
+          onMinimize={() => handleCloseAction('minimize')}
+          onQuit={() => handleCloseAction('quit')}
+          onClose={() => setCloseDialogOpen(false)}
+        />
+      )}
     </div>
   )
 }
