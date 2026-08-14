@@ -22,8 +22,10 @@ class MockWebSocket {
   onerror: (() => void) | null = null
   onmessage: ((evt: { data: string }) => void) | null = null
   sentMessages: string[] = []
+  url: string = ''
 
-  constructor(public url: string) {
+  constructor(url: string) {
+    this.url = url
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     mockWebSocketInstance = this
   }
@@ -142,7 +144,7 @@ describe('useWebSocket', () => {
       vi.useFakeTimers()
       mockFetchBackendPort.mockResolvedValue(8080)
 
-      const { _result } = renderHook(() => useWebSocket())
+      renderHook(() => useWebSocket())
 
       await act(async () => {
         await vi.runAllTimersAsync()
@@ -532,7 +534,7 @@ describe('useWebSocket', () => {
     it('console.warns on unknown event_type', async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      const { _result } = renderHook(() => useWebSocket())
+      renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 
@@ -593,7 +595,7 @@ describe('useWebSocket', () => {
         return () => {}
       })
 
-      const { _result } = renderHook(() => useWebSocket())
+      renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 

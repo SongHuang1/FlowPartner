@@ -10,6 +10,7 @@ extraResources:
     to: bin/
     filter:
       - flowpartner-backend*
+      - flowpartner-agent*
 win:
   target:
     - target: nsis

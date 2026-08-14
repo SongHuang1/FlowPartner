@@ -20,6 +20,11 @@ function getBackendBinPath() {
   return path.join(process.resourcesPath, 'bin', exeName)
 }
 
+function getAgentBinPath() {
+  const exeName = process.platform === 'win32' ? 'flowpartner-agent.exe' : 'flowpartner-agent'
+  return path.join(process.resourcesPath, 'bin', exeName)
+}
+
 function findFreePort() {
   return new Promise((resolve, reject) => {
     const server = http.createServer()
@@ -102,8 +107,8 @@ function startPythonAgent() {
       env: safeEnv,
     })
   } else {
-    pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
-      cwd: process.resourcesPath,
+    const agentPath = getAgentBinPath()
+    pythonProcess = spawn(agentPath, [], {
       env: safeEnv,
     })
   }
@@ -114,7 +119,11 @@ function startPythonAgent() {
 
   pythonProcess.on('error', (err) => {
     if (err.code === 'ENOENT') {
-      dialog.showErrorBox('Fail', 'Cannot find Python >= 3.9')
+      const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
+      const msg = isDev
+        ? 'Cannot find Python >= 3.12. Please install Python and try again.'
+        : 'Cannot find Agent binary. Please reinstall FlowPartner.'
+      dialog.showErrorBox('Fail', msg)
     } else if (!isQuiting) {
       dialog.showErrorBox('Agent failed to startup', `Fail to startup Python Agent: ${err.message}`)
     }
