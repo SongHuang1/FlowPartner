@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.36.0--rc2
-// source: proto/agent.proto
+// source: agent.proto
 
 package proto
 
@@ -31,8 +31,8 @@ const (
 type FlowPartnerServiceClient interface {
 	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
 	SyncChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentEvent, ServerCommand], error)
-	// 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
-	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error)
+	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LLMResponse], error)
 }
 
 type flowPartnerServiceClient struct {
@@ -56,15 +56,24 @@ func (c *flowPartnerServiceClient) SyncChannel(ctx context.Context, opts ...grpc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FlowPartnerService_SyncChannelClient = grpc.BidiStreamingClient[AgentEvent, ServerCommand]
 
-func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error) {
+func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LLMResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(LLMResponse)
-	err := c.cc.Invoke(ctx, FlowPartnerService_CallLLM_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &FlowPartnerService_ServiceDesc.Streams[1], FlowPartnerService_CallLLM_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[LLMRequest, LLMResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type FlowPartnerService_CallLLMClient = grpc.ServerStreamingClient[LLMResponse]
 
 // FlowPartnerServiceServer is the server API for FlowPartnerService service.
 // All implementations must embed UnimplementedFlowPartnerServiceServer
@@ -74,8 +83,8 @@ func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, 
 type FlowPartnerServiceServer interface {
 	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
 	SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error
-	// 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
-	CallLLM(context.Context, *LLMRequest) (*LLMResponse, error)
+	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+	CallLLM(*LLMRequest, grpc.ServerStreamingServer[LLMResponse]) error
 	mustEmbedUnimplementedFlowPartnerServiceServer()
 }
 
@@ -89,8 +98,8 @@ type UnimplementedFlowPartnerServiceServer struct{}
 func (UnimplementedFlowPartnerServiceServer) SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error {
 	return status.Error(codes.Unimplemented, "method SyncChannel not implemented")
 }
-func (UnimplementedFlowPartnerServiceServer) CallLLM(context.Context, *LLMRequest) (*LLMResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CallLLM not implemented")
+func (UnimplementedFlowPartnerServiceServer) CallLLM(*LLMRequest, grpc.ServerStreamingServer[LLMResponse]) error {
+	return status.Error(codes.Unimplemented, "method CallLLM not implemented")
 }
 func (UnimplementedFlowPartnerServiceServer) mustEmbedUnimplementedFlowPartnerServiceServer() {}
 func (UnimplementedFlowPartnerServiceServer) testEmbeddedByValue()                            {}
@@ -120,23 +129,16 @@ func _FlowPartnerService_SyncChannel_Handler(srv interface{}, stream grpc.Server
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FlowPartnerService_SyncChannelServer = grpc.BidiStreamingServer[AgentEvent, ServerCommand]
 
-func _FlowPartnerService_CallLLM_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LLMRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _FlowPartnerService_CallLLM_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(LLMRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(FlowPartnerServiceServer).CallLLM(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FlowPartnerService_CallLLM_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FlowPartnerServiceServer).CallLLM(ctx, req.(*LLMRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(FlowPartnerServiceServer).CallLLM(m, &grpc.GenericServerStream[LLMRequest, LLMResponse]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type FlowPartnerService_CallLLMServer = grpc.ServerStreamingServer[LLMResponse]
 
 // FlowPartnerService_ServiceDesc is the grpc.ServiceDesc for FlowPartnerService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -144,12 +146,7 @@ func _FlowPartnerService_CallLLM_Handler(srv interface{}, ctx context.Context, d
 var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "flowpartner.FlowPartnerService",
 	HandlerType: (*FlowPartnerServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "CallLLM",
-			Handler:    _FlowPartnerService_CallLLM_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "SyncChannel",
@@ -157,6 +154,11 @@ var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 			ClientStreams: true,
 		},
+		{
+			StreamName:    "CallLLM",
+			Handler:       _FlowPartnerService_CallLLM_Handler,
+			ServerStreams: true,
+		},
 	},
-	Metadata: "proto/agent.proto",
+	Metadata: "agent.proto",
 }

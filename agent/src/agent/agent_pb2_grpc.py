@@ -40,7 +40,7 @@ class FlowPartnerServiceStub:
                 request_serializer=agent__pb2.AgentEvent.SerializeToString,
                 response_deserializer=agent__pb2.ServerCommand.FromString,
                 _registered_method=True)
-        self.CallLLM = channel.unary_unary(
+        self.CallLLM = channel.unary_stream(
                 '/flowpartner.FlowPartnerService/CallLLM',
                 request_serializer=agent__pb2.LLMRequest.SerializeToString,
                 response_deserializer=agent__pb2.LLMResponse.FromString,
@@ -59,7 +59,7 @@ class FlowPartnerServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def CallLLM(self, request, context):
-        """代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
+        """代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -73,7 +73,7 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
                     request_deserializer=agent__pb2.AgentEvent.FromString,
                     response_serializer=agent__pb2.ServerCommand.SerializeToString,
             ),
-            'CallLLM': grpc.unary_unary_rpc_method_handler(
+            'CallLLM': grpc.unary_stream_rpc_method_handler(
                     servicer.CallLLM,
                     request_deserializer=agent__pb2.LLMRequest.FromString,
                     response_serializer=agent__pb2.LLMResponse.SerializeToString,
@@ -128,7 +128,7 @@ class FlowPartnerService:
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
+        return grpc.experimental.unary_stream(
             request,
             target,
             '/flowpartner.FlowPartnerService/CallLLM',

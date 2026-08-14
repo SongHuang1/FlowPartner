@@ -23,16 +23,16 @@ message LLMRequest {
 }
 
 message LLMResponse {
-    bool success = 1;
-    string error_message = 2;
-    string json_response = 3; // 大模型返回的原始响应体
+    bool is_error = 1;         // 是否为错误终止信号。true 表示此次推送为错误终止
+    string json_response = 2;  // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
+    string message_id = 3;     // 消息唯一标识，用于前端追踪
 }
 
 // --- 4. 核心服务定义 ---
 service FlowPartnerService {
     // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
     rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
-    
-    // 代理调用大模型：Python 把组装好的 Payload 给 Go，Go 去调 API
-    rpc CallLLM (LLMRequest) returns (LLMResponse);
+
+    // 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+    rpc CallLLM (LLMRequest) returns (stream LLMResponse);
 }

@@ -1,37 +1,37 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/keystore"
+	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
 	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type AgentHandler struct {
 	proto.UnimplementedFlowPartnerServiceServer
-	manager *bridge.Manager
+	manager  *bridge.Manager
+	llmClient *llm.LLMClient
 }
 
-// NewAgentHandler 注入 Manager
 func NewAgentHandler(m *bridge.Manager) *AgentHandler {
-	return &AgentHandler{manager: m}
+	return &AgentHandler{
+		manager:   m,
+		llmClient: llm.NewClient(),
+	}
 }
 
-// SyncChannel 处理双向流核心逻辑
 func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelServer) error {
 	log.Println("🔗 Agent gRPC 双向流已建立")
 
-	// 协程 1：不断从 Manager.CmdChan 读取前端发来的指令，发给 Python
-	// 通过 stream.Context().Done() 退出，避免 Python 断开后 goroutine 永久泄漏
-	// 使用带超时的 send 避免 Python Agent 卡死不消费时 goroutine 永久阻塞
 	go func() {
 		for {
 			select {
@@ -58,7 +58,6 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 		}
 	}()
 
-	// 协程 2 (主循环)：不断接收 Python 发来的实时事件，转发给前端 WebSocket
 	for {
 		event, err := stream.Recv()
 		if err == io.EOF {
@@ -69,76 +68,114 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 			return status.Errorf(codes.Internal, "接收事件失败: %s", sanitize.Error(err))
 		}
 
-		// 将事件路由给对应的前端 WebSocket 连接
 		h.manager.SendToSession(event.SessionId, event)
 	}
 }
 
-// CallLLM 保持之前的逻辑 (后续接入真实 API 时修改这里)
-func (h *AgentHandler) CallLLM(ctx context.Context, req *proto.LLMRequest) (*proto.LLMResponse, error) {
+// CallLLM 服务端流式 RPC：解析 Python 请求 → 合并配置 → 调用 LLM → 逐 chunk 返回
+func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerService_CallLLMServer) error {
 	log.Printf("[CallLLM] Session: %s, Payload 长度: %d", req.SessionId, len(req.JsonPayload))
 
-	// 解析 Python 发来的 Payload，检查是否包含 messages
+	messageID := uuid.NewString()
+
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(req.JsonPayload), &payload); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "解析 JsonPayload 失败: %s", sanitize.Error(err))
+		return h.sendError(stream, messageID, llm.InvalidJSONError())
 	}
 
 	messages, ok := payload["messages"].([]interface{})
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "JsonPayload 缺少 messages 字段或类型错误")
+	if !ok || len(messages) == 0 {
+		return h.sendError(stream, messageID, llm.MessagesEmptyError())
 	}
 
-	// 模拟智能行为：
-	// - 如果消息列表中只有 user 消息（第一轮），返回 tool_call 让 Python 去读文件
-	// - 如果消息列表中已经有 tool 结果（第二轮），返回最终回答
-	hasToolResult := false
-	for _, msg := range messages {
-		if m, ok := msg.(map[string]interface{}); ok {
-			if role, _ := m["role"].(string); role == "tool" {
-				hasToolResult = true
-				break
-			}
+	settings := LoadSettings()
+	cfg := settings.activeConfig()
+	if cfg == nil {
+		return h.sendError(stream, messageID, &llm.LLMError{
+			Code:    4002,
+			Message: "无激活的模型配置",
+			Guess:   "请先添加并激活模型配置",
+		})
+	}
+
+	ks := keystore.Instance()
+	apiKey, ok := ks.GetKey()
+	if !ok {
+		return h.sendError(stream, messageID, &llm.LLMError{
+			Code:    4001,
+			Message: "当前模型配置未解锁",
+			Guess:   "请先在设置中解锁当前模型配置",
+		})
+	}
+	keyCopy := make([]byte, len(apiKey))
+	copy(keyCopy, apiKey)
+
+	targetURL, err := llm.NormalizeChatCompletionsURL(cfg.BaseURL)
+	if err != nil {
+		for i := range keyCopy {
+			keyCopy[i] = 0
+		}
+		return h.sendError(stream, messageID, &llm.LLMError{
+			Code:    400,
+			Message: "BaseURL 格式错误",
+			Guess:   "请检查模型配置中的 BaseURL",
+		})
+	}
+
+	var tools, toolChoice []byte
+	if t, ok := payload["tools"].([]interface{}); ok {
+		tools, _ = json.Marshal(t)
+	}
+	if tc, ok := payload["tool_choice"]; ok {
+		toolChoice, _ = json.Marshal(tc)
+	}
+
+	messagesJSON, _ := json.Marshal(payload["messages"])
+
+	streamReq := llm.StreamRequest{
+		RawPayload:     []byte(req.JsonPayload),
+		Messages:       messagesJSON,
+		Tools:          tools,
+		ToolChoice:     toolChoice,
+		Model:          cfg.ModelName,
+		Temperature:    cfg.Temperature,
+		ResponseFormat: cfg.ResponseFormat,
+		APIKey:         keyCopy,
+		TargetURL:      targetURL,
+		Timeout:        time.Duration(cfg.TimeoutSecs) * time.Second,
+	}
+
+	chunkChan, err := h.llmClient.Stream(stream.Context(), streamReq)
+	if err != nil {
+		for i := range keyCopy {
+			keyCopy[i] = 0
+		}
+		return h.sendError(stream, messageID, llm.NetworkError(err))
+	}
+
+	for chunk := range chunkChan {
+		if chunk.Done && chunk.Data == "" {
+			continue
+		}
+		resp := &proto.LLMResponse{
+			IsError:     chunk.Done && chunk.Data != "",
+			JsonResponse: chunk.Data,
+			MessageId:   messageID,
+		}
+		if err := stream.Send(resp); err != nil {
+			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
+			return nil
 		}
 	}
 
-	var mockResponse string
-	if !hasToolResult {
-		// 第一轮：要求调用 read_file 工具
-		mockResponse = `{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": null,
-					"tool_calls": [{
-						"id": "call_mock_01",
-						"type": "function",
-						"function": {
-							"name": "read_file",
-							"arguments": "{\"path\": \"` + strings.ReplaceAll(req.SessionId, `"`, `\"`) + `.txt\"}"
-						}
-					}]
-				},
-				"finish_reason": "tool_calls"
-			}]
-		}`
-		log.Println("[CallLLM] 返回: tool_call (read_file)")
-	} else {
-		// 第二轮：给出最终回答
-		mockResponse = `{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": "我已经读取了文件内容，这是最终回答。"
-				},
-				"finish_reason": "stop"
-			}]
-		}`
-		log.Println("[CallLLM] 返回: final_answer")
-	}
+	return nil
+}
 
-	return &proto.LLMResponse{
-		Success:      true,
-		JsonResponse: mockResponse,
-	}, nil
+func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, messageID string, llmErr *llm.LLMError) error {
+	data, _ := json.Marshal(llmErr)
+	return stream.Send(&proto.LLMResponse{
+		IsError:      true,
+		JsonResponse: string(data),
+		MessageId:   messageID,
+	})
 }

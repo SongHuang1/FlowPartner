@@ -1,14 +1,14 @@
-import grpc
 import asyncio
-import logging
 import json
+import logging
 from pathlib import Path
 
+import grpc
 import agent_pb2
 import agent_pb2_grpc
 from core.react_agent import ReactAgent
+from tools.file_ops import list_directory, read_file, write_file
 from tools.registry import ToolRegistry
-from tools.file_ops import read_file, write_file, list_directory
 
 class FlowPartnerClient:
     def __init__(self, workspace_path: str, server_address: str = "localhost:50051"):
@@ -68,20 +68,81 @@ class FlowPartnerClient:
         await queue.put(event)
 
     async def call_llm_via_go(self, session_id: str, json_payload: str) -> dict:
-        """通过 gRPC 请求 Go 代为调用大模型"""
+        """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""
         try:
             request = agent_pb2.LLMRequest(
                 session_id=session_id,
                 json_payload=json_payload
             )
-            response = await self.stub.CallLLM(request)
-            return {
-                "success": response.success,
-                "error_message": response.error_message,
-                "json_response": response.json_response
+            full_content = ""
+            tool_calls_map: dict[int, dict] = {}
+            finish_reason = ""
+            usage: dict | None = None
+
+            async for response in self.stub.CallLLM(request):
+                if response.is_error:
+                    error_data = json.loads(response.json_response)
+                    return {
+                        "success": False,
+                        "error_message": error_data.get("message", "未知错误"),
+                        "error_guess": error_data.get("guess", ""),
+                        "json_response": ""
+                    }
+
+                chunk = json.loads(response.json_response)
+                choices = chunk.get("choices", [])
+                if not choices:
+                    continue
+
+                delta = choices[0].get("delta")
+                if not delta:
+                    continue
+
+                if delta.get("content"):
+                    full_content += delta["content"]
+
+                for tc in delta.get("tool_calls", []):
+                    idx = tc.get("index", 0)
+                    if idx not in tool_calls_map:
+                        tool_calls_map[idx] = {
+                            "id": tc.get("id", ""),
+                            "type": tc.get("type", "function"),
+                            "function": {
+                                "name": tc.get("function", {}).get("name", ""),
+                                "arguments": ""
+                            }
+                        }
+                    func = tc.get("function")
+                    if func and func.get("arguments"):
+                        tool_calls_map[idx]["function"]["arguments"] += func["arguments"]
+
+                if choices[0].get("finish_reason"):
+                    finish_reason = choices[0]["finish_reason"]
+
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+
+                await self.send_event(session_id, "llm_chunk", {
+                    "content": delta.get("content", ""),
+                    "finish_reason": choices[0].get("finish_reason")
+                })
+
+            result: dict = {
+                "success": True,
+                "content": full_content,
+                "finish_reason": finish_reason,
+                "json_response": ""
             }
-        except Exception as e:
-            return {"success": False, "error_message": str(e), "json_response": ""}
+            if tool_calls_map:
+                result["tool_calls"] = [tool_calls_map[i] for i in sorted(tool_calls_map)]
+            if usage:
+                result["usage"] = usage
+            return result
+
+        except grpc.aio.AioRpcError as e:
+            return {"success": False, "error_message": f"gRPC error: {e.details()}", "error_guess": "", "json_response": ""}
+        except (json.JSONDecodeError, KeyError) as e:
+            return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
     async def connect_and_listen(self):
         logging.info(f"准备连接到 Go Server: {self.server_address}")

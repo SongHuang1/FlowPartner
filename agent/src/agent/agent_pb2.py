@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"E\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nevent_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"J\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0c\x63ommand_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"L\n\x0bLLMResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x15\n\rjson_response\x18\x03 \x01(\t2\x9a\x01\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12<\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"E\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nevent_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"J\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0c\x63ommand_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"J\n\x0bLLMResponse\x12\x10\n\x08is_error\x18\x01 \x01(\x08\x12\x15\n\rjson_response\x18\x02 \x01(\t\x12\x12\n\nmessage_id\x18\x03 \x01(\t2\x9c\x01\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12>\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -38,7 +38,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LLMREQUEST']._serialized_start=175
   _globals['_LLMREQUEST']._serialized_end=229
   _globals['_LLMRESPONSE']._serialized_start=231
-  _globals['_LLMRESPONSE']._serialized_end=307
-  _globals['_FLOWPARTNERSERVICE']._serialized_start=310
+  _globals['_LLMRESPONSE']._serialized_end=305
+  _globals['_FLOWPARTNERSERVICE']._serialized_start=308
   _globals['_FLOWPARTNERSERVICE']._serialized_end=464
 # @@protoc_insertion_point(module_scope)

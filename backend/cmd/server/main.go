@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -98,6 +99,7 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 	settingsHandler := &handler.SettingsHandler{}
 	conversationHandler := &handler.ConversationHandler{}
 	unlockHandler := &handler.UnlockHandler{}
+	modelConfigHandler := &handler.ModelConfigHandler{}
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
@@ -105,6 +107,24 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 	mux.HandleFunc("/api/unlock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock_status", unlockHandler.Handle)
+	mux.HandleFunc("/api/model_configs", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/model_configs" {
+			modelConfigHandler.Handle(w, r)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/activate") {
+			modelConfigHandler.HandleActivate(w, r)
+			return
+		}
+		modelConfigHandler.HandleByID(w, r)
+	})
+	mux.HandleFunc("/api/model_configs/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/activate") {
+			modelConfigHandler.HandleActivate(w, r)
+			return
+		}
+		modelConfigHandler.HandleByID(w, r)
+	})
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
 }
 
