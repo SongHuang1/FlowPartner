@@ -64,7 +64,12 @@ export function useSettings(): UseSettingsReturn {
     setSettings(newSettings)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      saveSettings(newSettings).catch((e: Error) => setError(`保存设置失败：${e.message}`))
+      saveSettings(newSettings)
+        .then((saved) => {
+          settingsRef.current = saved
+          setSettings(saved)
+        })
+        .catch((e: Error) => setError(`保存设置失败：${e.message}`))
     }, 300)
   }
 

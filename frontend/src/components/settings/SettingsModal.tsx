@@ -22,13 +22,14 @@ const tabs: { id: TabId; label: string; icon: typeof Key }[] = [
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('api')
-  const { getCurrentSettings } = useSettings()
+  const { getCurrentSettings, refreshSettings } = useSettings()
   const [saving, setSaving] = useState(false)
 
   const handleSaveAll = async () => {
     setSaving(true)
     try {
       await saveSettings(getCurrentSettings())
+      await refreshSettings()
     } finally {
       setSaving(false)
     }

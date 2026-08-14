@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Eye, EyeOff, Lock, Unlock, KeyRound, Trash2, Plus, Check, Save } from 'lucide-react'
+import { Eye, EyeOff, Lock, Unlock, KeyRound, Trash2, Plus, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { saveApiKey, clearApiKey, saveSettings } from '@/lib/api'
+import { saveApiKey, clearApiKey } from '@/lib/api'
 import { isPasswordStrong } from '@/lib/validation'
 
 interface ModelConfig {
@@ -80,7 +80,7 @@ export function APISettings() {
       return
     }
     if (!isPasswordStrong(password)) {
-      setLocalError('密码至少 8 位，且需包含大写字母、小写字母和数字')
+      setLocalError('密码至少 8 位，且需包含大写字母和数字')
       return
     }
     if (password !== passwordConfirm) {
@@ -94,7 +94,6 @@ export function APISettings() {
       setPassword('')
       setPasswordConfirm('')
       setLocalSuccess('API Key 已更新')
-      await refreshSettings()
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '保存失败')
     }
@@ -191,18 +190,6 @@ export function APISettings() {
     updateSettings({ active_config_id: configId } as Partial<typeof settings>)
   }
 
-  const handleSaveAll = async () => {
-    setLocalError(null)
-    setLocalSuccess(null)
-    try {
-      const current = getCurrentSettings()
-      await saveSettings(current)
-      setLocalSuccess('所有设置已保存并生效')
-    } catch (e) {
-      setLocalError(e instanceof Error ? e.message : '保存失败')
-    }
-  }
-
   const handleFirstTimeSave = async () => {
     setLocalError(null)
     setLocalSuccess(null)
@@ -250,6 +237,8 @@ export function APISettings() {
       setLocalError(e instanceof Error ? e.message : '保存失败')
     }
   }
+
+
 
   const renderMessage = () => {
     if (localError) {
@@ -321,12 +310,6 @@ export function APISettings() {
             className="self-start"
           >
             <KeyRound className="w-4 h-4 mr-2" /> 保存配置
-          </Button>
-        </div>
-
-        <div className="flex justify-end pt-2 border-t border-neutral-100">
-          <Button onClick={handleSaveAll} variant="outline" size="sm">
-            <Save className="w-3.5 h-3.5 mr-1.5" /> 保存所有设置
           </Button>
         </div>
       </div>
@@ -512,12 +495,6 @@ export function APISettings() {
             <Lock className="w-3.5 h-3.5 mr-1.5" /> 锁定
           </Button>
         </div>
-      </div>
-
-      <div className="flex justify-end pt-3 border-t border-neutral-100">
-        <Button onClick={handleSaveAll} variant="outline" size="sm">
-          <Save className="w-3.5 h-3.5 mr-1.5" /> 保存所有设置
-        </Button>
       </div>
     </div>
   )
