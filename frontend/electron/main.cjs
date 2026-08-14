@@ -65,8 +65,9 @@ function startGoProcess(port) {
     })
   } else {
     const binPath = getBackendBinPath()
+    const staticDir = path.join(process.resourcesPath, 'dist')
     goProcess = spawn(binPath, [], {
-      env: { ...process.env, FP_HTTP_PORT: `:${port}` },
+      env: { ...process.env, FP_HTTP_PORT: `:${port}`, FP_FRONTEND_DIR: staticDir },
     })
   }
 

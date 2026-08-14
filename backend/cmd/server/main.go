@@ -15,6 +15,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/config"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/server"
+	"github.com/songhuang/flowpartner/backend/internal/static"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 )
@@ -45,6 +46,8 @@ func main() {
 	// 4. 注册 HTTP 路由
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler)
+	staticHandler := static.NewHandler(cfg.FrontendDir)
+	staticHandler.Handle(mux)
 
 	httpServer := &http.Server{Handler: mux}
 

@@ -11,6 +11,10 @@ extraResources:
     filter:
       - flowpartner-backend*
       - flowpartner-agent*
+  - from: dist/
+    to: dist/
+    filter:
+      - '**/*'
 win:
   target:
     - target: nsis

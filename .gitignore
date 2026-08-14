@@ -245,3 +245,4 @@ frontend/dist-electron/
 # --- OS ---
 Thumbs.db
 .DS_Store
+backend/flowpartner-backend
