@@ -86,7 +86,7 @@ func (h *ModelConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.APIKey != "" {
 		if req.Password == "" {
 			response.WriteJSON(w, http.StatusBadRequest,
-				response.Error(response.CodeInvalidParam, "password is required when providing API Key"))
+				response.Error(response.CodeInvalidParam, "提供 API Key 时必须输入密码"))
 			return
 		}
 		encrypted, err := flowcrypto.Encrypt(req.APIKey, []byte(req.Password))
@@ -247,7 +247,7 @@ func (h *ModelConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "Config deleted",
+		"message": "配置已删除",
 	}))
 }
 
@@ -283,7 +283,7 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 
 	if cfg.EncryptedAPIKey == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeAPIKeyNotConfigured, "Please configure an API Key first"))
+			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
 		return
 	}
 
@@ -292,11 +292,11 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == keystore.ErrRateLimited {
 			response.WriteJSON(w, http.StatusTooManyRequests,
-				response.Error(response.CodeUnlockRateLimited, "Too many failed attempts, please wait"))
+				response.Error(response.CodeUnlockRateLimited, "失败次数过多，请稍后重试"))
 			return
 		}
 		response.WriteJSON(w, http.StatusUnauthorized,
-			response.Error(response.CodeWrongPassword, "Wrong password"))
+			response.Error(response.CodeWrongPassword, "密码错误"))
 		return
 	}
 
@@ -312,28 +312,28 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "Config activated",
+		"message": "配置已激活",
 	}))
 }
 
 func validateModelConfig(cfg *ModelConfig) error {
 	if strings.TrimSpace(cfg.Name) == "" {
-		return fmt.Errorf("config name cannot be empty")
+		return fmt.Errorf("配置名称不能为空")
 	}
 	if cfg.BaseURL == "" {
-		return fmt.Errorf("base_url cannot be empty")
+		return fmt.Errorf("接口地址不能为空")
 	}
 	if err := ValidateBaseURL(cfg.BaseURL); err != nil {
 		return err
 	}
 	if cfg.ModelName == "" {
-		return fmt.Errorf("model_name cannot be empty")
+		return fmt.Errorf("模型名称不能为空")
 	}
 	if cfg.Temperature < 0 || cfg.Temperature > 2.0 {
-		return fmt.Errorf("temperature must be between 0.0 and 2.0")
+		return fmt.Errorf("温度必须在 0.0 到 2.0 之间")
 	}
 	if cfg.ResponseFormat != "" && cfg.ResponseFormat != "text" && cfg.ResponseFormat != "json_object" {
-		return fmt.Errorf("response_format must be 'text' or 'json_object'")
+		return fmt.Errorf("response_format 必须是 'text' 或 'json_object'")
 	}
 	return nil
 }

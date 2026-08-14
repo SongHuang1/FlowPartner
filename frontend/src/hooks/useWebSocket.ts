@@ -96,7 +96,7 @@ export function useWebSocket(): UseWebSocketReturn {
       if (!mountedRef.current) return
 
       if (port < MIN_PORT || port > MAX_PORT) {
-        const msg = `Port ${port} out of safe range (${MIN_PORT}-${MAX_PORT}), connection refused`
+        const msg = `端口 ${port} 不在安全范围（${MIN_PORT}-${MAX_PORT}），已拒绝连接`
         securityCallbacksRef.current.forEach((cb) => {
           try {
             cb(msg)
@@ -256,7 +256,7 @@ export function useWebSocket(): UseWebSocketReturn {
         resetProcessing()
         errorCallbacksRef.current.forEach((cb) => {
           try {
-            cb('Connection lost, please retry')
+            cb('连接已断开，请重试')
           } catch (e) {
             console.error('onError callback error:', e)
           }
@@ -307,7 +307,7 @@ export function useWebSocket(): UseWebSocketReturn {
         sessionEndedRef.current = true
         errorCallbacksRef.current.forEach((cb) => {
           try {
-            cb('Request timed out, please retry')
+            cb('请求超时，请重试')
           } catch (e) {
             console.error('onError callback error:', e)
           }

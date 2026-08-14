@@ -181,7 +181,7 @@ describe('useLock', () => {
     })
 
     // Non-Error exceptions get the default message
-    expect(result.current.error).toBe('Failed to get lock status')
+    expect(result.current.error).toBe('获取锁定状态失败')
   })
 
   it('unlock sets loading state during operation', async () => {
@@ -235,7 +235,7 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('Unlock failed')
+    expect(result.current.error).toBe('解锁失败')
   })
 
   it('handles non-Error exception in lock', async () => {
@@ -247,7 +247,7 @@ describe('useLock', () => {
       await result.current.lock()
     })
 
-    expect(result.current.error).toBe('Lock failed')
+    expect(result.current.error).toBe('锁定失败')
   })
 
   it('handles rate limit status', async () => {

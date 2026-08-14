@@ -84,7 +84,7 @@ class FlowPartnerClient:
                     error_data = json.loads(response.json_response)
                     return {
                         "success": False,
-                        "error_message": error_data.get("message", "Unknown error"),
+                        "error_message": error_data.get("message", "未知错误"),
                         "error_guess": error_data.get("guess", ""),
                         "json_response": ""
                     }

@@ -634,7 +634,7 @@ describe('useWebSocket', () => {
       })
 
       expect(result.current.processing).toBe(false)
-      expect(errorCb).toHaveBeenCalledWith('Connection lost, please retry')
+      expect(errorCb).toHaveBeenCalledWith('连接已断开，请重试')
     })
   })
 

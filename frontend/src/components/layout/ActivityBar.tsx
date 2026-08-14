@@ -12,8 +12,8 @@ interface ActivityBarProps {
 
 export function ActivityBar({ activeView, onSelect }: ActivityBarProps) {
   const items: { view: SidebarView; icon: typeof MessageSquare; label: string }[] = [
-    { view: 'conversation', icon: MessageSquare, label: 'Chat' },
-    { view: 'settings', icon: Settings, label: 'Settings' },
+    { view: 'conversation', icon: MessageSquare, label: '聊天' },
+    { view: 'settings', icon: Settings, label: '设置' },
   ]
 
   return (

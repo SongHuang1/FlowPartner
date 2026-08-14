@@ -49,13 +49,13 @@ func TestClassifyHTTPError(t *testing.T) {
 		wantCode   int
 		wantMsg    string
 	}{
-		{"401 unauthorized", 401, CodeUnauthorized, "Authentication failed"},
-		{"403 forbidden", 403, CodeForbidden, "Permission denied"},
-		{"404 not found", 404, CodeNotFound, "Resource not found"},
-		{"429 rate limited", 429, CodeTooManyRequests, "Too many requests"},
-		{"500 server error", 500, CodeServerError, "Internal server error"},
-		{"502 bad gateway", 502, CodeBadGateway, "Bad gateway"},
-		{"503 unavailable", 503, CodeServiceUnavailable, "Service unavailable"},
+		{"401 unauthorized", 401, CodeUnauthorized, "认证失败"},
+		{"403 forbidden", 403, CodeForbidden, "权限不足"},
+		{"404 not found", 404, CodeNotFound, "资源不存在"},
+		{"429 rate limited", 429, CodeTooManyRequests, "请求过于频繁"},
+		{"500 server error", 500, CodeServerError, "服务器内部错误"},
+		{"502 bad gateway", 502, CodeBadGateway, "网关错误"},
+		{"503 unavailable", 503, CodeServiceUnavailable, "服务不可用"},
 	}
 
 	for _, tt := range tests {
@@ -73,7 +73,7 @@ func TestClassifyHTTPError(t *testing.T) {
 
 func TestClassifyHTTPError_RetryAfter(t *testing.T) {
 	err := ClassifyHTTPError(503, "30")
-	if !strings.Contains(err.Guess, "retry suggested after 30 seconds") {
+	if !strings.Contains(err.Guess, "建议 30 秒后重试") {
 		t.Errorf("expected retry-after hint, got: %s", err.Guess)
 	}
 }

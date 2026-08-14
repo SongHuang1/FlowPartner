@@ -37,42 +37,42 @@ describe('WelcomeView', () => {
 
   it('renders welcome heading', () => {
     render(<WelcomeView {...defaultProps} />)
-    expect(screen.getByText('Hello! I am FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
   })
 
   it('renders ChatInput component', () => {
     render(<WelcomeView {...defaultProps} />)
-    expect(screen.getByPlaceholderText('Type a message...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('输入消息...')).toBeInTheDocument()
   })
 
   it('displays model name from settings', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ model: 'gpt-3.5' })} />)
-    expect(screen.getByText(/model: gpt-3.5/)).toBeInTheDocument()
+    expect(screen.getByText(/模型: gpt-3.5/)).toBeInTheDocument()
   })
 
   it('displays agent_id from settings', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ agent_id: 'my-agent' })} />)
-    expect(screen.getByText(/agent: my-agent/)).toBeInTheDocument()
+    expect(screen.getByText(/智能体: my-agent/)).toBeInTheDocument()
   })
 
   it('displays context_window from settings', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ context_window: 4096 })} />)
-    expect(screen.getByText(/ctx: 4096/)).toBeInTheDocument()
+    expect(screen.getByText(/上下文: 4096/)).toBeInTheDocument()
   })
 
   it('does not display working_directory when empty', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '' })} />)
-    expect(screen.queryByText(/path:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/路径:/)).not.toBeInTheDocument()
   })
 
   it('displays working_directory when set', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '/home/user/project' })} />)
-    expect(screen.getByText(/path: \/home\/user\/project/)).toBeInTheDocument()
+    expect(screen.getByText(/路径: \/home\/user\/project/)).toBeInTheDocument()
   })
 
   it('passes input value to ChatInput', () => {
     render(<WelcomeView {...defaultProps} inputValue="typing..." />)
-    const input = screen.getByPlaceholderText('Type a message...')
+    const input = screen.getByPlaceholderText('输入消息...')
     expect(input).toHaveValue('typing...')
   })
 
@@ -101,13 +101,13 @@ describe('WelcomeView', () => {
       const { unmount } = render(
         <WelcomeView {...defaultProps} settings={createSettings({ model })} />
       )
-      expect(screen.getByText(new RegExp(`model: ${model}`))).toBeInTheDocument()
+      expect(screen.getByText(new RegExp(`模型: ${model}`))).toBeInTheDocument()
       unmount()
     })
   })
 
   it('renders with large context window', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ context_window: 128000 })} />)
-    expect(screen.getByText(/ctx: 128000/)).toBeInTheDocument()
+    expect(screen.getByText(/上下文: 128000/)).toBeInTheDocument()
   })
 })

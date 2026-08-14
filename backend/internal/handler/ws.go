@@ -123,7 +123,7 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					// 丢弃时必须通知前端，避免用户误以为消息已发送
 					h.manager.SendToSession(sessionId, &proto.AgentEvent{
 						EventType: "error",
-						Payload:   `{"message": "Message sending failed: system is busy, please retry later"}`,
+						Payload:   `{"message": "消息发送失败：系统繁忙，请稍后重试"}`,
 					})
 				}
 			}

@@ -6,17 +6,17 @@ async def read_file(path: str) -> str:
     logging.info(f"[Tool] Reading file: {path}")
     file_path = Path(path)
     if not file_path.exists():
-        return f"File not found: {path}"
+        return f"找不到文件：{path}"
     if not file_path.is_file():
-        return f"Path is not a file: {path}"
+        return f"路径不是文件：{path}"
     try:
         content = file_path.read_text(encoding="utf-8")
         # 防止文件过大撑爆上下文
         if len(content) > 10000:
-            content = content[:10000] + "\n... [file too long, truncated]"
+            content = content[:10000] + "\n... [文件过长，已截断]"
         return content
     except Exception as e:
-        return f"Failed to read file: {str(e)}"
+        return f"读取文件失败：{str(e)}"
 
 async def write_file(path: str, content: str) -> str:
     """写入内容到本地文件"""
@@ -25,22 +25,22 @@ async def write_file(path: str, content: str) -> str:
         file_path = Path(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
-        return f"Successfully wrote {len(content)} characters to {path}"
+        return f"成功向 {path} 写入 {len(content)} 个字符"
     except Exception as e:
-        return f"Failed to write file: {str(e)}"
+        return f"写入文件失败：{str(e)}"
 
 async def list_directory(path: str) -> str:
     """列出目录内容"""
     logging.info(f"[Tool] Listing directory: {path}")
     dir_path = Path(path)
     if not dir_path.exists():
-        return f"Directory not found: {path}"
+        return f"找不到目录：{path}"
     if not dir_path.is_dir():
-        return f"Path is not a directory: {path}"
+        return f"路径不是目录：{path}"
     try:
         items = []
         for item in dir_path.iterdir():
             items.append(f"{item.name}")
-        return "\n".join(items) if items else "(empty directory)"
+        return "\n".join(items) if items else "（空目录）"
     except Exception as e:
-        return f"Failed to list directory: {str(e)}"
+        return f"列出目录失败：{str(e)}"

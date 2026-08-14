@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getSettings, saveSettings, getConversation, saveConversation } from '@/lib/api'
+import { getSettings, saveSettings, getConversation, saveConversation, initApi } from '@/lib/api'
 import type { Settings, Conversation, Message } from '@/types'
 
 // Mock fetch globally
@@ -17,6 +17,7 @@ function mockResponse(data: unknown, ok = true, status = 200): Response {
 describe('api', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    initApi(12345)
   })
 
   describe('getSettings', () => {
@@ -47,7 +48,7 @@ describe('api', () => {
 
       const result = await getSettings()
       expect(result).toEqual(mockSettings)
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', expect.any(Object))
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', expect.any(Object))
     })
 
     it('throws error on non-ok response', async () => {
@@ -97,7 +98,7 @@ describe('api', () => {
 
       await saveSettings(settings)
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
@@ -128,7 +129,7 @@ describe('api', () => {
 
       const result = await getConversation()
       expect(result).toEqual(mockConv)
-      expect(mockFetch).toHaveBeenCalledWith('/api/conversation', expect.any(Object))
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/conversation', expect.any(Object))
     })
 
     it('returns empty conversation when no messages', async () => {
@@ -159,7 +160,7 @@ describe('api', () => {
 
       await saveConversation(messages)
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/conversation', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/conversation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: expect.stringContaining('"messages"'),
@@ -191,7 +192,7 @@ describe('api', () => {
       const { saveApiKey } = await import('@/lib/api')
       await saveApiKey('sk-test-key-12345', 'StrongPass1')
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: 'sk-test-key-12345', password: 'StrongPass1' }),
@@ -219,7 +220,7 @@ describe('api', () => {
       mockFetch.mockResolvedValue(errorResponse)
 
       const { saveApiKey } = await import('@/lib/api')
-      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('Failed to save API Key')
+      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('保存 API Key 失败')
     })
 
     it('throws error on network failure', async () => {

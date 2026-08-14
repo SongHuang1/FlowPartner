@@ -12,118 +12,118 @@ describe('PasswordDialog', () => {
 
   it('renders when open is true', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.getByText('Set protection password')).toBeInTheDocument()
+    expect(screen.getByText('设置保护密码')).toBeInTheDocument()
   })
 
   it('does not render when open is false', () => {
     render(<PasswordDialog open={false} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.queryByText('Set protection password')).not.toBeInTheDocument()
+    expect(screen.queryByText('设置保护密码')).not.toBeInTheDocument()
   })
 
   it('renders password input', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.getByPlaceholderText('Enter password')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('输入密码')).toBeInTheDocument()
   })
 
   it('renders confirm password input', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.getByPlaceholderText('Confirm password')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('确认密码')).toBeInTheDocument()
   })
 
   it('renders confirm button', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.getByText('Confirm')).toBeInTheDocument()
+    expect(screen.getByText('确认')).toBeInTheDocument()
   })
 
   it('renders cancel button', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.getByText('Cancel')).toBeInTheDocument()
+    expect(screen.getByText('取消')).toBeInTheDocument()
   })
 
   it('calls onConfirm with password when form is valid', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'TestPass123' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('Confirm'))
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'TestPass123' } })
+    fireEvent.click(screen.getByText('确认'))
     expect(mockOnConfirm).toHaveBeenCalledWith('TestPass123')
   })
 
   it('shows error when password is too short', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'Ab1' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'Ab1' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'Ab1' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'Ab1' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('shows error when password has no uppercase', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'abcdefgh1' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'abcdefgh1' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'abcdefgh1' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'abcdefgh1' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('shows error when password has no lowercase', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'ABCDEFGH1' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'ABCDEFGH1' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'ABCDEFGH1' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'ABCDEFGH1' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('shows error when password has no digit', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'Abcdefgh' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'Abcdefgh' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'Abcdefgh' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'Abcdefgh' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('shows error when passwords do not match', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'TestPass123' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'TestPass456' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('The two passwords do not match').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'TestPass456' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('两次输入的密码不一致').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('shows password strength hint when password is weak', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'weak' } })
-    expect(screen.getByText('Password must be at least 8 characters with uppercase, lowercase and numbers')).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'weak' } })
+    expect(screen.getByText('密码至少 8 位，且需包含大写字母、小写字母和数字')).toBeInTheDocument()
   })
 
   it('shows mismatch hint when passwords differ', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'TestPass123' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'TestPass456' } })
-    expect(screen.getAllByText('The two passwords do not match').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'TestPass456' } })
+    expect(screen.getAllByText('两次输入的密码不一致').length).toBeGreaterThan(0)
   })
 
   it('clears inputs and calls onClose when cancel is clicked', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'TestPass123' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('Cancel'))
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'TestPass123' } })
+    fireEvent.click(screen.getByText('取消'))
     expect(mockOnClose).toHaveBeenCalled()
-    const passwordInput = screen.getByPlaceholderText('Enter password') as HTMLInputElement
-    const confirmInput = screen.getByPlaceholderText('Confirm password') as HTMLInputElement
+    const passwordInput = screen.getByPlaceholderText('输入密码') as HTMLInputElement
+    const confirmInput = screen.getByPlaceholderText('确认密码') as HTMLInputElement
     expect(passwordInput.value).toBe('')
     expect(confirmInput.value).toBe('')
   })
 
   it('clears inputs and error when close icon is clicked', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'weak' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'weak' } })
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(mockOnClose).toHaveBeenCalled()
-    const passwordInput = screen.getByPlaceholderText('Enter password') as HTMLInputElement
+    const passwordInput = screen.getByPlaceholderText('输入密码') as HTMLInputElement
     expect(passwordInput.value).toBe('')
   })
 
@@ -158,37 +158,37 @@ describe('PasswordDialog', () => {
 
   it('clears inputs after successful confirm', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'TestPass123' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('Confirm'))
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'TestPass123' } })
+    fireEvent.click(screen.getByText('确认'))
 
-    const passwordInput = screen.getByPlaceholderText('Enter password') as HTMLInputElement
-    const confirmInput = screen.getByPlaceholderText('Confirm password') as HTMLInputElement
+    const passwordInput = screen.getByPlaceholderText('输入密码') as HTMLInputElement
+    const confirmInput = screen.getByPlaceholderText('确认密码') as HTMLInputElement
     expect(passwordInput.value).toBe('')
     expect(confirmInput.value).toBe('')
   })
 
   it('handles empty password submit', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('handles password with only special characters', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: '!@#$%^&*' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: '!@#$%^&*' } })
-    fireEvent.click(screen.getByText('Confirm'))
-    expect(screen.getAllByText('Password must be at least 8 characters with uppercase, lowercase and numbers').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: '!@#$%^&*' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: '!@#$%^&*' } })
+    fireEvent.click(screen.getByText('确认'))
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
   it('accepts password with special characters and meets requirements', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'Test@Pass123!' } })
-    fireEvent.change(screen.getByPlaceholderText('Confirm password'), { target: { value: 'Test@Pass123!' } })
-    fireEvent.click(screen.getByText('Confirm'))
+    fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'Test@Pass123!' } })
+    fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'Test@Pass123!' } })
+    fireEvent.click(screen.getByText('确认'))
     expect(mockOnConfirm).toHaveBeenCalledWith('Test@Pass123!')
   })
 })

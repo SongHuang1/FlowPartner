@@ -52,10 +52,10 @@ func TestModelConfig_CreateValidationError(t *testing.T) {
 		body   string
 		errMsg string
 	}{
-		{"empty name", `{"name":"","base_url":"https://api.openai.com/v1","model_name":"gpt-4"}`, "name cannot be empty"},
-		{"empty model_name", `{"name":"Test","base_url":"https://api.openai.com/v1","model_name":""}`, "model_name cannot be empty"},
-		{"internal url", `{"name":"Test","base_url":"http://localhost:8080","model_name":"gpt-4"}`, "internal/private"},
-		{"bad temperature", `{"name":"Test","base_url":"https://api.openai.com/v1","model_name":"gpt-4","temperature":5}`, "temperature"},
+		{"empty name", `{"name":"","base_url":"https://api.openai.com/v1","model_name":"gpt-4"}`, "配置名称不能为空"},
+		{"empty model_name", `{"name":"Test","base_url":"https://api.openai.com/v1","model_name":""}`, "模型名称不能为空"},
+		{"internal url", `{"name":"Test","base_url":"http://localhost:8080","model_name":"gpt-4"}`, "内部/私有"},
+		{"bad temperature", `{"name":"Test","base_url":"https://api.openai.com/v1","model_name":"gpt-4","temperature":5}`, "温度"},
 		{"invalid response_format", `{"name":"Test","base_url":"https://api.openai.com/v1","model_name":"gpt-4","response_format":"xml"}`, "response_format"},
 	}
 

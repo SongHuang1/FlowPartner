@@ -36,29 +36,29 @@ describe('ChatArea empty state', () => {
 
   it('renders welcome message when no messages', () => {
     render(<ChatArea />)
-    expect(screen.getByText('Hello! I am FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
   })
 
   it('renders input in empty state', () => {
     render(<ChatArea />)
-    expect(screen.getByPlaceholderText('Type a message...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('输入消息...')).toBeInTheDocument()
   })
 
   it('renders bottom info bar with settings', () => {
     render(<ChatArea />)
-    expect(screen.getByText(/model: gpt-4/)).toBeInTheDocument()
-    expect(screen.getByText(/agent: default/)).toBeInTheDocument()
-    expect(screen.getByText(/ctx: 8192/)).toBeInTheDocument()
+    expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
+    expect(screen.getByText(/智能体: default/)).toBeInTheDocument()
+    expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
   it('renders working directory when set', () => {
     render(<ChatArea />)
-    expect(screen.getByText(/path: \/test\/path/)).toBeInTheDocument()
+    expect(screen.getByText(/路径: \/test\/path/)).toBeInTheDocument()
   })
 
   it('send button is disabled when input is empty', () => {
     render(<ChatArea />)
-    const button = screen.getByRole('button', { name: 'Send' })
+    const button = screen.getByRole('button', { name: '发送' })
     expect(button).toBeDisabled()
   })
 })

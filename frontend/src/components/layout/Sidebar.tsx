@@ -14,15 +14,15 @@ interface SidebarProps {
 function ConversationPanel() {
   return (
     <div className="flex flex-col gap-4 p-4">
-      <h2 className="font-semibold text-base text-neutral-800">Welcome to FlowPartner</h2>
-      <p className="text-sm text-neutral-600">Start a new chat or continue previous conversations</p>
+      <h2 className="font-semibold text-base text-neutral-800">欢迎使用 FlowPartner</h2>
+      <p className="text-sm text-neutral-600">开始新对话或继续之前的对话</p>
       <div className="flex flex-col gap-2">
-        <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Suggested actions</h3>
+        <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wide">建议操作</h3>
         <Button variant="outline" className="justify-start text-sm" disabled>
-          Start new chat
+          开始新对话
         </Button>
         <Button variant="outline" className="justify-start text-sm" disabled>
-          View history
+          查看历史
         </Button>
       </div>
     </div>
@@ -32,7 +32,7 @@ function ConversationPanel() {
 function SettingsPanel() {
   return (
     <div className="flex flex-col gap-4 p-4">
-      <h2 className="font-semibold text-base text-neutral-800">Settings</h2>
+      <h2 className="font-semibold text-base text-neutral-800">设置</h2>
       <APISettings />
       <div className="border-t border-neutral-100" />
       <AgentSettings />
@@ -53,9 +53,9 @@ export function Sidebar({ visible, activeView, onClose }: SidebarProps) {
       <div className="w-64 flex flex-col h-full">
         <div className="flex items-center justify-between p-3 border-b border-neutral-100">
           <span className="text-sm font-medium text-neutral-700">
-            {activeView === 'conversation' ? 'Chat' : 'Settings'}
+            {activeView === 'conversation' ? '聊天' : '设置'}
           </span>
-          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="Collapse sidebar">
+          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="收起侧栏">
             <X className="w-4 h-4" />
           </Button>
         </div>

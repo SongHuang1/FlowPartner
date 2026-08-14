@@ -66,7 +66,7 @@ func DefaultSettings() Settings {
 		ModelName:        "gpt-4",
 		ModelConfigs:     []ModelConfig{},
 		ActiveConfigID:   "",
-		SystemPrompt:     "You are a helpful AI assistant.",
+		SystemPrompt:     "你是一个乐于助人的 AI 助手。",
 		Temperature:      0.7,
 		CloseBehavior:    "ask",
 		CloseRemembered:  false,
@@ -135,7 +135,7 @@ func (s *Settings) migrateOldConfig() {
 
 	migrated := ModelConfig{
 		ID:              "default",
-		Name:            "Default configuration",
+		Name:            "默认配置",
 		BaseURL:         s.BaseURL,
 		ModelName:       s.ModelName,
 		EncryptedAPIKey: s.EncryptedAPIKey,
@@ -190,10 +190,10 @@ func ValidateBaseURL(rawURL string) error {
 		return nil
 	}
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		return fmt.Errorf("base_url must start with http:// or https://")
+		return fmt.Errorf("接口地址必须以 http:// 或 https:// 开头")
 	}
 	if isInternalURL(rawURL) {
-		return fmt.Errorf("base_url must not point to internal/private network")
+		return fmt.Errorf("接口地址不能指向内部/私有网络")
 	}
 	return nil
 }
@@ -263,30 +263,30 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	}
 	if settings.Temperature < 0 || settings.Temperature > 2.0 {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "temperature must be between 0.0 and 2.0"))
+			response.Error(response.CodeInvalidParam, "温度必须在 0.0 到 2.0 之间"))
 		return
 	}
 	if settings.CloseBehavior != "" {
 		validBehaviors := []string{"minimize", "quit", "ask"}
 		if !containsString(validBehaviors, settings.CloseBehavior) {
 			response.WriteJSON(w, http.StatusBadRequest,
-				response.Error(response.CodeInvalidParam, "close_behavior must be minimize, quit, or ask"))
+				response.Error(response.CodeInvalidParam, "close_behavior 必须是 minimize、quit 或 ask"))
 			return
 		}
 	}
 	if strings.TrimSpace(settings.Model) == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "model cannot be empty"))
+			response.Error(response.CodeInvalidParam, "模型不能为空"))
 		return
 	}
 	if settings.ContextWindow <= 0 {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "context_window must be positive"))
+			response.Error(response.CodeInvalidParam, "上下文窗口必须为正数"))
 		return
 	}
 	if strings.TrimSpace(settings.Language) == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "language cannot be empty"))
+			response.Error(response.CodeInvalidParam, "语言不能为空"))
 		return
 	}
 
@@ -296,12 +296,12 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	if hasAPIKey && apiKey != "" {
 		if !hasPassword || password == "" {
 			response.WriteJSON(w, http.StatusBadRequest,
-				response.Error(response.CodeInvalidParam, "password is required when setting API Key"))
+				response.Error(response.CodeInvalidParam, "设置 API Key 时必须提供密码"))
 			return
 		}
 		if !isStrongPassword(password) {
 			response.WriteJSON(w, http.StatusBadRequest,
-				response.Error(response.CodeInvalidParam, "password must be at least 8 characters with uppercase, lowercase, and digit"))
+				response.Error(response.CodeInvalidParam, "密码至少 8 位，且需包含大写字母、小写字母和数字"))
 			return
 		}
 		encrypted, err := flowcrypto.Encrypt(apiKey, []byte(password))
@@ -383,7 +383,7 @@ func (h *SettingsHandler) ClearAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "API Key cleared",
+		"message": "API Key 已清除",
 	}))
 }
 

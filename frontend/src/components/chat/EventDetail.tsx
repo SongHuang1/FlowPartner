@@ -19,7 +19,7 @@ export function EventDetail({ eventType, payload }: EventDetailProps) {
   const parsed = parsePayload(payload)
 
   if (eventType === 'tool_call') {
-    const tool = (parsed?.tool as string) || 'unknown'
+    const tool = (parsed?.tool as string) || '未知'
     const args = (parsed?.args as Record<string, unknown>) || {}
 
     return (
@@ -34,7 +34,7 @@ export function EventDetail({ eventType, payload }: EventDetailProps) {
             <ChevronRight className="w-4 h-4 text-neutral-400" />
           )}
           <span className="font-mono text-blue-600">{tool}</span>
-          <span className="text-neutral-400 text-xs">tool_call</span>
+          <span className="text-neutral-400 text-xs">工具调用</span>
         </button>
         {expanded && (
           <div className="px-3 pb-2 pt-1 border-t border-neutral-100">
@@ -48,7 +48,7 @@ export function EventDetail({ eventType, payload }: EventDetailProps) {
   }
 
   if (eventType === 'tool_result') {
-    const tool = (parsed?.tool as string) || 'unknown'
+    const tool = (parsed?.tool as string) || '未知'
     const result = (parsed?.result as string) || ''
 
     return (
@@ -63,7 +63,7 @@ export function EventDetail({ eventType, payload }: EventDetailProps) {
             <ChevronRight className="w-4 h-4 text-neutral-400" />
           )}
           <span className="font-mono text-green-600">{tool}</span>
-          <span className="text-neutral-400 text-xs">tool_result</span>
+          <span className="text-neutral-400 text-xs">工具结果</span>
         </button>
         {expanded && (
           <div className="px-3 pb-2 pt-1 border-t border-neutral-100">

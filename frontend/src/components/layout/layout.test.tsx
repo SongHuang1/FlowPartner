@@ -9,7 +9,7 @@ describe('TitleBar', () => {
   it('renders FlowPartner name and UI Shell indicator', () => {
     render(<TitleBar />)
     expect(screen.getByText('FlowPartner')).toBeInTheDocument()
-    expect(screen.getByText('UI Shell')).toBeInTheDocument()
+    expect(screen.getByText('界面框架')).toBeInTheDocument()
   })
 })
 
@@ -17,14 +17,14 @@ describe('ActivityBar', () => {
   it('renders two icon buttons', () => {
     const onSelect = vi.fn()
     render(<ActivityBar activeView="conversation" onSelect={onSelect} />)
-    expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '聊天' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
   })
 
   it('calls onSelect when clicking an icon', () => {
     const onSelect = vi.fn()
     render(<ActivityBar activeView="conversation" onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
     expect(onSelect).toHaveBeenCalledWith('settings')
   })
 })
@@ -32,18 +32,18 @@ describe('ActivityBar', () => {
 describe('Sidebar', () => {
   it('renders conversation panel when activeView is conversation', () => {
     render(<Sidebar visible={true} activeView="conversation" onClose={() => {}} />)
-    expect(screen.getByText('Welcome to FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
   })
 
   it('renders settings panel when activeView is settings', () => {
     render(<Sidebar visible={true} activeView="settings" onClose={() => {}} />)
-    expect(screen.getByText('API Settings')).toBeInTheDocument()
+    expect(screen.getByText('API 设置')).toBeInTheDocument()
   })
 
   it('calls onClose when clicking close button', () => {
     const onClose = vi.fn()
     render(<Sidebar visible={true} activeView="conversation" onClose={onClose} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -100,7 +100,7 @@ describe('StatusBar', () => {
   it('renders correct preview mode text', () => {
     delete (window as unknown as Record<string, unknown>)['flowPartner']
     render(<StatusBar />)
-    expect(screen.getByText('Running in browser · UI preview only')).toBeInTheDocument()
+    expect(screen.getByText('浏览器运行 · 仅 UI 预览')).toBeInTheDocument()
   })
 
   it('renders desktop text when running in Electron', () => {
@@ -110,13 +110,13 @@ describe('StatusBar', () => {
       configurable: true,
     })
     render(<StatusBar />)
-    expect(screen.getByText('Desktop · FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('桌面版 · FlowPartner')).toBeInTheDocument()
   })
 
   it('renders preview text when window.flowPartner is undefined', () => {
     delete (window as unknown as Record<string, unknown>)['flowPartner']
     render(<StatusBar />)
-    expect(screen.getByText('Running in browser · UI preview only')).toBeInTheDocument()
-    expect(screen.queryByText('Desktop · FlowPartner')).not.toBeInTheDocument()
+    expect(screen.getByText('浏览器运行 · 仅 UI 预览')).toBeInTheDocument()
+    expect(screen.queryByText('桌面版 · FlowPartner')).not.toBeInTheDocument()
   })
 })

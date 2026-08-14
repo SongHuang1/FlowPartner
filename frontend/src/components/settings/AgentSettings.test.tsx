@@ -15,7 +15,7 @@ vi.mock('@/hooks/useSettings', () => ({
       base_url: 'https://api.openai.com/v1',
       encrypted_api_key: '',
       model_name: 'gpt-4',
-      system_prompt: 'You are a helpful AI assistant.',
+      system_prompt: '你是一个乐于助人的 AI 助手。',
       temperature: 0.7,
       close_behavior: 'ask',
       close_remembered: false,
@@ -37,18 +37,18 @@ describe('AgentSettings', () => {
 
   it('renders system prompt textarea', () => {
     render(<AgentSettings />)
-    expect(screen.getByLabelText('System prompt')).toBeInTheDocument()
+    expect(screen.getByLabelText('系统提示词')).toBeInTheDocument()
   })
 
   it('renders temperature slider', () => {
     render(<AgentSettings />)
-    expect(screen.getByText(/Temperature/)).toBeInTheDocument()
+    expect(screen.getByText(/温度/)).toBeInTheDocument()
   })
 
   it('displays current system prompt value', () => {
     render(<AgentSettings />)
-    const textarea = screen.getByLabelText('System prompt') as HTMLTextAreaElement
-    expect(textarea.value).toBe('You are a helpful AI assistant.')
+    const textarea = screen.getByLabelText('系统提示词') as HTMLTextAreaElement
+    expect(textarea.value).toBe('你是一个乐于助人的 AI 助手。')
   })
 
   it('displays current temperature value', () => {
@@ -58,7 +58,7 @@ describe('AgentSettings', () => {
 
   it('calls updateSettings when system prompt changes', () => {
     render(<AgentSettings />)
-    const textarea = screen.getByLabelText('System prompt')
+    const textarea = screen.getByLabelText('系统提示词')
     fireEvent.change(textarea, { target: { value: 'new system prompt' } })
     expect(mockUpdateSettings).toHaveBeenCalledWith({ system_prompt: 'new system prompt' })
   })
@@ -70,21 +70,21 @@ describe('AgentSettings', () => {
     expect(mockUpdateSettings).toHaveBeenCalledWith({ temperature: 1.5 })
   })
 
-  it('renders temperature range labels', () => {
+it('renders temperature range labels', () => {
     render(<AgentSettings />)
-    expect(screen.getByText('0.0 (Precise)')).toBeInTheDocument()
-    expect(screen.getByText('2.0 (Creative)')).toBeInTheDocument()
+    expect(screen.getByText('0.0（精确）')).toBeInTheDocument()
+    expect(screen.getByText('2.0（创意）')).toBeInTheDocument()
   })
 
-  it('renders section title', () => {
+  it('renders Agent Settings title', () => {
     render(<AgentSettings />)
-    expect(screen.getByText('Agent Settings')).toBeInTheDocument()
+    expect(screen.getByText('智能体设置')).toBeInTheDocument()
   })
 
   it('renders textarea with correct placeholder', () => {
     render(<AgentSettings />)
-    const textarea = screen.getByLabelText('System prompt') as HTMLTextAreaElement
-    expect(textarea.placeholder).toBe('You are a helpful AI assistant.')
+    const textarea = screen.getByLabelText('系统提示词') as HTMLTextAreaElement
+    expect(textarea.placeholder).toBe('你是一个乐于助人的 AI 助手。')
   })
 
   it('renders slider with correct min/max/step', () => {
@@ -97,14 +97,14 @@ describe('AgentSettings', () => {
 
   it('handles empty system prompt', () => {
     render(<AgentSettings />)
-    const textarea = screen.getByLabelText('System prompt')
+    const textarea = screen.getByLabelText('系统提示词')
     fireEvent.change(textarea, { target: { value: '' } })
     expect(mockUpdateSettings).toHaveBeenCalledWith({ system_prompt: '' })
   })
 
   it('handles unicode system prompt', () => {
     render(<AgentSettings />)
-    const textarea = screen.getByLabelText('System prompt')
+    const textarea = screen.getByLabelText('系统提示词')
     fireEvent.change(textarea, { target: { value: '日本語テスト 🎌' } })
     expect(mockUpdateSettings).toHaveBeenCalledWith({ system_prompt: '日本語テスト 🎌' })
   })
@@ -112,7 +112,7 @@ describe('AgentSettings', () => {
   it('handles long system prompt', () => {
     render(<AgentSettings />)
     const longPrompt = '你是一个专家。'.repeat(100)
-    const textarea = screen.getByLabelText('System prompt')
+    const textarea = screen.getByLabelText('系统提示词')
     fireEvent.change(textarea, { target: { value: longPrompt } })
     expect(mockUpdateSettings).toHaveBeenCalledWith({ system_prompt: longPrompt })
   })

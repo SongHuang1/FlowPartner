@@ -37,13 +37,13 @@ var errorMappings = []struct {
 	message    string
 	guess      string
 }{
-	{401, CodeUnauthorized, "Authentication failed", "Possible causes: invalid API Key, expired Key, or insufficient account balance"},
-	{403, CodeForbidden, "Permission denied", "Possible causes: API Key lacks access to this model, or additional permissions are required"},
-	{404, CodeNotFound, "Resource not found", "Possible causes: incorrect BaseURL path or invalid ModelName"},
-	{429, CodeTooManyRequests, "Too many requests", "Possible causes: request rate exceeds provider limits, please retry later"},
-	{500, CodeServerError, "Internal server error", "Possible causes: LLM provider server failure, please retry later"},
-	{502, CodeBadGateway, "Bad gateway", "Possible causes: LLM provider gateway error, please retry later"},
-	{503, CodeServiceUnavailable, "Service unavailable", "Possible causes: LLM provider temporarily unavailable, please retry later"},
+	{401, CodeUnauthorized, "认证失败", "可能原因：API Key 无效、已过期或账户余额不足"},
+	{403, CodeForbidden, "权限不足", "可能原因：API Key 没有该模型的访问权限，或需要额外授权"},
+	{404, CodeNotFound, "资源不存在", "可能原因：接口地址（Base URL）路径错误或模型名称无效"},
+	{429, CodeTooManyRequests, "请求过于频繁", "可能原因：请求频率超过服务商限制，请稍后重试"},
+	{500, CodeServerError, "服务器内部错误", "可能原因：模型服务商服务器故障，请稍后重试"},
+	{502, CodeBadGateway, "网关错误", "可能原因：模型服务商网关异常，请稍后重试"},
+	{503, CodeServiceUnavailable, "服务不可用", "可能原因：模型服务商暂时不可用，请稍后重试"},
 }
 
 // ClassifyHTTPError 根据 HTTP 状态码返回分类错误
@@ -52,23 +52,23 @@ func ClassifyHTTPError(statusCode int, retryAfter string) *LLMError {
 		if m.statusCode == statusCode {
 			guess := m.guess
 			if retryAfter != "" && (statusCode == 502 || statusCode == 503) {
-				guess += fmt.Sprintf(", retry suggested after %s seconds", retryAfter)
+				guess += fmt.Sprintf("，建议 %s 秒后重试", retryAfter)
 			}
 			return &LLMError{Code: m.code, Message: m.message, Guess: guess}
 		}
 	}
 	if statusCode >= 500 {
-		return &LLMError{Code: CodeServerError, Message: "Server error", Guess: "Possible causes: LLM provider server failure, please retry later"}
+		return &LLMError{Code: CodeServerError, Message: "服务器错误", Guess: "可能原因：模型服务商服务器故障，请稍后重试"}
 	}
-	return &LLMError{Code: statusCode, Message: fmt.Sprintf("HTTP %d", statusCode), Guess: "Possible causes: invalid request parameters or provider restrictions"}
+	return &LLMError{Code: statusCode, Message: fmt.Sprintf("HTTP %d", statusCode), Guess: "可能原因：请求参数无效或服务商限制"}
 }
 
 // InvalidJSONError 请求体 JSON 格式错误
 func InvalidJSONError() *LLMError {
 	return &LLMError{
 		Code:    CodeInvalidJSON,
-		Message: "Invalid request body format",
-		Guess:   "Possible causes: JSON syntax error or incorrect Content-Type",
+		Message: "请求体格式无效",
+		Guess:   "可能原因：JSON 语法错误或 Content-Type 不正确",
 	}
 }
 
@@ -76,8 +76,8 @@ func InvalidJSONError() *LLMError {
 func MessagesEmptyError() *LLMError {
 	return &LLMError{
 		Code:    CodeMessagesEmpty,
-		Message: "Message content cannot be empty",
-		Guess:   "Possible causes: messages field missing, empty array, or malformed format",
+		Message: "消息内容不能为空",
+		Guess:   "可能原因：messages 字段缺失、为空数组或格式错误",
 	}
 }
 
@@ -85,8 +85,8 @@ func MessagesEmptyError() *LLMError {
 func NetworkError(err error) *LLMError {
 	return &LLMError{
 		Code:    CodeNetworkError,
-		Message: "Network connection failed",
-		Guess:   "Possible causes: device offline, DNS resolution failure, or firewall blocking",
+		Message: "网络连接失败",
+		Guess:   "可能原因：设备离线、DNS 解析失败或被防火墙拦截",
 	}
 }
 
@@ -94,8 +94,8 @@ func NetworkError(err error) *LLMError {
 func TimeoutError() *LLMError {
 	return &LLMError{
 		Code:    CodeTimeout,
-		Message: "Request timeout",
-		Guess:   "Possible causes: slow model response, high network latency, or timeout set too short",
+		Message: "请求超时",
+		Guess:   "可能原因：模型响应较慢、网络延迟高或超时时间设置过短",
 	}
 }
 
@@ -103,8 +103,8 @@ func TimeoutError() *LLMError {
 func StreamInterruptedError() *LLMError {
 	return &LLMError{
 		Code:    CodeStreamInterrupted,
-		Message: "Streaming response interrupted",
-		Guess:   "The partially displayed answer may be incomplete",
+		Message: "流式响应中断",
+		Guess:   "已显示的部分回答可能不完整",
 	}
 }
 

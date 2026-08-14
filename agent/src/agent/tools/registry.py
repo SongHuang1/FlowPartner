@@ -34,10 +34,10 @@ class ToolRegistry:
         """执行指定工具"""
         tool = self._tools.get(name)
         if not tool:
-            return f"Error: unknown tool '{name}'"
+            return f"错误：未知工具 '{name}'"
         try:
             result = await tool["handler"](**arguments)
             return str(result)
         except Exception as e:
             logging.error(f"Tool {name} execution error: {e}", exc_info=True)
-            return f"Tool execution error: {str(e)}"
+            return f"工具执行错误：{str(e)}"

@@ -576,7 +576,7 @@ func TestSettingsHandler_Get_AllNewFields(t *testing.T) {
 	if data["model_name"] != "gpt-4" {
 		t.Errorf("expected default model_name 'gpt-4', got %v", data["model_name"])
 	}
-	if data["system_prompt"] != "You are a helpful AI assistant." {
+	if data["system_prompt"] != "你是一个乐于助人的 AI 助手。" {
 		t.Errorf("expected default system_prompt, got %v", data["system_prompt"])
 	}
 	if data["temperature"] != 0.7 {

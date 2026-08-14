@@ -283,7 +283,7 @@ func buildRequestBody(req StreamRequest) ([]byte, error) {
 func mustJSON(v interface{}) string {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return `{"code":500,"message":"Internal serialization error","guess":"Possible causes: internal server error, please retry later"}`
+		return `{"code":500,"message":"内部序列化错误","guess":"可能原因：内部服务器错误，请稍后重试"}`
 	}
 	return string(b)
 }

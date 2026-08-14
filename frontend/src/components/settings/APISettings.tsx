@@ -23,7 +23,7 @@ export function APISettings() {
       await unlock(password)
       setPassword('')
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Unlock failed')
+      setLocalError(e instanceof Error ? e.message : '解锁失败')
     }
   }
 
@@ -32,14 +32,14 @@ export function APISettings() {
     try {
       await lock()
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Lock failed')
+      setLocalError(e instanceof Error ? e.message : '锁定失败')
     }
   }
 
   const handleShowPasswordDialog = () => {
     setLocalError(null)
     if (!apiKeyInput.trim()) {
-      setLocalError('Please enter an API Key')
+      setLocalError('请输入 API Key')
       return
     }
     setPassword('')
@@ -50,11 +50,11 @@ export function APISettings() {
   const handleConfirmSave = async () => {
     setLocalError(null)
     if (!isPasswordStrong(password)) {
-      setLocalError('Password must be at least 8 characters with uppercase, lowercase and numbers')
+      setLocalError('密码至少 8 位，且需包含大写字母、小写字母和数字')
       return
     }
     if (password !== passwordConfirm) {
-      setLocalError('The two passwords do not match')
+      setLocalError('两次输入的密码不一致')
       return
     }
     try {
@@ -64,7 +64,7 @@ export function APISettings() {
       setPasswordConfirm('')
       setShowPasswordDialog(false)
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Save failed')
+      setLocalError(e instanceof Error ? e.message : '保存失败')
     }
   }
 
@@ -76,13 +76,13 @@ export function APISettings() {
       setPassword('')
       setPasswordConfirm('')
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Failed to clear API Key')
+      setLocalError(e instanceof Error ? e.message : '清除 API Key 失败')
     }
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="text-sm font-medium text-neutral-700">API Settings</h3>
+      <h3 className="text-sm font-medium text-neutral-700">API 设置</h3>
 
       {localError && (
         <div className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-md">
@@ -91,7 +91,7 @@ export function APISettings() {
       )}
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="api-base-url" className="text-xs font-medium text-neutral-600">Base URL</label>
+        <label htmlFor="api-base-url" className="text-xs font-medium text-neutral-600">接口地址</label>
         <Input
           id="api-base-url"
           value={settings.base_url}
@@ -101,7 +101,7 @@ export function APISettings() {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="api-model-name" className="text-xs font-medium text-neutral-600">Model name</label>
+        <label htmlFor="api-model-name" className="text-xs font-medium text-neutral-600">模型名称</label>
         <Input
           id="api-model-name"
           value={settings.model_name}
@@ -119,14 +119,14 @@ export function APISettings() {
               type={showApiKey ? 'text' : 'password'}
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder={lockStatus.has_api_key ? 'Configured (enter a new value to change)' : 'Enter API Key'}
+              placeholder={lockStatus.has_api_key ? '已配置（输入新值可修改）' : '输入 API Key'}
               disabled={!lockStatus.locked && lockStatus.has_api_key}
             />
             <button
               type="button"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
               onClick={() => setShowApiKey(!showApiKey)}
-              aria-label={showApiKey ? 'Hide' : 'Show'}
+              aria-label={showApiKey ? '隐藏' : '显示'}
             >
               {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -141,16 +141,16 @@ export function APISettings() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password to unlock"
+              placeholder="输入密码解锁"
               className="flex-1"
             />
             <Button onClick={handleUnlock} size="sm" className="flex items-center gap-1">
-              <Unlock className="w-3 h-3" /> Unlock
+              <Unlock className="w-3 h-3" /> 解锁
             </Button>
           </div>
         ) : (
           <Button onClick={handleLock} size="sm" variant="outline" className="flex items-center gap-1">
-            <Lock className="w-3 h-3" /> Lock
+            <Lock className="w-3 h-3" /> 锁定
           </Button>
         )}
       </div>
@@ -158,7 +158,7 @@ export function APISettings() {
       {lockStatus.has_api_key && (
         <div className="flex gap-2 items-center text-xs text-neutral-500">
           <KeyRound className="w-3 h-3" />
-          <span>API Key configured</span>
+          <span>API Key 已配置</span>
         </div>
       )}
 
@@ -169,7 +169,7 @@ export function APISettings() {
           disabled={lockStatus.locked || !apiKeyInput.trim()}
           className="flex items-center gap-1"
         >
-          <KeyRound className="w-3 h-3" /> Save API Key
+          <KeyRound className="w-3 h-3" /> 保存 API Key
         </Button>
         <Button
           onClick={handleClearApiKey}
@@ -178,34 +178,34 @@ export function APISettings() {
           disabled={!lockStatus.has_api_key}
           className="flex items-center gap-1"
         >
-          <Trash2 className="w-3 h-3" /> Clear
+          <Trash2 className="w-3 h-3" /> 清除
         </Button>
       </div>
 
       {showPasswordDialog && (
         <div className="border border-neutral-200 rounded-md p-3 flex flex-col gap-3">
-          <p className="text-xs text-neutral-600">Set protection password (min 8 chars, upper + lower + numbers)</p>
+          <p className="text-xs text-neutral-600">设置保护密码（至少 8 位，含大写字母、小写字母和数字）</p>
           <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
+            placeholder="输入密码"
           />
           <Input
             type="password"
             value={passwordConfirm}
             onChange={(e) => setPasswordConfirm(e.target.value)}
-            placeholder="Confirm password"
+            placeholder="确认密码"
           />
           {!isPasswordStrong(password) && password.length > 0 && (
-            <p className="text-xs text-amber-600">Password must be at least 8 characters with uppercase, lowercase and numbers</p>
+            <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
           )}
           {password && password !== passwordConfirm && passwordConfirm.length > 0 && (
-            <p className="text-xs text-red-500">The two passwords do not match</p>
+            <p className="text-xs text-red-500">两次输入的密码不一致</p>
           )}
           <div className="flex gap-2">
-            <Button onClick={handleConfirmSave} size="sm">Confirm</Button>
-            <Button onClick={() => setShowPasswordDialog(false)} size="sm" variant="outline">Cancel</Button>
+            <Button onClick={handleConfirmSave} size="sm">确认</Button>
+            <Button onClick={() => setShowPasswordDialog(false)} size="sm" variant="outline">取消</Button>
           </div>
         </div>
       )}

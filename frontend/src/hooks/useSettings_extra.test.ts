@@ -22,7 +22,7 @@ describe('useSettings - new fields', () => {
       base_url: 'https://api.openai.com/v1',
       encrypted_api_key: '',
       model_name: 'gpt-4',
-      system_prompt: 'You are a helpful AI assistant.',
+      system_prompt: '你是一个乐于助人的 AI 助手。',
       temperature: 0.7,
       close_behavior: 'ask',
       close_remembered: false,
@@ -41,7 +41,7 @@ describe('useSettings - new fields', () => {
     expect(defaults.base_url).toBe('https://api.openai.com/v1')
     expect(defaults.encrypted_api_key).toBe('')
     expect(defaults.model_name).toBe('gpt-4')
-    expect(defaults.system_prompt).toBe('You are a helpful AI assistant.')
+    expect(defaults.system_prompt).toBe('你是一个乐于助人的 AI 助手。')
     expect(defaults.temperature).toBe(0.7)
     expect(defaults.close_behavior).toBe('ask')
     expect(defaults.close_remembered).toBe(false)
@@ -59,7 +59,7 @@ describe('useSettings - new fields', () => {
 
     expect(result.current.settings.base_url).toBe('https://api.openai.com/v1')
     expect(result.current.settings.model_name).toBe('gpt-4')
-    expect(result.current.settings.system_prompt).toBe('You are a helpful AI assistant.')
+    expect(result.current.settings.system_prompt).toBe('你是一个乐于助人的 AI 助手。')
     expect(result.current.settings.temperature).toBe(0.7)
     expect(result.current.settings.close_behavior).toBe('ask')
     expect(result.current.settings.close_remembered).toBe(false)
@@ -145,7 +145,7 @@ describe('useSettings - new fields', () => {
     // Other fields should be preserved
     expect(result.current.settings.model).toBe('gpt-4')
     expect(result.current.settings.base_url).toBe('https://api.openai.com/v1')
-    expect(result.current.settings.system_prompt).toBe('You are a helpful AI assistant.')
+    expect(result.current.settings.system_prompt).toBe('你是一个乐于助人的 AI 助手。')
   })
 
   it('debounces save for new fields', () => {
@@ -176,7 +176,7 @@ describe('useSettings - new fields', () => {
       language: 'zh-CN',
       base_url: 'https://api.openai.com/v1',
       model_name: 'gpt-4',
-      system_prompt: 'You are a helpful AI assistant.',
+      system_prompt: '你是一个乐于助人的 AI 助手。',
       temperature: 0.7,
       close_behavior: 'ask',
       close_remembered: false,

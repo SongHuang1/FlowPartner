@@ -385,12 +385,12 @@ function createTray() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show main window',
+      label: '显示主窗口',
       click: showMainWindow,
     },
     { type: 'separator' },
     {
-      label: 'Quit FlowPartner',
+      label: '退出 FlowPartner',
       click: quitAppWithCleanup,
     },
   ])
@@ -403,47 +403,47 @@ function createTray() {
 function createApplicationMenu() {
   const template = [
     {
-      label: 'Edit',
+      label: '编辑',
       submenu: [
-        { role: 'undo', label: 'Undo' },
-        { role: 'redo', label: 'Redo' },
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
         { type: 'separator' },
-        { role: 'cut', label: 'Cut' },
-        { role: 'copy', label: 'Copy' },
-        { role: 'paste', label: 'Paste' },
-        { role: 'selectAll', label: 'Select All' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
       ],
     },
     {
-      label: 'View',
+      label: '视图',
       submenu: [
-        { role: 'reload', label: 'Reload' },
-        { role: 'forceReload', label: 'Force Reload' },
-        { role: 'toggleDevTools', label: 'Toggle Developer Tools' },
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { role: 'toggleDevTools', label: '切换开发者工具' },
         { type: 'separator' },
-        { role: 'resetZoom', label: 'Actual Size' },
-        { role: 'zoomIn', label: 'Zoom In' },
-        { role: 'zoomOut', label: 'Zoom Out' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
       ],
     },
     {
-      label: 'Window',
+      label: '窗口',
       submenu: [
-        { role: 'minimize', label: 'Minimize' },
-        { role: 'close', label: 'Close' },
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭' },
       ],
     },
     {
-      label: 'Help',
+      label: '帮助',
       submenu: [
         {
-          label: 'About FlowPartner',
+          label: '关于 FlowPartner',
           click: () => {
             dialog.showMessageBox({
               type: 'info',
-              title: 'About FlowPartner',
+              title: '关于 FlowPartner',
               message: 'FlowPartner',
-              detail: `Version ${app.getVersion()}\n\nAn AI assistant desktop application that provides safe and reliable intelligent assistant services for non-technical users.`,
+              detail: `版本 ${app.getVersion()}\n\n一款面向非技术用户的安全可靠的 AI 助手桌面应用。`,
             })
           },
         },

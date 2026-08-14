@@ -58,21 +58,21 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	status := ks.GetLockStatus()
 	if status.Locked && time.Now().Before(status.LockedUntil) {
 		response.WriteJSON(w, http.StatusTooManyRequests,
-			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("Too many failed attempts, try again in %v",
+			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %v 后重试",
 				time.Until(status.LockedUntil))))
 		return
 	}
 
 	if !status.HasAPIKey {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeAPIKeyNotConfigured, "Please configure an API Key first"))
+			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
 		return
 	}
 
 	settings := LoadSettings()
 	if settings.EncryptedAPIKey == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeAPIKeyNotConfigured, "Please configure an API Key first"))
+			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
 		return
 	}
 
@@ -81,14 +81,14 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 		// 解密失败时直接增加计数器，无需再次解密（VerifyPassword 内部会重复 Argon2id 计算）
 		ks.RecordFailedAttempt()
 		response.WriteJSON(w, http.StatusUnauthorized,
-			response.Error(response.CodeWrongPassword, "Wrong password"))
+			response.Error(response.CodeWrongPassword, "密码错误"))
 		return
 	}
 
 	ks.Unlock([]byte(apiKey))
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "Unlocked",
+		"message": "已解锁",
 	}))
 }
 
@@ -96,7 +96,7 @@ func (h *UnlockHandler) Lock(w http.ResponseWriter, r *http.Request) {
 	ks := keystore.Instance()
 	ks.Lock()
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "Locked",
+		"message": "已锁定",
 	}))
 }
 

@@ -93,8 +93,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	if cfg == nil {
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4002,
-			Message: "No active model configuration",
-			Guess:   "Please add and activate a model configuration",
+			Message: "没有激活的模型配置",
+			Guess:   "请先在设置中添加并激活模型配置",
 		})
 	}
 
@@ -103,8 +103,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	if !ok {
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4001,
-			Message: "Model configuration is locked",
-			Guess:   "Please unlock the model configuration in Settings first",
+			Message: "模型配置已锁定",
+			Guess:   "请先在设置中解锁模型配置",
 		})
 	}
 	keyCopy := make([]byte, len(apiKey))
@@ -117,8 +117,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		}
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    400,
-			Message: "Invalid BaseURL format",
-			Guess:   "Please check the BaseURL in the model configuration",
+			Message: "接口地址格式无效",
+			Guess:   "请检查模型配置中的接口地址（Base URL）",
 		})
 	}
 

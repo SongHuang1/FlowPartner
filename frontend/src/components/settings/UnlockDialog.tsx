@@ -22,7 +22,7 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
 
   const handleUnlock = async () => {
     if (!password) {
-      setLocalError('Please enter your password')
+      setLocalError('请输入密码')
       return
     }
     setLoading(true)
@@ -32,7 +32,7 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
       setPassword('')
       onClose()
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Unlock failed')
+      setLocalError(e instanceof Error ? e.message : '解锁失败')
       setPassword('')
     } finally {
       setLoading(false)
@@ -45,16 +45,16 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-neutral-600" />
-            <h3 className="text-sm font-medium text-neutral-800">Unlock API Key</h3>
+            <h3 className="text-sm font-medium text-neutral-800">解锁 API Key</h3>
           </div>
-          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="Close">
+          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose} aria-label="关闭">
             <X className="w-4 h-4" />
           </Button>
         </div>
 
         {isLocked && (
           <div className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-md">
-            Account locked, please try again {lockedUntil ? `at ${new Date(lockedUntil).toLocaleTimeString()}` : 'later'}
+            账户已锁定，请稍后重试
           </div>
         )}
 
@@ -66,7 +66,7 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
 
         {failedAttempts > 0 && !isLocked && (
           <p className="text-xs text-amber-600">
-            {failedAttempts} failed attempt{failedAttempts === 1 ? '' : 's'}, 5 consecutive failures will lock for 30 seconds
+            已失败 {failedAttempts} 次，连续失败 5 次将锁定 30 秒
           </p>
         )}
 
@@ -74,15 +74,15 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter protection password"
+          placeholder="输入保护密码"
           disabled={isLocked || loading}
         />
 
         <div className="flex gap-2 justify-end">
           <Button onClick={handleUnlock} size="sm" disabled={isLocked || loading}>
-            {loading ? 'Unlocking...' : 'Unlock'}
+            {loading ? '解锁中...' : '解锁'}
           </Button>
-          <Button onClick={onClose} size="sm" variant="outline">Cancel</Button>
+          <Button onClick={onClose} size="sm" variant="outline">取消</Button>
         </div>
       </div>
     </div>

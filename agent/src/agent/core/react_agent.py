@@ -18,7 +18,7 @@ class ReactAgent:
             history = []
 
         messages = [
-            {"role": "system", "content": "You are a powerful local AI assistant. You can use tools to read files, write files, browse directories, and more to help users complete various tasks. Please use tools appropriately based on user needs."}
+            {"role": "system", "content": "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，帮助用户完成各种任务。请根据用户需求合理使用工具。"}
         ]
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
@@ -40,7 +40,7 @@ class ReactAgent:
             llm_resp = await self.call_llm(self.session_id, payload)
 
             if not llm_resp.get("success"):
-                error_msg = llm_resp.get("error_message", "Unknown error")
+                error_msg = llm_resp.get("error_message", "未知错误")
                 error_guess = llm_resp.get("error_guess", "")
                 event_payload = {"message": error_msg}
                 if error_guess:
@@ -97,6 +97,6 @@ class ReactAgent:
                 })
                 return final_answer
 
-        fallback = "Sorry, I could not reach a conclusion after too many rounds. Please try simplifying your question."
+        fallback = "抱歉，经过多轮尝试后未能得出结论。请尝试简化你的问题。"
         await self.send_event(self.session_id, "error", {"message": fallback})
         return fallback

@@ -49,24 +49,24 @@ export function CloseDialog({ open, onClose, onMinimize, onQuit, onRemember }: C
       <div className="bg-white rounded-lg shadow-lg w-80 p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-neutral-800">
-            {showQuitConfirm ? 'Confirm exit' : 'Close window'}
+            {showQuitConfirm ? '确认退出' : '关闭窗口'}
           </h3>
-          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={handleClose} aria-label="Close">
+          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={handleClose} aria-label="关闭">
             <X className="w-4 h-4" />
           </Button>
         </div>
 
         {showQuitConfirm ? (
-          <p className="text-sm text-neutral-600">Are you sure you want to quit FlowPartner?</p>
+          <p className="text-sm text-neutral-600">确定要退出 FlowPartner 吗？</p>
         ) : (
           <>
-            <p className="text-sm text-neutral-600">What should happen when the close button is clicked?</p>
+            <p className="text-sm text-neutral-600">点击关闭按钮后希望发生什么？</p>
             <div className="flex flex-col gap-2">
               <Button onClick={handleMinimize} variant="outline" className="justify-start text-sm">
-                Minimize to tray
+                最小化到托盘
               </Button>
               <Button onClick={handleQuit} variant="outline" className="justify-start text-sm">
-                Quit completely
+                完全退出
               </Button>
             </div>
             <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer">
@@ -76,15 +76,15 @@ export function CloseDialog({ open, onClose, onMinimize, onQuit, onRemember }: C
                 onChange={(e) => setRemember(e.target.checked)}
                 className="rounded border-neutral-300"
               />
-              Remember my choice
+              记住我的选择
             </label>
           </>
         )}
 
         {showQuitConfirm && (
           <div className="flex gap-2 justify-end">
-            <Button onClick={handleQuit} size="sm">Confirm exit</Button>
-            <Button onClick={() => setShowQuitConfirm(false)} size="sm" variant="outline">Cancel</Button>
+            <Button onClick={handleQuit} size="sm">确认退出</Button>
+            <Button onClick={() => setShowQuitConfirm(false)} size="sm" variant="outline">取消</Button>
           </div>
         )}
       </div>

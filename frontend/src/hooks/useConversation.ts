@@ -39,7 +39,7 @@ export function useConversation(): UseConversationReturn {
 
   useEffect(() => {
     if (!loadedRef.current) return
-    saveConversation(messages).catch((e: Error) => setError(`Failed to save conversation: ${e.message}`))
+    saveConversation(messages).catch((e: Error) => setError(`保存对话失败：${e.message}`))
   }, [messages])
 
   const sendMessage = (content: string) => {
