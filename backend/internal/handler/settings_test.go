@@ -26,6 +26,7 @@ func clearSettingsFile(t *testing.T) {
 }
 
 func TestSettingsHandler_Get_Defaults(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -62,6 +63,8 @@ func TestSettingsHandler_Get_Defaults(t *testing.T) {
 }
 
 func TestSettingsHandler_Put_And_Get(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 
 	// PUT 新设置
@@ -177,6 +180,8 @@ func TestSettingsHandler_Put_ZeroContextWindow(t *testing.T) {
 
 // TestSettingsHandler_Put_LargeContextWindow 验证极大的 context_window 可以被保存
 func TestSettingsHandler_Put_LargeContextWindow(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 	body := `{"model":"gpt-4","context_window":999999,"language":"zh-CN"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
@@ -191,6 +196,8 @@ func TestSettingsHandler_Put_LargeContextWindow(t *testing.T) {
 
 // TestSettingsHandler_Put_SpecialCharsInModel 验证 model 字段包含特殊字符
 func TestSettingsHandler_Put_SpecialCharsInModel(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 	body := `{"model":"gpt-4-turbo-preview#2024","context_window":4096,"language":"zh-CN"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
@@ -218,6 +225,8 @@ func TestSettingsHandler_Put_EmptyBody(t *testing.T) {
 
 // TestSettingsHandler_Put_OverwriteExisting 验证 PUT 覆盖已有设置
 func TestSettingsHandler_Put_OverwriteExisting(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 
 	// 第一次 PUT
@@ -259,6 +268,9 @@ func TestSettingsHandler_Put_OverwriteExisting(t *testing.T) {
 
 // TestSettingsHandler_Get_AfterCorruptedFile 验证文件损坏时返回默认值
 func TestSettingsHandler_Get_AfterCorruptedFile(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
+
 	// 写入损坏的 JSON 到 settings.json
 	dir, err := storage.DataDir()
 	if err != nil {

@@ -17,6 +17,8 @@ import (
 
 // TestSettingsHandler_Put_BaseURL 验证 Base URL 字段可以被保存
 func TestSettingsHandler_Put_BaseURL(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -42,6 +44,7 @@ func TestSettingsHandler_Put_BaseURL(t *testing.T) {
 
 // TestSettingsHandler_Put_ModelName 验证 ModelName 字段可以被保存
 func TestSettingsHandler_Put_ModelName(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -67,6 +70,7 @@ func TestSettingsHandler_Put_ModelName(t *testing.T) {
 
 // TestSettingsHandler_Put_SystemPrompt 验证 SystemPrompt 字段可以被保存
 func TestSettingsHandler_Put_SystemPrompt(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -92,6 +96,7 @@ func TestSettingsHandler_Put_SystemPrompt(t *testing.T) {
 
 // TestSettingsHandler_Put_Temperature 验证 Temperature 字段可以被保存
 func TestSettingsHandler_Put_Temperature(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -117,6 +122,7 @@ func TestSettingsHandler_Put_Temperature(t *testing.T) {
 
 // TestSettingsHandler_Put_TemperatureBoundaryZero 验证 Temperature=0.0 可以被保存（边界值）
 func TestSettingsHandler_Put_TemperatureBoundaryZero(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -134,6 +140,7 @@ func TestSettingsHandler_Put_TemperatureBoundaryZero(t *testing.T) {
 
 // TestSettingsHandler_Put_TemperatureBoundaryMax 验证 Temperature=2.0 可以被保存（边界值）
 func TestSettingsHandler_Put_TemperatureBoundaryMax(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -151,6 +158,7 @@ func TestSettingsHandler_Put_TemperatureBoundaryMax(t *testing.T) {
 
 // TestSettingsHandler_Put_TemperatureTooHigh 验证 Temperature > 2.0 被拒绝
 func TestSettingsHandler_Put_TemperatureTooHigh(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -168,6 +176,7 @@ func TestSettingsHandler_Put_TemperatureTooHigh(t *testing.T) {
 
 // TestSettingsHandler_Put_TemperatureNegative 验证 Temperature < 0 被拒绝
 func TestSettingsHandler_Put_TemperatureNegative(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -185,6 +194,7 @@ func TestSettingsHandler_Put_TemperatureNegative(t *testing.T) {
 
 // TestSettingsHandler_Put_CloseBehaviorMinimize 验证 close_behavior="minimize" 可以被保存
 func TestSettingsHandler_Put_CloseBehaviorMinimize(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -202,6 +212,7 @@ func TestSettingsHandler_Put_CloseBehaviorMinimize(t *testing.T) {
 
 // TestSettingsHandler_Put_CloseBehaviorQuit 验证 close_behavior="quit" 可以被保存
 func TestSettingsHandler_Put_CloseBehaviorQuit(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -219,6 +230,7 @@ func TestSettingsHandler_Put_CloseBehaviorQuit(t *testing.T) {
 
 // TestSettingsHandler_Put_CloseBehaviorAsk 验证 close_behavior="ask" 可以被保存
 func TestSettingsHandler_Put_CloseBehaviorAsk(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -236,6 +248,7 @@ func TestSettingsHandler_Put_CloseBehaviorAsk(t *testing.T) {
 
 // TestSettingsHandler_Put_CloseBehaviorInvalid 验证无效的 close_behavior 被拒绝
 func TestSettingsHandler_Put_CloseBehaviorInvalid(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -253,6 +266,7 @@ func TestSettingsHandler_Put_CloseBehaviorInvalid(t *testing.T) {
 
 // TestSettingsHandler_Put_CloseRemembered 验证 close_remembered 字段可以被保存
 func TestSettingsHandler_Put_CloseRemembered(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -278,6 +292,7 @@ func TestSettingsHandler_Put_CloseRemembered(t *testing.T) {
 
 // TestSettingsHandler_Put_WindowState 验证窗口状态字段可以被保存
 func TestSettingsHandler_Put_WindowState(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -306,6 +321,7 @@ func TestSettingsHandler_Put_WindowState(t *testing.T) {
 
 // TestSettingsHandler_Put_SidebarState 验证侧边栏状态字段可以被保存
 func TestSettingsHandler_Put_SidebarState(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -334,6 +350,7 @@ func TestSettingsHandler_Put_SidebarState(t *testing.T) {
 
 // TestSettingsHandler_Put_BaseURLNotHTTP 验证非 HTTP/HTTPS 的 Base URL 被拒绝
 func TestSettingsHandler_Put_BaseURLNotHTTP(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -351,6 +368,7 @@ func TestSettingsHandler_Put_BaseURLNotHTTP(t *testing.T) {
 
 // TestSettingsHandler_Put_BaseURLLoopback 验证 loopback 地址被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_BaseURLLoopback(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -368,6 +386,7 @@ func TestSettingsHandler_Put_BaseURLLoopback(t *testing.T) {
 
 // TestSettingsHandler_Put_BaseURLLocalhost 验证 localhost 被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_BaseURLLocalhost(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -385,6 +404,7 @@ func TestSettingsHandler_Put_BaseURLLocalhost(t *testing.T) {
 
 // TestSettingsHandler_Put_BaseURLPrivateIP 验证私有 IP 被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_BaseURLPrivateIP(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -402,6 +422,7 @@ func TestSettingsHandler_Put_BaseURLPrivateIP(t *testing.T) {
 
 // TestSettingsHandler_Put_BaseURLMetadataService 验证云服务元数据地址被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_BaseURLMetadataService(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -420,6 +441,7 @@ func TestSettingsHandler_Put_BaseURLMetadataService(t *testing.T) {
 // TestSettingsHandler_Put_APIKeyWithPassword 验证 API Key + 密码可以加密保存
 func TestSettingsHandler_Put_APIKeyWithPassword(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -465,6 +487,7 @@ func TestSettingsHandler_Put_APIKeyWithPassword(t *testing.T) {
 // TestSettingsHandler_Put_APIKeyWithoutPassword 验证 API Key 无密码时被拒绝
 func TestSettingsHandler_Put_APIKeyWithoutPassword(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -483,6 +506,7 @@ func TestSettingsHandler_Put_APIKeyWithoutPassword(t *testing.T) {
 // TestSettingsHandler_Put_APIKeyWeakPassword 验证 API Key + 弱密码被拒绝
 func TestSettingsHandler_Put_APIKeyWeakPassword(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -501,6 +525,7 @@ func TestSettingsHandler_Put_APIKeyWeakPassword(t *testing.T) {
 // TestSettingsHandler_Put_APIKeyEmptyPassword 验证 API Key + 空密码被拒绝
 func TestSettingsHandler_Put_APIKeyEmptyPassword(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -518,6 +543,7 @@ func TestSettingsHandler_Put_APIKeyEmptyPassword(t *testing.T) {
 
 // TestSettingsHandler_Put_EmptyLanguage 验证空 language 被拒绝
 func TestSettingsHandler_Put_EmptyLanguage(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -535,6 +561,7 @@ func TestSettingsHandler_Put_EmptyLanguage(t *testing.T) {
 
 // TestSettingsHandler_Put_WhitespaceModel 验证空白 model 被拒绝
 func TestSettingsHandler_Put_WhitespaceModel(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -552,6 +579,7 @@ func TestSettingsHandler_Put_WhitespaceModel(t *testing.T) {
 
 // TestSettingsHandler_Get_AllNewFields 验证 GET 返回所有新字段的默认值
 func TestSettingsHandler_Get_AllNewFields(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -604,6 +632,7 @@ func TestSettingsHandler_Get_AllNewFields(t *testing.T) {
 
 // TestSettingsHandler_Put_AllNewFields 验证 PUT 所有新字段
 func TestSettingsHandler_Put_AllNewFields(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -662,6 +691,7 @@ func TestSettingsHandler_Put_AllNewFields(t *testing.T) {
 // TestSettingsHandler_Put_PreservesAPIKey 验证 PUT 不修改 API Key 时保留已有加密 Key
 func TestSettingsHandler_Put_PreservesAPIKey(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -778,6 +808,7 @@ func TestContainsString(t *testing.T) {
 
 // TestSettingsHandler_Put_LinkLocalAddress 验证链路本地地址被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_LinkLocalAddress(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -795,6 +826,7 @@ func TestSettingsHandler_Put_LinkLocalAddress(t *testing.T) {
 
 // TestSettingsHandler_Put_LoopbackIPv6 验证 IPv6 loopback 被拒绝（SSRF 防护）
 func TestSettingsHandler_Put_LoopbackIPv6(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 
@@ -813,6 +845,7 @@ func TestSettingsHandler_Put_LoopbackIPv6(t *testing.T) {
 // TestSettingsHandler_Put_SaveAPIKey_FullFlow 验证 API Key 保存完整流程
 // 流程：前端发送 api_key + 密码 → 后端加密存储 → KeyStore 解锁 → 可解密验证
 func TestSettingsHandler_Put_SaveAPIKey_FullFlow(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 	keystore.Reset()
@@ -877,6 +910,7 @@ func TestSettingsHandler_Put_SaveAPIKey_FullFlow(t *testing.T) {
 
 // TestSettingsHandler_Put_SaveAPIKey_PreservesExistingKey 验证不发送 api_key 时保留已有密钥
 func TestSettingsHandler_Put_SaveAPIKey_PreservesExistingKey(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 	keystore.Reset()
@@ -920,6 +954,7 @@ func TestSettingsHandler_Put_SaveAPIKey_PreservesExistingKey(t *testing.T) {
 
 // TestSettingsHandler_Put_SaveAPIKey_RequiresPassword 验证保存 API Key 时强制要求密码
 func TestSettingsHandler_Put_SaveAPIKey_RequiresPassword(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	clearSettingsFile(t)
 

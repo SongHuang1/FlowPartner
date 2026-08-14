@@ -19,3 +19,16 @@ dev = [
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501"]

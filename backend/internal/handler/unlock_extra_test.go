@@ -18,6 +18,7 @@ import (
 // TestUnlock_RateLimit_ExactThreshold 验证恰好 5 次失败后触发速率限制
 func TestUnlock_RateLimit_ExactThreshold(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -61,6 +62,7 @@ func TestUnlock_RateLimit_ExactThreshold(t *testing.T) {
 // TestUnlock_RateLimit_ThenCorrectAfterExpiry 验证速率限制过期后正确密码可以解锁
 func TestUnlock_RateLimit_ThenCorrectAfterExpiry(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -97,6 +99,7 @@ func TestUnlock_RateLimit_ThenCorrectAfterExpiry(t *testing.T) {
 // TestUnlock_EmptyPassword 验证空密码解锁失败
 func TestUnlock_EmptyPassword(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -120,6 +123,7 @@ func TestUnlock_EmptyPassword(t *testing.T) {
 // TestUnlock_NoEncryptedKeyInSettings 验证 settings 中无加密 Key 时解锁失败
 func TestUnlock_NoEncryptedKeyInSettings(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -141,6 +145,7 @@ func TestUnlock_NoEncryptedKeyInSettings(t *testing.T) {
 // TestUnlock_EmptyRequestBody 验证空请求体解锁失败
 func TestUnlock_EmptyRequestBody(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -157,6 +162,7 @@ func TestUnlock_EmptyRequestBody(t *testing.T) {
 // TestUnlock_MalformedJSON 验证畸形 JSON 解锁失败
 func TestUnlock_MalformedJSON(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -173,6 +179,7 @@ func TestUnlock_MalformedJSON(t *testing.T) {
 // TestLock_WhenAlreadyLocked 验证已锁定时再次上锁不会报错
 func TestLock_WhenAlreadyLocked(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 	ks.Lock()
@@ -194,6 +201,7 @@ func TestLock_WhenAlreadyLocked(t *testing.T) {
 // TestStatus_AfterLock 验证上锁后状态正确
 func TestStatus_AfterLock(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 	ks.Unlock([]byte("sk-test-key"))
@@ -225,6 +233,7 @@ func TestStatus_AfterLock(t *testing.T) {
 // TestStatus_AfterUnlock_Handler 验证解锁后状态正确（通过 HTTP handler）
 func TestStatus_AfterUnlock_Handler(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 	ks.Unlock([]byte("sk-test-key"))
@@ -251,6 +260,7 @@ func TestStatus_AfterUnlock_Handler(t *testing.T) {
 // TestUnlock_SetsKeyInStore 验证解锁后 KeyStore 中有正确的 API Key
 func TestUnlock_SetsKeyInStore(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -282,6 +292,7 @@ func TestUnlock_SetsKeyInStore(t *testing.T) {
 // TestUnlock_WrongPassword_IncrementsCounter 验证错误密码增加失败计数
 func TestUnlock_WrongPassword_IncrementsCounter(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -309,6 +320,7 @@ func TestUnlock_WrongPassword_IncrementsCounter(t *testing.T) {
 // TestUnlock_ConcurrentUnlock 验证并发解锁不会死锁
 func TestUnlock_ConcurrentUnlock(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -335,6 +347,7 @@ func TestUnlock_ConcurrentUnlock(t *testing.T) {
 // TestUnlock_ResponseFormat 验证解锁成功响应格式正确
 func TestUnlock_ResponseFormat(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -363,6 +376,7 @@ func TestUnlock_ResponseFormat(t *testing.T) {
 // TestUnlock_RateLimitResponseFormat 验证速率限制响应包含错误码
 func TestUnlock_RateLimitResponseFormat(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
@@ -392,6 +406,7 @@ func TestUnlock_RateLimitResponseFormat(t *testing.T) {
 // TestUnlock_NoAPIKey_ResponseCode 验证未配置 API Key 时返回正确错误码
 func TestUnlock_NoAPIKey_ResponseCode(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	// 不设置 API Key
 
 	h := &UnlockHandler{}
@@ -414,6 +429,7 @@ func TestUnlock_NoAPIKey_ResponseCode(t *testing.T) {
 // TestUnlock_WrongPassword_ResponseCode 验证错误密码返回正确错误码
 func TestUnlock_WrongPassword_ResponseCode(t *testing.T) {
 	keystore.Reset()
+	storage.SetDataDirForTest(t.TempDir())
 	ks := keystore.Instance()
 	ks.SetAPIKeyConfigured(true)
 
