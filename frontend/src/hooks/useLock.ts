@@ -60,6 +60,12 @@ export function useLock(): UseLockReturn {
   }, [refreshStatus])
 
   useEffect(() => {
+    ;(async () => {
+      await refreshStatus()
+    })()
+  }, [refreshStatus])
+
+  useEffect(() => {
     const handleSystemLock = () => {
       lock().catch(() => {})
     }

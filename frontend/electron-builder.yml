@@ -16,6 +16,7 @@ extraResources:
     filter:
       - '**/*'
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
@@ -27,6 +28,7 @@ win:
         - arm64
   artifactName: FlowPartner-Windows-${version}-${arch}.${ext}
 mac:
+  icon: build/icon.icns
   target:
     - target: dmg
       arch:
@@ -36,6 +38,7 @@ mac:
   category: public.app-category.productivity
   artifactName: FlowPartner-macOS-${version}-${arch}.${ext}
 linux:
+  icon: build/icon.png
   target:
     - target: AppImage
       arch:
