@@ -7,9 +7,10 @@ interface WelcomeViewProps {
   onInputChange: (v: string) => void
   onSend: () => void
   disabled?: boolean
+  loading?: boolean
 }
 
-export function WelcomeView({ settings, inputValue, onInputChange, onSend, disabled }: WelcomeViewProps) {
+export function WelcomeView({ settings, inputValue, onInputChange, onSend, disabled, loading }: WelcomeViewProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">
       <h2 className="text-lg font-medium text-neutral-700 mb-4">
@@ -21,6 +22,7 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
           onChange={onInputChange}
           onSend={onSend}
           disabled={disabled}
+          loading={loading}
         />
       </div>
       <div className="text-xs text-neutral-400 text-center mt-4">

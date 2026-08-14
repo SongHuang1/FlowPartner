@@ -36,9 +36,10 @@ interface ChatInputProps {
   onChange: (v: string) => void
   onSend: () => void
   disabled?: boolean
+  loading?: boolean
 }
 
-export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, disabled, loading }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleSend = () => {
@@ -73,7 +74,7 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
         onClick={handleSend}
         aria-label="发送"
       >
-        {disabled ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
       </Button>
     </div>
   )
@@ -218,7 +219,8 @@ export function ChatArea() {
           inputValue={inputValue}
           onInputChange={setInputValue}
           onSend={handleSend}
-          disabled={processing || lockStatus.locked}
+          disabled={lockStatus.locked}
+          loading={processing}
         />
       ) : (
         <>
@@ -247,7 +249,8 @@ export function ChatArea() {
             value={inputValue}
             onChange={setInputValue}
             onSend={handleSend}
-            disabled={processing || lockStatus.locked}
+            disabled={lockStatus.locked}
+            loading={processing}
           />
         </>
       )}

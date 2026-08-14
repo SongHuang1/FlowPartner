@@ -27,7 +27,7 @@ export function AgentSettings() {
           id="agent-temperature"
           type="range"
           min="0"
-          max="2"
+          max="1"
           step="0.1"
           value={settings.temperature}
           onChange={(e) => updateSettings({ temperature: parseFloat(e.target.value) })}
@@ -35,7 +35,7 @@ export function AgentSettings() {
         />
         <div className="flex justify-between text-xs text-neutral-400">
           <span>0.0（精确）</span>
-          <span>2.0（创意）</span>
+          <span>1.0（创意）</span>
         </div>
       </div>
     </div>

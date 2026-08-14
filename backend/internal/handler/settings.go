@@ -246,6 +246,8 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defaults := DefaultSettings()
+
 	// 保留已有的 encrypted_api_key（当 api_key 为空或未提供时）
 	// 使用类型安全的值检查：api_key: null 和 api_key: "" 都视为"未提供"
 	apiKeyVal, _ := rawReq["api_key"].(string)
@@ -261,9 +263,9 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if settings.Temperature < 0 || settings.Temperature > 2.0 {
+	if settings.Temperature < 0 || settings.Temperature > 1.0 {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "温度必须在 0.0 到 2.0 之间"))
+			response.Error(response.CodeInvalidParam, "温度必须在 0.0 到 1.0 之间"))
 		return
 	}
 	if settings.CloseBehavior != "" {
@@ -280,14 +282,18 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if settings.ContextWindow <= 0 {
-		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "上下文窗口必须为正数"))
-		return
+		existing := LoadSettings()
+		settings.ContextWindow = existing.ContextWindow
+		if settings.ContextWindow <= 0 {
+			settings.ContextWindow = defaults.ContextWindow
+		}
 	}
 	if strings.TrimSpace(settings.Language) == "" {
-		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeInvalidParam, "语言不能为空"))
-		return
+		existing := LoadSettings()
+		settings.Language = existing.Language
+		if strings.TrimSpace(settings.Language) == "" {
+			settings.Language = defaults.Language
+		}
 	}
 
 	apiKey, hasAPIKey := rawReq["api_key"].(string)

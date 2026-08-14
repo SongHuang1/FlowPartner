@@ -141,12 +141,15 @@ export async function getLockStatus(): Promise<LockStatus> {
   return data.data
 }
 
-export async function saveApiKey(apiKey: string, password: string): Promise<void> {
+export async function saveApiKey(apiKey: string, password: string, model?: string, baseURL?: string): Promise<void> {
   await ensureReady()
+  const body: Record<string, string> = { api_key: apiKey, password }
+  if (model) body.model = model
+  if (baseURL) body.base_url = baseURL
   const res = await fetchWithTimeout(`${BASE}/settings`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey, password }),
+    body: JSON.stringify(body),
   })
   const data: ApiResponse<unknown> = await res.json()
   if (data.code !== 0) {
