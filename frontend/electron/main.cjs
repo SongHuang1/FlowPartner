@@ -361,20 +361,35 @@ function createWindow(port) {
     mainWindow = null
   })
 
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', async (event) => {
     if (!isQuiting) {
       event.preventDefault()
 
       const { behavior, remembered } = getCloseBehavior()
 
-      if (remembered && behavior !== 'ask') {
-        if (behavior === 'quit') {
-          quitAppWithCleanup()
-        } else {
-          mainWindow.hide()
-        }
-      } else {
+      if (behavior === 'minimize' && remembered) {
         mainWindow.hide()
+        return
+      }
+
+      if (behavior === 'quit' && remembered) {
+        await quitAppWithCleanup()
+        return
+      }
+
+      const result = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        title: '关闭窗口',
+        message: '点击关闭按钮后希望发生什么？',
+        buttons: ['最小化到托盘', '完全退出', '取消'],
+        cancelId: 2,
+        defaultId: 0,
+      })
+
+      if (result === 0) {
+        mainWindow.hide()
+      } else if (result === 1) {
+        await quitAppWithCleanup()
       }
     }
   })

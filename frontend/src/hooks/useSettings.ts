@@ -31,6 +31,7 @@ interface UseSettingsReturn {
   loading: boolean
   error: string | null
   updateSettings: (patch: Partial<Settings>) => void
+  getCurrentSettings: () => Settings
 }
 
 export function useSettings(): UseSettingsReturn {
@@ -66,5 +67,7 @@ export function useSettings(): UseSettingsReturn {
     }, 300)
   }
 
-  return { settings, loading, error, updateSettings }
+  const getCurrentSettings = () => settingsRef.current
+
+  return { settings, loading, error, updateSettings, getCurrentSettings }
 }

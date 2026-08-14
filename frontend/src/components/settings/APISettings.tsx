@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Lock, Unlock, KeyRound, Trash2, Plus } from 'lucide-react'
+import { Eye, EyeOff, Lock, Unlock, KeyRound, Trash2, Plus, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useSettings } from '@/hooks/useSettings'
@@ -19,7 +19,7 @@ interface ModelConfig {
 }
 
 export function APISettings() {
-  const { settings, updateSettings } = useSettings()
+  const { settings, updateSettings, getCurrentSettings } = useSettings()
   const { lockStatus, unlock, lock } = useLock()
   const [showApiKey, setShowApiKey] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -32,8 +32,10 @@ export function APISettings() {
   const [newConfigModel, setNewConfigModel] = useState('')
   const [newConfigKey, setNewConfigKey] = useState('')
   const [newConfigPassword, setNewConfigPassword] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const modelConfigs: ModelConfig[] = (settings as unknown as { model_configs: ModelConfig[] }).model_configs || []
+  const activeConfigId = (settings as unknown as { active_config_id: string }).active_config_id || ''
 
   const handleUnlock = async () => {
     setLocalError(null)
@@ -73,7 +75,8 @@ export function APISettings() {
       return
     }
     try {
-      await saveApiKey(apiKeyInput.trim(), password, settings.model, settings.base_url)
+      const current = getCurrentSettings()
+      await saveApiKey(apiKeyInput.trim(), password, current.model, current.base_url)
       setApiKeyInput('')
       setPassword('')
       setPasswordConfirm('')
@@ -130,7 +133,7 @@ export function APISettings() {
     const updatedConfigs = [...modelConfigs, newConfig]
     try {
       await saveApiKey(newConfigKey.trim(), newConfigPassword, newConfigModel.trim(), newConfigBaseUrl.trim())
-      updateSettings({ model_configs: updatedConfigs } as Partial<typeof settings> & { model_configs: ModelConfig[] })
+      updateSettings({ model_configs: updatedConfigs, active_config_id: newConfig.id } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
       setNewConfigName('')
       setNewConfigBaseUrl('')
       setNewConfigModel('')
@@ -142,119 +145,130 @@ export function APISettings() {
     }
   }
 
+  const handleDeleteConfig = async (configId: string) => {
+    setLocalError(null)
+    const updatedConfigs = modelConfigs.filter(c => c.id !== configId)
+    const newActiveId = activeConfigId === configId
+      ? (updatedConfigs[0]?.id || '')
+      : activeConfigId
+
+    try {
+      updateSettings({ model_configs: updatedConfigs, active_config_id: newActiveId } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
+      setDeletingId(null)
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : '删除失败')
+    }
+  }
+
+  const handleSetActive = (configId: string) => {
+    updateSettings({ active_config_id: configId } as Partial<typeof settings>)
+  }
+
   const renderError = () => {
     if (!localError) return null
     return (
-      <div className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-md">
+      <div className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg border border-red-100">
         {localError}
       </div>
     )
   }
 
-  const renderCommonFields = () => (
-    <>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="api-base-url" className="text-xs font-medium text-neutral-600">接口地址</label>
-        <Input
-          id="api-base-url"
-          value={settings.base_url}
-          onChange={(e) => updateSettings({ base_url: e.target.value })}
-          placeholder="https://api.openai.com/v1"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="api-model-name" className="text-xs font-medium text-neutral-600">模型名称</label>
-        <Input
-          id="api-model-name"
-          value={settings.model}
-          onChange={(e) => updateSettings({ model: e.target.value })}
-          placeholder="gpt-4"
-        />
-      </div>
-    </>
-  )
-
-  // Mode A: No API key configured — create new key + set password
+  // Mode A: No API key configured
   if (!lockStatus.has_api_key) {
     return (
-      <div className="flex flex-col gap-4">
-        <h3 className="text-sm font-medium text-neutral-700">API 设置</h3>
+      <div className="flex flex-col gap-5">
         {renderError()}
-        {renderCommonFields()}
-        <div className="border border-blue-200 bg-blue-50 rounded-md p-3 flex flex-col gap-3">
-          <p className="text-xs text-blue-700 font-medium">新建 API Key</p>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="api-key-new" className="text-xs font-medium text-neutral-600">API Key</label>
-            <div className="relative">
+        <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-5 flex flex-col gap-4">
+          <h4 className="text-sm font-medium text-blue-800">配置新的 API Key</h4>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-base-url-new" className="text-xs font-medium text-neutral-600">接口地址</label>
               <Input
-                id="api-key-new"
-                type={showApiKey ? 'text' : 'password'}
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="输入 API Key"
+                id="api-base-url-new"
+                value={settings.base_url}
+                onChange={(e) => updateSettings({ base_url: e.target.value })}
+                placeholder="https://api.openai.com/v1"
               />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                onClick={() => setShowApiKey(!showApiKey)}
-                aria-label={showApiKey ? '隐藏' : '显示'}
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
             </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="api-password-new" className="text-xs font-medium text-neutral-600">设置保护密码</label>
-            <Input
-              id="api-password-new"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="至少 8 位，含大写、小写字母和数字"
-            />
-            {!isPasswordStrong(password) && password.length > 0 && (
-              <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="api-password-confirm" className="text-xs font-medium text-neutral-600">确认密码</label>
-            <Input
-              id="api-password-confirm"
-              type="password"
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-              placeholder="再次输入密码"
-            />
-            {password && password !== passwordConfirm && passwordConfirm.length > 0 && (
-              <p className="text-xs text-red-500">两次输入的密码不一致</p>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-model-new" className="text-xs font-medium text-neutral-600">模型名称</label>
+              <Input
+                id="api-model-new"
+                value={settings.model}
+                onChange={(e) => updateSettings({ model: e.target.value })}
+                placeholder="gpt-4"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-key-new" className="text-xs font-medium text-neutral-600">API Key</label>
+              <div className="relative">
+                <Input
+                  id="api-key-new"
+                  type={showApiKey ? 'text' : 'password'}
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="输入 API Key"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-password-new" className="text-xs font-medium text-neutral-600">保护密码</label>
+              <Input
+                id="api-password-new"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="至少 8 位，含大写、小写字母和数字"
+              />
+              {!isPasswordStrong(password) && password.length > 0 && (
+                <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-password-confirm" className="text-xs font-medium text-neutral-600">确认密码</label>
+              <Input
+                id="api-password-confirm"
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="再次输入密码"
+              />
+              {password && password !== passwordConfirm && passwordConfirm.length > 0 && (
+                <p className="text-xs text-red-500">两次输入的密码不一致</p>
+              )}
+            </div>
           </div>
           <Button
             onClick={handleSaveNewKey}
-            size="sm"
             disabled={!apiKeyInput.trim() || !password || !passwordConfirm}
-            className="flex items-center gap-1 self-start"
+            className="self-start"
           >
-            <KeyRound className="w-3 h-3" /> 保存并加密
+            <KeyRound className="w-4 h-4 mr-2" /> 保存并加密
           </Button>
         </div>
       </div>
     )
   }
 
-  // Mode B: API key configured, locked — unlock with password
+  // Mode B: Locked
   if (lockStatus.locked) {
     return (
-      <div className="flex flex-col gap-4">
-        <h3 className="text-sm font-medium text-neutral-700">API 设置</h3>
+      <div className="flex flex-col gap-5">
         {renderError()}
-        {renderCommonFields()}
-        <div className="border border-amber-200 bg-amber-50 rounded-md p-3 flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-xs text-amber-700">
-            <Lock className="w-3 h-3" />
-            <span className="font-medium">API Key 已加密，需解锁后才能使用</span>
+        <div className="border border-amber-200 bg-amber-50/50 rounded-lg p-5 flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-amber-800">
+            <Lock className="w-4 h-4" />
+            <h4 className="text-sm font-medium">API Key 已加密</h4>
           </div>
-          <div className="flex gap-2 items-center">
+          <p className="text-sm text-neutral-600">输入密码解锁后才能查看和修改配置</p>
+          <div className="flex gap-3 items-center">
             <Input
               type="password"
               value={password}
@@ -262,175 +276,176 @@ export function APISettings() {
               placeholder="输入密码解锁"
               className="flex-1"
             />
-            <Button onClick={handleUnlock} size="sm" className="flex items-center gap-1">
-              <Unlock className="w-3 h-3" /> 解锁
+            <Button onClick={handleUnlock}>
+              <Unlock className="w-4 h-4 mr-2" /> 解锁
             </Button>
           </div>
         </div>
-        <div className="flex gap-2 items-center text-xs text-neutral-500">
-          <KeyRound className="w-3 h-3" />
-          <span>API Key 已配置</span>
-        </div>
+        {modelConfigs.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h4 className="text-sm font-medium text-neutral-700">已保存的配置</h4>
+            {modelConfigs.map((cfg) => (
+              <div key={cfg.id} className="flex items-center justify-between p-3 border border-neutral-200 rounded-lg bg-neutral-50/50">
+                <div className="flex items-center gap-3">
+                  {activeConfigId === cfg.id && (
+                    <Check className="w-4 h-4 text-blue-600" />
+                  )}
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-neutral-800">{cfg.name}</span>
+                    <span className="text-xs text-neutral-500">{cfg.base_url}</span>
+                  </div>
+                </div>
+                <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-1 rounded">{cfg.model_name}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
-  // Mode C: Unlocked — full access
+  // Mode C: Unlocked
   return (
-    <div className="flex flex-col gap-4">
-      <h3 className="text-sm font-medium text-neutral-700">API 设置</h3>
+    <div className="flex flex-col gap-5">
       {renderError()}
-      {renderCommonFields()}
 
-      {modelConfigs.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <label className="text-xs font-medium text-neutral-600">已保存的配置</label>
-          {modelConfigs.map((cfg) => (
-            <div key={cfg.id} className="flex items-center justify-between p-2 border border-neutral-200 rounded-md text-xs">
-              <div className="flex flex-col">
-                <span className="font-medium text-neutral-700">{cfg.name}</span>
-                <span className="text-neutral-500">{cfg.base_url} · {cfg.model_name}</span>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-neutral-700">模型配置</h4>
+          {!showAddConfig && (
+            <Button onClick={() => setShowAddConfig(true)} variant="outline" size="sm">
+              <Plus className="w-3.5 h-3.5 mr-1.5" /> 新增配置
+            </Button>
+          )}
+        </div>
+
+        {showAddConfig && (
+          <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-4 flex flex-col gap-3">
+            <h5 className="text-xs font-medium text-blue-800">新增配置</h5>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="new-cfg-name" className="text-xs text-neutral-600">名称</label>
+                <Input id="new-cfg-name" value={newConfigName} onChange={(e) => setNewConfigName(e.target.value)} placeholder="如：OpenAI 备用" />
               </div>
-              <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
-                <Trash2 className="w-3 h-3" />
-              </Button>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="new-cfg-model" className="text-xs text-neutral-600">模型</label>
+                <Input id="new-cfg-model" value={newConfigModel} onChange={(e) => setNewConfigModel(e.target.value)} placeholder="gpt-4" />
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-cfg-url" className="text-xs text-neutral-600">接口地址</label>
+              <Input id="new-cfg-url" value={newConfigBaseUrl} onChange={(e) => setNewConfigBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-cfg-key" className="text-xs text-neutral-600">API Key</label>
+              <Input id="new-cfg-key" type="password" value={newConfigKey} onChange={(e) => setNewConfigKey(e.target.value)} placeholder="输入 API Key" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-cfg-pwd" className="text-xs text-neutral-600">保护密码</label>
+              <Input id="new-cfg-pwd" type="password" value={newConfigPassword} onChange={(e) => setNewConfigPassword(e.target.value)} placeholder="至少 8 位" />
+              {!isPasswordStrong(newConfigPassword) && newConfigPassword.length > 0 && (
+                <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleAddConfig}
+                size="sm"
+                disabled={!newConfigName.trim() || !newConfigBaseUrl.trim() || !newConfigModel.trim() || !newConfigKey.trim() || !isPasswordStrong(newConfigPassword)}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" /> 保存
+              </Button>
+              <Button onClick={() => setShowAddConfig(false)} variant="ghost" size="sm">取消</Button>
+            </div>
+          </div>
+        )}
 
-      {showAddConfig ? (
-        <div className="border border-blue-200 bg-blue-50 rounded-md p-3 flex flex-col gap-3">
-          <p className="text-xs text-blue-700 font-medium">新增配置</p>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="new-config-name" className="text-xs font-medium text-neutral-600">配置名称</label>
-            <Input
-              id="new-config-name"
-              value={newConfigName}
-              onChange={(e) => setNewConfigName(e.target.value)}
-              placeholder="如：OpenAI 备用"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="new-config-url" className="text-xs font-medium text-neutral-600">接口地址</label>
-            <Input
-              id="new-config-url"
-              value={newConfigBaseUrl}
-              onChange={(e) => setNewConfigBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="new-config-model" className="text-xs font-medium text-neutral-600">模型名称</label>
-            <Input
-              id="new-config-model"
-              value={newConfigModel}
-              onChange={(e) => setNewConfigModel(e.target.value)}
-              placeholder="gpt-4"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="new-config-key" className="text-xs font-medium text-neutral-600">API Key</label>
-            <Input
-              id="new-config-key"
-              type="password"
-              value={newConfigKey}
-              onChange={(e) => setNewConfigKey(e.target.value)}
-              placeholder="输入 API Key"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="new-config-password" className="text-xs font-medium text-neutral-600">保护密码</label>
-            <Input
-              id="new-config-password"
-              type="password"
-              value={newConfigPassword}
-              onChange={(e) => setNewConfigPassword(e.target.value)}
-              placeholder="至少 8 位，含大写、小写字母和数字"
-            />
-            {!isPasswordStrong(newConfigPassword) && newConfigPassword.length > 0 && (
-              <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleAddConfig}
-              size="sm"
-              disabled={!newConfigName.trim() || !newConfigBaseUrl.trim() || !newConfigModel.trim() || !newConfigKey.trim() || !isPasswordStrong(newConfigPassword)}
-              className="flex items-center gap-1"
-            >
-              <Plus className="w-3 h-3" /> 保存配置
-            </Button>
-            <Button onClick={() => setShowAddConfig(false)} size="sm" variant="outline">
-              取消
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <Button
-          onClick={() => setShowAddConfig(true)}
-          size="sm"
-          variant="outline"
-          className="flex items-center gap-1 self-start"
-        >
-          <Plus className="w-3 h-3" /> 新增配置
-        </Button>
-      )}
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="api-key-input" className="text-xs font-medium text-neutral-600">
-          API Key <span className="text-neutral-400 font-normal">（修改当前密钥）</span>
-        </label>
-        <div className="relative">
-          <Input
-            id="api-key-input"
-            type={showApiKey ? 'text' : 'password'}
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            placeholder="输入新 API Key 以替换"
-          />
-          <button
-            type="button"
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-            onClick={() => setShowApiKey(!showApiKey)}
-            aria-label={showApiKey ? '隐藏' : '显示'}
+        {modelConfigs.map((cfg) => (
+          <div
+            key={cfg.id}
+            className={
+              'flex items-center justify-between p-4 rounded-lg border transition-colors cursor-pointer ' +
+              (activeConfigId === cfg.id
+                ? 'border-blue-300 bg-blue-50/30 shadow-sm'
+                : 'border-neutral-200 hover:border-neutral-300 bg-white')
+            }
+            onClick={() => handleSetActive(cfg.id)}
           >
-            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
+            <div className="flex items-center gap-3">
+              <div className={
+                'w-4 h-4 rounded-full border-2 flex items-center justify-center ' +
+                (activeConfigId === cfg.id ? 'border-blue-500' : 'border-neutral-300')
+              }>
+                {activeConfigId === cfg.id && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-neutral-800">{cfg.name}</span>
+                <span className="text-xs text-neutral-500">{cfg.base_url}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-neutral-100 text-neutral-600 px-2 py-1 rounded font-mono">{cfg.model_name}</span>
+              {deletingId === cfg.id ? (
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" className="text-red-500 h-7 px-2" onClick={() => handleDeleteConfig(cfg.id)}>确认删除</Button>
+                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setDeletingId(null)}>取消</Button>
+                </div>
+              ) : (
+                <Button variant="ghost" size="icon" className="w-7 h-7 text-neutral-400 hover:text-red-500" onClick={() => setDeletingId(cfg.id)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-neutral-100 pt-5 flex flex-col gap-4">
+        <h4 className="text-sm font-medium text-neutral-700">修改当前密钥</h4>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="edit-api-key" className="text-xs text-neutral-600">新 API Key</label>
+          <div className="relative">
+            <Input
+              id="edit-api-key"
+              type={showApiKey ? 'text' : 'password'}
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="输入新 API Key 以替换"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+              onClick={() => setShowApiKey(!showApiKey)}
+            >
+              {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="api-password-input" className="text-xs font-medium text-neutral-600">
-          保护密码 <span className="text-neutral-400 font-normal">（修改 API Key 时需要）</span>
-        </label>
-        <Input
-          id="api-password-input"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="输入保护密码"
-        />
-      </div>
-      <div className="flex gap-2 flex-wrap">
-        <Button
-          onClick={handleSaveNewKey}
-          size="sm"
-          disabled={!apiKeyInput.trim() || !password.trim()}
-          className="flex items-center gap-1"
-        >
-          <KeyRound className="w-3 h-3" /> 修改并重新加密
-        </Button>
-        <Button
-          onClick={handleClearApiKey}
-          size="sm"
-          variant="outline"
-          className="flex items-center gap-1"
-        >
-          <Trash2 className="w-3 h-3" /> 清除
-        </Button>
-        <Button onClick={handleLock} size="sm" variant="outline" className="flex items-center gap-1">
-          <Lock className="w-3 h-3" /> 锁定
-        </Button>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="edit-password" className="text-xs text-neutral-600">保护密码</label>
+          <Input
+            id="edit-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="输入保护密码"
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={handleSaveNewKey}
+            size="sm"
+            disabled={!apiKeyInput.trim() || !password.trim()}
+          >
+            <KeyRound className="w-3.5 h-3.5 mr-1.5" /> 修改并重新加密
+          </Button>
+          <Button onClick={handleClearApiKey} variant="outline" size="sm">
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> 清除
+          </Button>
+          <Button onClick={handleLock} variant="outline" size="sm">
+            <Lock className="w-3.5 h-3.5 mr-1.5" /> 锁定
+          </Button>
+        </div>
       </div>
     </div>
   )
