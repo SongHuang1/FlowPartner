@@ -213,7 +213,7 @@ func TestWebSocketHandler_CmdChanFull_ErrorEvent(t *testing.T) {
 		t.Errorf("expected event_type 'error', got %v", event["event_type"])
 	}
 	payload, ok := event["payload"].(string)
-	if !ok || !strings.Contains(payload, "重试") {
+	if !ok || !strings.Contains(payload, "retry") {
 		t.Errorf("expected error payload with retry hint, got %v", event["payload"])
 	}
 }

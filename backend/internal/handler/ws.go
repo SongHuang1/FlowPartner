@@ -39,12 +39,12 @@ func (h *WebSocketHandler) Close() {
 func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("WebSocket 升级失败:", err)
+		log.Println("WebSocket upgrade failed:", err)
 		return
 	}
 	defer conn.Close()
 
-	log.Println("前端 WebSocket 已连接")
+	log.Println("Frontend WebSocket connected")
 
 	type wsMessage struct {
 		Action  string `json:"action"`
@@ -82,18 +82,18 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-h.done:
-			log.Println("WebSocket handler 收到关闭信号，断开连接")
+			log.Println("WebSocket handler received shutdown signal, closing connection")
 			return
 		case err := <-errChan:
 			if err != nil {
-				log.Println("WebSocket 读取失败或前端断开:", err)
+				log.Println("WebSocket read failed or frontend disconnected:", err)
 			}
 			return
 		case msg := <-readChan:
 			if msg.Action == "start_chat" {
 				b := make([]byte, 16)
 				if _, err := rand.Read(b); err != nil {
-					log.Printf("生成 Session ID 失败: %v", err)
+					log.Printf("Failed to generate session ID: %v", err)
 					continue
 				}
 				sessionId := fmt.Sprintf("sess_%d_%s", time.Now().UnixNano(), hex.EncodeToString(b))
@@ -104,7 +104,7 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				// 使用 json.Marshal 对用户输入进行正确的 JSON 转义，防止注入
 				payloadBytes, err := json.Marshal(map[string]string{"user_message": msg.Content})
 				if err != nil {
-					log.Printf("JSON 编码失败: %v", err)
+					log.Printf("JSON encoding failed: %v", err)
 					continue
 				}
 
@@ -117,13 +117,13 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				select {
 				case h.manager.CmdChan <- cmd:
 					// 日志不记录聊天明文内容，仅记录长度（用户可能在消息中粘贴敏感信息）
-					log.Printf("[前端发起聊天] Session: %s | 内容长度: %d", sessionId, utf8.RuneCountInString(msg.Content))
+					log.Printf("[Chat started] Session: %s | Content length: %d", sessionId, utf8.RuneCountInString(msg.Content))
 				default:
-					log.Printf("CmdChan 已满，丢弃指令: session=%s", sessionId)
+					log.Printf("CmdChan full, dropping command: session=%s", sessionId)
 					// 丢弃时必须通知前端，避免用户误以为消息已发送
 					h.manager.SendToSession(sessionId, &proto.AgentEvent{
 						EventType: "error",
-						Payload:   `{"message": "消息发送失败：系统忙，请稍后重试"}`,
+						Payload:   `{"message": "Message sending failed: system is busy, please retry later"}`,
 					})
 				}
 			}

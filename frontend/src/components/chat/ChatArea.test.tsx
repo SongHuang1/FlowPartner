@@ -36,12 +36,12 @@ describe('ChatArea empty state', () => {
 
   it('renders welcome message when no messages', () => {
     render(<ChatArea />)
-    expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Hello! I am FlowPartner')).toBeInTheDocument()
   })
 
   it('renders input in empty state', () => {
     render(<ChatArea />)
-    expect(screen.getByPlaceholderText('输入消息...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Type a message...')).toBeInTheDocument()
   })
 
   it('renders bottom info bar with settings', () => {
@@ -58,7 +58,7 @@ describe('ChatArea empty state', () => {
 
   it('send button is disabled when input is empty', () => {
     render(<ChatArea />)
-    const button = screen.getByRole('button', { name: '发送' })
+    const button = screen.getByRole('button', { name: 'Send' })
     expect(button).toBeDisabled()
   })
 })

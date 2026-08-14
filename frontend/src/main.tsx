@@ -19,6 +19,6 @@ bootstrap().catch((err) => {
   console.error('Failed to start application:', err)
   const root = document.getElementById('root')
   if (root) {
-    root.innerHTML = '<div style="padding:20px;text-align:center;">后端服务启动失败，请重启应用</div>'
+    root.innerHTML = '<div style="padding:20px;text-align:center;">Backend failed to start, please restart the application</div>'
   }
 })

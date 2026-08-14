@@ -30,7 +30,7 @@ describe('api', () => {
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
         model_name: 'gpt-4',
-        system_prompt: '你是一个有帮助的 AI 助手。',
+        system_prompt: 'You are a helpful AI assistant.',
         temperature: 0.7,
         close_behavior: 'ask',
         close_remembered: false,
@@ -80,7 +80,7 @@ describe('api', () => {
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
         model_name: 'gpt-4',
-        system_prompt: '你是一个有帮助的 AI 助手。',
+        system_prompt: 'You are a helpful AI assistant.',
         temperature: 0.7,
         close_behavior: 'ask',
         close_remembered: false,
@@ -219,7 +219,7 @@ describe('api', () => {
       mockFetch.mockResolvedValue(errorResponse)
 
       const { saveApiKey } = await import('@/lib/api')
-      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('保存 API Key 失败')
+      await expect(saveApiKey('sk-test-key-12345', 'StrongPass1')).rejects.toThrow('Failed to save API Key')
     })
 
     it('throws error on network failure', async () => {

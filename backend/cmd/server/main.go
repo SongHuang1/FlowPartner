@@ -30,7 +30,7 @@ func main() {
 	// 3. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
 	if err != nil {
-		log.Fatalf("HTTP 端口探索失败: %v", err)
+		log.Fatalf("HTTP port discovery failed: %v", err)
 	}
 	defer httpListener.Close()
 
@@ -38,7 +38,7 @@ func main() {
 	exclude := map[string]bool{fmt.Sprintf("127.0.0.1:%d", httpPort): true}
 	grpcListener, grpcPort, err := server.FindAvailablePort(":50051", exclude)
 	if err != nil {
-		log.Fatalf("gRPC 端口探索失败: %v", err)
+		log.Fatalf("gRPC port discovery failed: %v", err)
 	}
 	defer grpcListener.Close()
 
@@ -143,7 +143,7 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 	select {
 	case <-gracefulDone:
 	case <-time.After(2 * time.Second):
-		log.Println("gRPC 优雅停止超时，强制停止")
+		log.Println("gRPC graceful stop timed out, forcing stop")
 		grpcServer.Stop()
 	}
 
@@ -157,6 +157,6 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("HTTP server 关闭未在超时内完成: %v", err)
+		log.Printf("HTTP server did not shut down within timeout: %v", err)
 	}
 }

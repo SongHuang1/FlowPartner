@@ -16,37 +16,37 @@ describe('App Integration', () => {
 
     expect(screen.getByText('FlowPartner')).toBeInTheDocument()
     expect(screen.getByText('UI Shell')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '对话' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
-    expect(screen.getByText('浏览器中运行 · 仅 UI 预览')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByText('Welcome to FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Running in browser · UI preview only')).toBeInTheDocument()
   })
 
   it('sidebar switches to settings panel when clicking settings icon', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
-    expect(screen.getByText('API 配置')).toBeInTheDocument()
-    expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
+    expect(screen.getByText('API Settings')).toBeInTheDocument()
+    expect(screen.queryByText('Welcome to FlowPartner')).not.toBeInTheDocument()
   })
 
   it('sidebar switches back to conversation panel when clicking conversation icon', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    expect(screen.getByText('API 配置')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByText('API Settings')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '对话' }))
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+    expect(screen.getByText('Welcome to FlowPartner')).toBeInTheDocument()
   })
 
   it('sidebar collapses when clicking close button', () => {
     render(<App />)
 
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Welcome to FlowPartner')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
 
     const sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-0')
@@ -55,11 +55,11 @@ describe('App Integration', () => {
   it('sidebar re-expands when clicking activity icon after collapse', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     let sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-0')
 
-    fireEvent.click(screen.getByRole('button', { name: '对话' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
     sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-64')
   })
@@ -70,11 +70,11 @@ describe('App Integration', () => {
     let sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-64')
 
-    fireEvent.click(screen.getByRole('button', { name: '对话' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
     sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-0')
 
-    fireEvent.click(screen.getByRole('button', { name: '对话' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
     sidebar = document.querySelector('[data-testid="sidebar-panel"]')
     expect(sidebar?.className).toContain('w-64')
   })
@@ -82,8 +82,8 @@ describe('App Integration', () => {
   it('suggested action buttons in sidebar are disabled', () => {
     render(<App />)
 
-    const newChatButton = screen.getByRole('button', { name: '开始新对话' })
-    const historyButton = screen.getByRole('button', { name: '查看历史记录' })
+    const newChatButton = screen.getByRole('button', { name: 'Start new chat' })
+    const historyButton = screen.getByRole('button', { name: 'View history' })
 
     expect(newChatButton).toBeDisabled()
     expect(historyButton).toBeDisabled()

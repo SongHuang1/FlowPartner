@@ -125,7 +125,7 @@ export async function unlock(password: string): Promise<void> {
   })
   const data: ApiResponse<unknown> = await res.json()
   if (data.code !== 0) {
-    throw new Error(data.message || '解锁失败')
+    throw new Error(data.message || 'Unlock failed')
   }
 }
 
@@ -150,7 +150,7 @@ export async function saveApiKey(apiKey: string, password: string): Promise<void
   })
   const data: ApiResponse<unknown> = await res.json()
   if (data.code !== 0) {
-    throw new Error(data.message || '保存 API Key 失败')
+    throw new Error(data.message || 'Failed to save API Key')
   }
 }
 
@@ -161,6 +161,6 @@ export async function clearApiKey(): Promise<void> {
   })
   const data: ApiResponse<unknown> = await res.json()
   if (data.code !== 0) {
-    throw new Error(data.message || '清除 API Key 失败')
+    throw new Error(data.message || 'Failed to clear API Key')
   }
 }

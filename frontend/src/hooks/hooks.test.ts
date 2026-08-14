@@ -244,7 +244,7 @@ describe('useSettings edge cases', () => {
     })
 
     // Wait for the debounced save to complete and error to be set
-    await waitFor(() => expect(result.current.error).toBe('保存设置失败: Save failed'))
+    await waitFor(() => expect(result.current.error).toBe('Failed to save settings: Save failed'))
   })
 
   it('debounces multiple rapid updates', () => {

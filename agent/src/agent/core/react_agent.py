@@ -18,7 +18,7 @@ class ReactAgent:
             history = []
 
         messages = [
-            {"role": "system", "content": "你是一个强大的本地智能助手。你可以使用工具来读取文件、写入文件、浏览目录等，帮助用户完成各种任务。请根据用户需求，合理使用工具。"}
+            {"role": "system", "content": "You are a powerful local AI assistant. You can use tools to read files, write files, browse directories, and more to help users complete various tasks. Please use tools appropriately based on user needs."}
         ]
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
@@ -26,7 +26,7 @@ class ReactAgent:
         tools_def = self.tools.get_openai_tools_definition()
 
         for iteration in range(self.max_iterations):
-            logging.info(f"[ReAct] 第 {iteration + 1} 轮思考")
+            logging.info(f"[ReAct] Thinking round {iteration + 1}")
             await self.send_event(self.session_id, "status_update", {
                 "status": "thinking", "iteration": iteration + 1
             })
@@ -40,7 +40,7 @@ class ReactAgent:
             llm_resp = await self.call_llm(self.session_id, payload)
 
             if not llm_resp.get("success"):
-                error_msg = llm_resp.get("error_message", "未知错误")
+                error_msg = llm_resp.get("error_message", "Unknown error")
                 error_guess = llm_resp.get("error_guess", "")
                 event_payload = {"message": error_msg}
                 if error_guess:
@@ -63,7 +63,7 @@ class ReactAgent:
                     func_args = json.loads(tool_call["function"]["arguments"])
                     call_id = tool_call["id"]
 
-                    logging.info(f"[ReAct] 调用工具: {func_name}({func_args})")
+                    logging.info(f"[ReAct] Calling tool: {func_name}({func_args})")
                     await self.send_event(self.session_id, "tool_call", {
                         "tool": func_name, "args": func_args
                     })
@@ -84,7 +84,7 @@ class ReactAgent:
 
             final_answer = llm_resp.get("content", "")
             if finish_reason == "stop" or final_answer:
-                logging.info(f"[ReAct] 最终回答: {final_answer[:100]}...")
+                logging.info(f"[ReAct] Final answer: {final_answer[:100]}...")
                 await self.send_event(self.session_id, "final_answer", {
                     "text": final_answer
                 })
@@ -97,6 +97,6 @@ class ReactAgent:
                 })
                 return final_answer
 
-        fallback = "抱歉，我思考了太多轮仍未得出结论，请尝试简化您的问题。"
+        fallback = "Sorry, I could not reach a conclusion after too many rounds. Please try simplifying your question."
         await self.send_event(self.session_id, "error", {"message": fallback})
         return fallback

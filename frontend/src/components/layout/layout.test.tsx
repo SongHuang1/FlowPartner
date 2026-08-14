@@ -17,14 +17,14 @@ describe('ActivityBar', () => {
   it('renders two icon buttons', () => {
     const onSelect = vi.fn()
     render(<ActivityBar activeView="conversation" onSelect={onSelect} />)
-    expect(screen.getByRole('button', { name: '对话' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 
   it('calls onSelect when clicking an icon', () => {
     const onSelect = vi.fn()
     render(<ActivityBar activeView="conversation" onSelect={onSelect} />)
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     expect(onSelect).toHaveBeenCalledWith('settings')
   })
 })
@@ -32,18 +32,18 @@ describe('ActivityBar', () => {
 describe('Sidebar', () => {
   it('renders conversation panel when activeView is conversation', () => {
     render(<Sidebar visible={true} activeView="conversation" onClose={() => {}} />)
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Welcome to FlowPartner')).toBeInTheDocument()
   })
 
   it('renders settings panel when activeView is settings', () => {
     render(<Sidebar visible={true} activeView="settings" onClose={() => {}} />)
-    expect(screen.getByText('API 配置')).toBeInTheDocument()
+    expect(screen.getByText('API Settings')).toBeInTheDocument()
   })
 
   it('calls onClose when clicking close button', () => {
     const onClose = vi.fn()
     render(<Sidebar visible={true} activeView="conversation" onClose={onClose} />)
-    fireEvent.click(screen.getByRole('button', { name: '收起侧边栏' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -100,7 +100,7 @@ describe('StatusBar', () => {
   it('renders correct preview mode text', () => {
     delete (window as unknown as Record<string, unknown>)['flowPartner']
     render(<StatusBar />)
-    expect(screen.getByText('浏览器中运行 · 仅 UI 预览')).toBeInTheDocument()
+    expect(screen.getByText('Running in browser · UI preview only')).toBeInTheDocument()
   })
 
   it('renders desktop text when running in Electron', () => {
@@ -110,13 +110,13 @@ describe('StatusBar', () => {
       configurable: true,
     })
     render(<StatusBar />)
-    expect(screen.getByText('桌面端 · FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Desktop · FlowPartner')).toBeInTheDocument()
   })
 
   it('renders preview text when window.flowPartner is undefined', () => {
     delete (window as unknown as Record<string, unknown>)['flowPartner']
     render(<StatusBar />)
-    expect(screen.getByText('浏览器中运行 · 仅 UI 预览')).toBeInTheDocument()
-    expect(screen.queryByText('桌面端 · FlowPartner')).not.toBeInTheDocument()
+    expect(screen.getByText('Running in browser · UI preview only')).toBeInTheDocument()
+    expect(screen.queryByText('Desktop · FlowPartner')).not.toBeInTheDocument()
   })
 })

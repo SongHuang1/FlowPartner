@@ -13,7 +13,7 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">
       <h2 className="text-lg font-medium text-neutral-700 mb-4">
-        你好！我是 FlowPartner
+        Hello! I am FlowPartner
       </h2>
       <div className="w-full max-w-2xl">
         <ChatInput

@@ -24,36 +24,36 @@ import { useState } from 'react'
 describe('ChatInput', () => {
   it('renders input with correct placeholder', () => {
     renderChatInput(() => {})
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     expect(input).toBeInTheDocument()
   })
 
   it('renders send button', () => {
     renderChatInput(() => {})
-    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
   })
 
   it('send button is disabled when input is empty', () => {
     renderChatInput(() => {})
-    const button = screen.getByRole('button', { name: '发送' })
+    const button = screen.getByRole('button', { name: 'Send' })
     expect(button).toBeDisabled()
   })
 
   it('send button is enabled when input has text', () => {
     renderChatInput(() => {})
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'hello' } })
 
-    const button = screen.getByRole('button', { name: '发送' })
+    const button = screen.getByRole('button', { name: 'Send' })
     expect(button).not.toBeDisabled()
   })
 
   it('send button is disabled when input has only whitespace', () => {
     renderChatInput(() => {})
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: '   ' } })
 
-    const button = screen.getByRole('button', { name: '发送' })
+    const button = screen.getByRole('button', { name: 'Send' })
     expect(button).toBeDisabled()
   })
 
@@ -61,9 +61,9 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'hello' } })
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     expect(onSend).toHaveBeenCalledTimes(1)
   })
@@ -72,7 +72,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'enter test' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -83,7 +83,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'shift enter' } })
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
 
@@ -94,7 +94,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(onSend).not.toHaveBeenCalled()
@@ -104,7 +104,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: '   ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -115,7 +115,7 @@ describe('ChatInput', () => {
     const onSend = vi.fn()
     renderChatInput(onSend)
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'focus test' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -125,7 +125,7 @@ describe('ChatInput', () => {
   it('input value updates correctly on change', () => {
     renderChatInput(() => {})
 
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     fireEvent.change(input, { target: { value: 'typing...' } })
 
     expect(input).toHaveValue('typing...')
@@ -134,8 +134,8 @@ describe('ChatInput', () => {
   it('button disabled state updates dynamically', () => {
     renderChatInput(() => {})
 
-    const input = screen.getByPlaceholderText('输入消息...')
-    const button = screen.getByRole('button', { name: '发送' })
+    const input = screen.getByPlaceholderText('Type a message...')
+    const button = screen.getByRole('button', { name: 'Send' })
 
     expect(button).toBeDisabled()
 

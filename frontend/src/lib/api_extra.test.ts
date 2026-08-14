@@ -23,7 +23,7 @@ describe('api - unlock/lock/lockStatus', () => {
   describe('unlock', () => {
     it('sends POST request with password', async () => {
       mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: { message: '解锁成功' }, timestamp: 123, request_id: 'uuid' })
+        mockResponse({ code: 0, message: 'success', data: { message: 'Unlocked' }, timestamp: 123, request_id: 'uuid' })
       )
 
       await unlock('TestPass123')
@@ -38,10 +38,10 @@ describe('api - unlock/lock/lockStatus', () => {
 
     it('throws error on wrong password', async () => {
       mockFetch.mockResolvedValue(
-        mockResponse({ code: 5003, message: '密码错误', data: null, timestamp: 123, request_id: 'uuid' })
+        mockResponse({ code: 5003, message: 'Wrong password', data: null, timestamp: 123, request_id: 'uuid' })
       )
 
-      await expect(unlock('WrongPass123')).rejects.toThrow('密码错误')
+      await expect(unlock('WrongPass123')).rejects.toThrow('Wrong password')
     })
 
     it('throws error on rate limit', async () => {
@@ -54,10 +54,10 @@ describe('api - unlock/lock/lockStatus', () => {
 
     it('throws error when API key not configured', async () => {
       mockFetch.mockResolvedValue(
-        mockResponse({ code: 5002, message: '请先配置 API Key', data: null, timestamp: 123, request_id: 'uuid' })
+        mockResponse({ code: 5002, message: 'Please configure an API Key first', data: null, timestamp: 123, request_id: 'uuid' })
       )
 
-      await expect(unlock('AnyPass123')).rejects.toThrow('请先配置 API Key')
+      await expect(unlock('AnyPass123')).rejects.toThrow('Please configure an API Key first')
     })
 
     it('throws error on network failure', async () => {

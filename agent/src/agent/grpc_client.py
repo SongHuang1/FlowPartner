@@ -23,11 +23,11 @@ class FlowPartnerClient:
         self.tool_registry = ToolRegistry()
         self.tool_registry.register(
             name="read_file",
-            description="读取本地指定路径的文件内容",
+            description="Read the content of a local file at the specified path",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "文件的绝对路径"}
+                    "path": {"type": "string", "description": "Absolute path to the file"}
                 },
                 "required": ["path"]
             },
@@ -35,12 +35,12 @@ class FlowPartnerClient:
         )
         self.tool_registry.register(
             name="write_file",
-            description="将内容写入本地指定路径的文件",
+            description="Write content to a local file at the specified path",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "文件的绝对路径"},
-                    "content": {"type": "string", "description": "要写入的内容"}
+                    "path": {"type": "string", "description": "Absolute path to the file"},
+                    "content": {"type": "string", "description": "Content to write"}
                 },
                 "required": ["path", "content"]
             },
@@ -48,11 +48,11 @@ class FlowPartnerClient:
         )
         self.tool_registry.register(
             name="list_directory",
-            description="列出指定目录下的所有文件和子目录",
+            description="List all files and subdirectories in the specified directory",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "目录的绝对路径"}
+                    "path": {"type": "string", "description": "Absolute path to the directory"}
                 },
                 "required": ["path"]
             },
@@ -84,7 +84,7 @@ class FlowPartnerClient:
                     error_data = json.loads(response.json_response)
                     return {
                         "success": False,
-                        "error_message": error_data.get("message", "未知错误"),
+                        "error_message": error_data.get("message", "Unknown error"),
                         "error_guess": error_data.get("guess", ""),
                         "json_response": ""
                     }
@@ -145,7 +145,7 @@ class FlowPartnerClient:
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
     async def connect_and_listen(self):
-        logging.info(f"准备连接到 Go Server: {self.server_address}")
+        logging.info(f"Preparing to connect to Go server: {self.server_address}")
         self.channel = grpc.aio.insecure_channel(self.server_address)
         self.stub = agent_pb2_grpc.FlowPartnerServiceStub(self.channel)
 
@@ -158,10 +158,10 @@ class FlowPartnerClient:
 
         try:
             stream = self.stub.SyncChannel(request_generator())
-            logging.info("双向流已建立，等待 Go 下发指令...")
+            logging.info("Bidirectional stream established, waiting for Go commands...")
 
             async for command in stream:
-                logging.info(f"[收到指令] {command.command_type} | Session: {command.session_id}")
+                logging.info(f"[Command received] {command.command_type} | Session: {command.session_id}")
 
                 if command.command_type == "start_chat":
                     asyncio.create_task(
@@ -169,7 +169,7 @@ class FlowPartnerClient:
                     )
 
         except grpc.aio.AioRpcError as e:
-            logging.error(f"连接断开: {e.code()}, {e.details()}")
+            logging.error(f"Connection lost: {e.code()}, {e.details()}")
         finally:
             if self.channel:
                 await self.channel.close()
@@ -180,7 +180,7 @@ class FlowPartnerClient:
         payload = json.loads(command.payload) if command.payload else {}
         user_message = payload.get("user_message", "")
 
-        logging.info(f"开始对话 | Session: {session_id} | 用户: {user_message}")
+        logging.info(f"Chat started | Session: {session_id} | User: {user_message}")
 
         # 创建 ReAct Agent 实例
         agent = ReactAgent(
@@ -201,4 +201,4 @@ class FlowPartnerClient:
                 {"role": "assistant", "content": final_answer}
             ], ensure_ascii=False) + "\n")
 
-        logging.info(f"对话完成 | Session: {session_id}")
+        logging.info(f"Chat completed | Session: {session_id}")

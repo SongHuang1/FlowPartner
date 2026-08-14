@@ -30,7 +30,7 @@ func NewAgentHandler(m *bridge.Manager) *AgentHandler {
 }
 
 func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelServer) error {
-	log.Println("🔗 Agent gRPC 双向流已建立")
+	log.Println("Agent gRPC bidirectional stream established")
 
 	go func() {
 		for {
@@ -43,13 +43,13 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 				select {
 				case err := <-sendDone:
 					if err != nil {
-						log.Printf("发送指令给 Python 失败: %s", sanitize.Error(err))
+						log.Printf("Failed to send command to Python: %s", sanitize.Error(err))
 						return
 					}
 				case <-stream.Context().Done():
 					return
 				case <-time.After(30 * time.Second):
-					log.Println("发送指令给 Python 超时，退出 goroutine")
+					log.Println("Sending command to Python timed out, exiting goroutine")
 					return
 				}
 			case <-stream.Context().Done():
@@ -61,11 +61,11 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 	for {
 		event, err := stream.Recv()
 		if err == io.EOF {
-			log.Println("🔌 Agent 断开了双向流")
+			log.Println("Agent disconnected bidirectional stream")
 			return nil
 		}
 		if err != nil {
-			return status.Errorf(codes.Internal, "接收事件失败: %s", sanitize.Error(err))
+			return status.Errorf(codes.Internal, "failed to receive event: %s", sanitize.Error(err))
 		}
 
 		h.manager.SendToSession(event.SessionId, event)
@@ -74,7 +74,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 
 // CallLLM 服务端流式 RPC：解析 Python 请求 → 合并配置 → 调用 LLM → 逐 chunk 返回
 func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerService_CallLLMServer) error {
-	log.Printf("[CallLLM] Session: %s, Payload 长度: %d", req.SessionId, len(req.JsonPayload))
+	log.Printf("[CallLLM] Session: %s, Payload length: %d", req.SessionId, len(req.JsonPayload))
 
 	messageID := uuid.NewString()
 
@@ -93,8 +93,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	if cfg == nil {
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4002,
-			Message: "无激活的模型配置",
-			Guess:   "请先添加并激活模型配置",
+			Message: "No active model configuration",
+			Guess:   "Please add and activate a model configuration",
 		})
 	}
 
@@ -103,8 +103,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	if !ok {
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4001,
-			Message: "当前模型配置未解锁",
-			Guess:   "请先在设置中解锁当前模型配置",
+			Message: "Model configuration is locked",
+			Guess:   "Please unlock the model configuration in Settings first",
 		})
 	}
 	keyCopy := make([]byte, len(apiKey))
@@ -117,8 +117,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		}
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    400,
-			Message: "BaseURL 格式错误",
-			Guess:   "请检查模型配置中的 BaseURL",
+			Message: "Invalid BaseURL format",
+			Guess:   "Please check the BaseURL in the model configuration",
 		})
 	}
 

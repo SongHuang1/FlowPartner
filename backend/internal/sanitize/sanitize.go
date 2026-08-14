@@ -17,7 +17,7 @@ func Error(err error) string {
 	msg := err.Error()
 	for _, re := range sensitivePatterns {
 		if re.MatchString(msg) {
-			return "API 调用失败（已隐藏敏感信息）"
+			return "API call failed (sensitive information hidden)"
 		}
 	}
 	return msg

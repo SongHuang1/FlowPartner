@@ -13,7 +13,7 @@ export function DefaultSettings(): Settings {
     base_url: 'https://api.openai.com/v1',
     encrypted_api_key: '',
     model_name: 'gpt-4',
-    system_prompt: '你是一个有帮助的 AI 助手。',
+    system_prompt: 'You are a helpful AI assistant.',
     temperature: 0.7,
     close_behavior: 'ask',
     close_remembered: false,
@@ -62,7 +62,7 @@ export function useSettings(): UseSettingsReturn {
     setSettings(newSettings)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      saveSettings(newSettings).catch((e: Error) => setError(`保存设置失败: ${e.message}`))
+      saveSettings(newSettings).catch((e: Error) => setError(`Failed to save settings: ${e.message}`))
     }, 300)
   }
 

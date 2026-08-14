@@ -5,15 +5,15 @@ export function AgentSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="text-sm font-medium text-neutral-700">Agent 配置</h3>
+      <h3 className="text-sm font-medium text-neutral-700">Agent Settings</h3>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="agent-system-prompt" className="text-xs font-medium text-neutral-600">系统提示词</label>
+        <label htmlFor="agent-system-prompt" className="text-xs font-medium text-neutral-600">System prompt</label>
         <textarea
           id="agent-system-prompt"
           value={settings.system_prompt}
           onChange={(e) => updateSettings({ system_prompt: e.target.value })}
-          placeholder="你是一个有帮助的 AI 助手。"
+          placeholder="You are a helpful AI assistant."
           rows={4}
           className="flex w-full rounded-md border border-neutral-200 bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-300"
         />
@@ -21,7 +21,7 @@ export function AgentSettings() {
 
       <div className="flex flex-col gap-1">
         <label htmlFor="agent-temperature" className="text-xs font-medium text-neutral-600">
-          温度 ({settings.temperature.toFixed(1)})
+          Temperature ({settings.temperature.toFixed(1)})
         </label>
         <input
           id="agent-temperature"
@@ -34,8 +34,8 @@ export function AgentSettings() {
           className="w-full"
         />
         <div className="flex justify-between text-xs text-neutral-400">
-          <span>0.0 (精确)</span>
-          <span>2.0 (创意)</span>
+          <span>0.0 (Precise)</span>
+          <span>2.0 (Creative)</span>
         </div>
       </div>
     </div>

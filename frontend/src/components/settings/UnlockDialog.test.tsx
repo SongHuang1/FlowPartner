@@ -13,34 +13,34 @@ describe('UnlockDialog', () => {
 
   it('renders when open is true', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.getByText('解锁 API Key')).toBeInTheDocument()
+    expect(screen.getByText('Unlock API Key')).toBeInTheDocument()
   })
 
   it('does not render when open is false', () => {
     render(<UnlockDialog open={false} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.queryByText('解锁 API Key')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unlock API Key')).not.toBeInTheDocument()
   })
 
   it('renders password input', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.getByPlaceholderText('输入保护密码')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Enter protection password')).toBeInTheDocument()
   })
 
   it('renders unlock button', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.getByText('解锁')).toBeInTheDocument()
+    expect(screen.getByText('Unlock')).toBeInTheDocument()
   })
 
   it('renders cancel button', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.getByText('取消')).toBeInTheDocument()
+    expect(screen.getByText('Cancel')).toBeInTheDocument()
   })
 
   it('calls onUnlock with password when unlock button clicked', async () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    const passwordInput = screen.getByPlaceholderText('输入保护密码')
+    const passwordInput = screen.getByPlaceholderText('Enter protection password')
     fireEvent.change(passwordInput, { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('解锁'))
+    fireEvent.click(screen.getByText('Unlock'))
 
     await waitFor(() => {
       expect(mockOnUnlock).toHaveBeenCalledWith('TestPass123')
@@ -49,34 +49,34 @@ describe('UnlockDialog', () => {
 
   it('calls onClose when cancel button clicked', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    fireEvent.click(screen.getByText('取消'))
+    fireEvent.click(screen.getByText('Cancel'))
     expect(mockOnClose).toHaveBeenCalled()
   })
 
   it('calls onClose when close icon clicked', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(mockOnClose).toHaveBeenCalled()
   })
 
   it('shows error when unlock fails', async () => {
-    mockOnUnlock.mockRejectedValue(new Error('密码错误'))
+    mockOnUnlock.mockRejectedValue(new Error('Wrong password'))
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    const passwordInput = screen.getByPlaceholderText('输入保护密码')
+    const passwordInput = screen.getByPlaceholderText('Enter protection password')
     fireEvent.change(passwordInput, { target: { value: 'WrongPass123' } })
-    fireEvent.click(screen.getByText('解锁'))
+    fireEvent.click(screen.getByText('Unlock'))
 
     await waitFor(() => {
-      expect(screen.getByText('密码错误')).toBeInTheDocument()
+      expect(screen.getByText('Wrong password')).toBeInTheDocument()
     })
   })
 
   it('clears password after failed unlock', async () => {
-    mockOnUnlock.mockRejectedValue(new Error('密码错误'))
+    mockOnUnlock.mockRejectedValue(new Error('Wrong password'))
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    const passwordInput = screen.getByPlaceholderText('输入保护密码') as HTMLInputElement
+    const passwordInput = screen.getByPlaceholderText('Enter protection password') as HTMLInputElement
     fireEvent.change(passwordInput, { target: { value: 'WrongPass123' } })
-    fireEvent.click(screen.getByText('解锁'))
+    fireEvent.click(screen.getByText('Unlock'))
 
     await waitFor(() => {
       expect(passwordInput.value).toBe('')
@@ -85,18 +85,18 @@ describe('UnlockDialog', () => {
 
   it('shows error when password is empty', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    fireEvent.click(screen.getByText('解锁'))
-    expect(screen.getByText('请输入密码')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Unlock'))
+    expect(screen.getByText('Please enter your password')).toBeInTheDocument()
   })
 
   it('shows failed attempts warning when failedAttempts > 0', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={3} />)
-    expect(screen.getByText(/已失败 3 次/)).toBeInTheDocument()
+    expect(screen.getByText(/3 failed attempts/)).toBeInTheDocument()
   })
 
   it('does not show failed attempts warning when failedAttempts is 0', () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    expect(screen.queryByText(/已失败/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/failed attempt/)).not.toBeInTheDocument()
   })
 
   it('shows locked message when lockedUntil is in the future', () => {
@@ -110,7 +110,7 @@ describe('UnlockDialog', () => {
         lockedUntil={futureTime}
       />
     )
-    expect(screen.getByText(/账户已锁定/)).toBeInTheDocument()
+    expect(screen.getByText(/Account locked/)).toBeInTheDocument()
   })
 
   it('disables input and button when locked', () => {
@@ -124,8 +124,8 @@ describe('UnlockDialog', () => {
         lockedUntil={futureTime}
       />
     )
-    const passwordInput = screen.getByPlaceholderText('输入保护密码') as HTMLInputElement
-    const unlockButton = screen.getByText('解锁')
+    const passwordInput = screen.getByPlaceholderText('Enter protection password') as HTMLInputElement
+    const unlockButton = screen.getByText('Unlock')
     expect(passwordInput.disabled).toBe(true)
     expect(unlockButton).toBeDisabled()
   })
@@ -141,7 +141,7 @@ describe('UnlockDialog', () => {
         lockedUntil={pastTime}
       />
     )
-    expect(screen.queryByText(/账户已锁定/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Account locked/)).not.toBeInTheDocument()
   })
 
   it('shows loading state during unlock', async () => {
@@ -149,11 +149,11 @@ describe('UnlockDialog', () => {
     mockOnUnlock.mockImplementation(() => new Promise((resolve) => { resolveUnlock = resolve }))
 
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    const passwordInput = screen.getByPlaceholderText('输入保护密码')
+    const passwordInput = screen.getByPlaceholderText('Enter protection password')
     fireEvent.change(passwordInput, { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('解锁'))
+    fireEvent.click(screen.getByText('Unlock'))
 
-    expect(screen.getByText('解锁中...')).toBeInTheDocument()
+    expect(screen.getByText('Unlocking...')).toBeInTheDocument()
 
     await waitFor(() => {
       resolveUnlock!(undefined)
@@ -162,9 +162,9 @@ describe('UnlockDialog', () => {
 
   it('clears password and closes on successful unlock', async () => {
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
-    const passwordInput = screen.getByPlaceholderText('输入保护密码') as HTMLInputElement
+    const passwordInput = screen.getByPlaceholderText('Enter protection password') as HTMLInputElement
     fireEvent.change(passwordInput, { target: { value: 'TestPass123' } })
-    fireEvent.click(screen.getByText('解锁'))
+    fireEvent.click(screen.getByText('Unlock'))
 
     await waitFor(() => {
       expect(mockOnClose).toHaveBeenCalled()
@@ -184,6 +184,6 @@ describe('UnlockDialog', () => {
       />
     )
     // When locked, the failed attempts warning should not show
-    expect(screen.queryByText(/已失败/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/failed attempt/)).not.toBeInTheDocument()
   })
 })

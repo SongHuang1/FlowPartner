@@ -62,7 +62,7 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="输入消息..."
+        placeholder="Type a message..."
         className="flex-1"
         maxLength={10000}
         disabled={disabled}
@@ -71,7 +71,7 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
         size="icon"
         disabled={!value.trim() || disabled}
         onClick={handleSend}
-        aria-label="发送"
+        aria-label="Send"
       >
         {disabled ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
       </Button>
@@ -82,7 +82,7 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
 function LoadingSpinner() {
   return (
     <div className="flex-1 flex items-center justify-center">
-      <div className="text-sm text-neutral-400">加载中...</div>
+      <div className="text-sm text-neutral-400">Loading...</div>
     </div>
   )
 }
@@ -105,9 +105,9 @@ interface ThinkingIndicatorProps {
 function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorProps) {
   const label = iteration > 0
     ? maxIterations
-      ? `思考中 (${iteration}/${maxIterations})`
-      : `思考中 (第 ${iteration} 轮)`
-    : '思考中...'
+      ? `Thinking (${iteration}/${maxIterations})`
+      : `Thinking (round ${iteration})`
+    : 'Thinking...'
 
   return (
     <div className="flex items-center gap-2 p-4 text-sm text-neutral-500">
@@ -179,7 +179,7 @@ export function ChatArea() {
     if (!trimmed) return
 
     if (lockStatus.locked) {
-      setChatError('请先解锁 API Key')
+      setChatError('Please unlock the API Key first')
       return
     }
 
@@ -190,9 +190,9 @@ export function ChatArea() {
     const sent = wsSendMessage(trimmed)
     if (!sent) {
       if (!connected) {
-        setChatError('网络连接中，请稍后重试')
+        setChatError('Connecting to network, please retry later')
       } else {
-        setChatError('消息发送失败，请重试')
+        setChatError('Failed to send message, please retry')
       }
     }
   }

@@ -37,12 +37,12 @@ describe('WelcomeView', () => {
 
   it('renders welcome heading', () => {
     render(<WelcomeView {...defaultProps} />)
-    expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
+    expect(screen.getByText('Hello! I am FlowPartner')).toBeInTheDocument()
   })
 
   it('renders ChatInput component', () => {
     render(<WelcomeView {...defaultProps} />)
-    expect(screen.getByPlaceholderText('输入消息...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Type a message...')).toBeInTheDocument()
   })
 
   it('displays model name from settings', () => {
@@ -72,7 +72,7 @@ describe('WelcomeView', () => {
 
   it('passes input value to ChatInput', () => {
     render(<WelcomeView {...defaultProps} inputValue="typing..." />)
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('Type a message...')
     expect(input).toHaveValue('typing...')
   })
 

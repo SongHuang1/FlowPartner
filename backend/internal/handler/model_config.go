@@ -247,7 +247,7 @@ func (h *ModelConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "配置已删除",
+		"message": "Config deleted",
 	}))
 }
 
@@ -283,7 +283,7 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 
 	if cfg.EncryptedAPIKey == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
+			response.Error(response.CodeAPIKeyNotConfigured, "Please configure an API Key first"))
 		return
 	}
 
@@ -296,7 +296,7 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response.WriteJSON(w, http.StatusUnauthorized,
-			response.Error(response.CodeWrongPassword, "密码错误"))
+			response.Error(response.CodeWrongPassword, "Wrong password"))
 		return
 	}
 
@@ -312,7 +312,7 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "配置已激活",
+		"message": "Config activated",
 	}))
 }
 

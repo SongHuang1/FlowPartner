@@ -66,7 +66,7 @@ func DefaultSettings() Settings {
 		ModelName:        "gpt-4",
 		ModelConfigs:     []ModelConfig{},
 		ActiveConfigID:   "",
-		SystemPrompt:     "你是一个有帮助的 AI 助手。",
+		SystemPrompt:     "You are a helpful AI assistant.",
 		Temperature:      0.7,
 		CloseBehavior:    "ask",
 		CloseRemembered:  false,
@@ -135,7 +135,7 @@ func (s *Settings) migrateOldConfig() {
 
 	migrated := ModelConfig{
 		ID:              "default",
-		Name:            "默认配置",
+		Name:            "Default configuration",
 		BaseURL:         s.BaseURL,
 		ModelName:       s.ModelName,
 		EncryptedAPIKey: s.EncryptedAPIKey,
@@ -383,7 +383,7 @@ func (h *SettingsHandler) ClearAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
-		"message": "API Key 已清除",
+		"message": "API Key cleared",
 	}))
 }
 

@@ -63,7 +63,7 @@ describe('useLock', () => {
   })
 
   it('unlock sets error on failure', async () => {
-    mockUnlock.mockRejectedValue(new Error('密码错误'))
+    mockUnlock.mockRejectedValue(new Error('Wrong password'))
 
     const { result } = renderHook(() => useLock())
 
@@ -75,11 +75,11 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('密码错误')
+    expect(result.current.error).toBe('Wrong password')
   })
 
   it('unlock refreshes status on failure', async () => {
-    mockUnlock.mockRejectedValue(new Error('密码错误'))
+    mockUnlock.mockRejectedValue(new Error('Wrong password'))
     mockGetLockStatus.mockResolvedValue({
       locked: true,
       failed_attempts: 1,
@@ -129,7 +129,7 @@ describe('useLock', () => {
   })
 
   it('lock sets error on failure', async () => {
-    mockLock.mockRejectedValue(new Error('上锁失败'))
+    mockLock.mockRejectedValue(new Error('Lock failed'))
 
     const { result } = renderHook(() => useLock())
 
@@ -137,7 +137,7 @@ describe('useLock', () => {
       await result.current.lock()
     })
 
-    expect(result.current.error).toBe('上锁失败')
+    expect(result.current.error).toBe('Lock failed')
   })
 
   it('refreshStatus updates lock status', async () => {
@@ -181,7 +181,7 @@ describe('useLock', () => {
     })
 
     // Non-Error exceptions get the default message
-    expect(result.current.error).toBe('获取锁定状态失败')
+    expect(result.current.error).toBe('Failed to get lock status')
   })
 
   it('unlock sets loading state during operation', async () => {
@@ -235,7 +235,7 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('解锁失败')
+    expect(result.current.error).toBe('Unlock failed')
   })
 
   it('handles non-Error exception in lock', async () => {
@@ -247,7 +247,7 @@ describe('useLock', () => {
       await result.current.lock()
     })
 
-    expect(result.current.error).toBe('上锁失败')
+    expect(result.current.error).toBe('Lock failed')
   })
 
   it('handles rate limit status', async () => {
@@ -271,7 +271,7 @@ describe('useLock', () => {
 
   it('clears error on successful unlock after failure', async () => {
     // First fail
-    mockUnlock.mockRejectedValueOnce(new Error('密码错误'))
+    mockUnlock.mockRejectedValueOnce(new Error('Wrong password'))
     const { result } = renderHook(() => useLock())
 
     await act(async () => {
@@ -282,7 +282,7 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('密码错误')
+    expect(result.current.error).toBe('Wrong password')
 
     // Then succeed
     mockUnlock.mockResolvedValue(undefined)

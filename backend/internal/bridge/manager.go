@@ -85,7 +85,7 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 		"payload":    event.Payload, // 这里已经是 JSON 字符串了
 	}
 	if err := conn.WriteJSON(payload); err != nil {
-		log.Printf("向前端发送 WebSocket 消息失败: %v", err)
+		log.Printf("Failed to send WebSocket message to frontend: %v", err)
 	}
 }
 

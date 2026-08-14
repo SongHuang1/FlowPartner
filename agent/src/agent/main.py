@@ -16,9 +16,9 @@ def init_workspace():
     return str(workspace_dir)
 
 async def main():
-    logging.info("Agent 启动中...")
+    logging.info("Agent starting...")
     workspace = init_workspace()
-    logging.info(f"Agent 初始化完成，工作目录为: {workspace}")
+    logging.info(f"Agent initialized, working directory: {workspace}")
 
     # 启动 gRPC 客户端 (目前 Go 还没写好 Server，所以连接会失败，这是预期的)
     client = FlowPartnerClient(workspace_path=workspace)
@@ -28,4 +28,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("Agent 收到退出信号，正在关闭...")
+        logging.info("Agent received exit signal, shutting down...")

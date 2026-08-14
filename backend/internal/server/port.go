@@ -49,7 +49,7 @@ func FindAvailablePort(startPort string, exclude map[string]bool) (net.Listener,
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		currentPort := port + attempt
 		if currentPort > maxPort {
-			return nil, 0, fmt.Errorf("%w: 起始端口 %d 递增 %d 次后超出上限", ErrMaxAttemptsReached, port, attempt)
+			return nil, 0, fmt.Errorf("%w: start port %d exceeded upper limit after %d increments", ErrMaxAttemptsReached, port, attempt)
 		}
 
 		addr := fmt.Sprintf("%s:%d", listenAddr, currentPort)
@@ -68,7 +68,7 @@ func FindAvailablePort(startPort string, exclude map[string]bool) (net.Listener,
 		return listener, currentPort, nil
 	}
 
-	return nil, 0, fmt.Errorf("%w: 起始端口 %d", ErrMaxAttemptsReached, port)
+	return nil, 0, fmt.Errorf("%w: start port %d", ErrMaxAttemptsReached, port)
 }
 
 // parsePort 解析端口字符串（如 ":8080"）为整数

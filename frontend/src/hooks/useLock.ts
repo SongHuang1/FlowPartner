@@ -26,7 +26,7 @@ export function useLock(): UseLockReturn {
       setLockStatus(status)
       if (clearError) setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '获取锁定状态失败')
+      setError(e instanceof Error ? e.message : 'Failed to get lock status')
     }
   }, [])
 
@@ -37,7 +37,7 @@ export function useLock(): UseLockReturn {
       await apiUnlock(password)
       await refreshStatus()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '解锁失败'
+      const msg = e instanceof Error ? e.message : 'Unlock failed'
       setError(msg)
       await refreshStatus(false)
       throw e
@@ -53,7 +53,7 @@ export function useLock(): UseLockReturn {
       await apiLock()
       await refreshStatus()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '上锁失败')
+      setError(e instanceof Error ? e.message : 'Lock failed')
     } finally {
       setLoading(false)
     }
