@@ -11,11 +11,14 @@ export function Tooltip({ content, children, side = 'bottom' }: TooltipProps) {
   const tooltipRef = React.useRef<HTMLDivElement>(null)
 
   const [actualSide, setActualSide] = React.useState(side)
+  const [shownSide, setShownSide] = React.useState<{ visible: boolean; side: string }>({ visible: false, side })
+  if (shownSide.visible !== visible || shownSide.side !== side) {
+    setShownSide({ visible, side })
+    if (visible) setActualSide(side)
+  }
 
   React.useEffect(() => {
     if (!visible) return
-
-    setActualSide(side)
 
     const checkOverflow = () => {
       const el = tooltipRef.current

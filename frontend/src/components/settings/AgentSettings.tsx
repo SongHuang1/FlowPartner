@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSettings } from '@/hooks/useSettings'
 import type { InputHTMLAttributes } from 'react'
 
@@ -10,10 +10,11 @@ function Field({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
 
 function ContextField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [local, setLocal] = useState(String(value))
-
-  useEffect(() => {
+  const [prevValue, setPrevValue] = useState(value)
+  if (prevValue !== value) {
+    setPrevValue(value)
     setLocal(String(value))
-  }, [value])
+  }
 
   const handleBlur = () => {
     const parsed = parseInt(local, 10)
