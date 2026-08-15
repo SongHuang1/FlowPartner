@@ -219,3 +219,154 @@ func TestKeyStore_RateLimitExpired(t *testing.T) {
 		t.Fatalf("Unlock should succeed after rate limit expires: %v", err)
 	}
 }
+
+func TestKeyStore_SwitchKey(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	oldKey := []byte("sk-old-key")
+	if err := ks.Unlock(oldKey); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	newKey := []byte("sk-new-key")
+	ks.SwitchKey(newKey)
+
+	if !ks.IsUnlocked() {
+		t.Fatal("SwitchKey should keep the keystore unlocked")
+	}
+
+	key, ok := ks.GetKey()
+	if !ok {
+		t.Fatal("GetKey should return true after SwitchKey")
+	}
+	if string(key) != string(newKey) {
+		t.Errorf("GetKey returned %q, want %q", key, newKey)
+	}
+
+	if status := ks.GetLockStatus(); status.FailedAttempts != 0 {
+		t.Errorf("SwitchKey should reset failed attempts, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_TryActivate_Success(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	encrypted, err := flowcrypto.Encrypt("sk-activate-key", []byte("CorrectPass123"))
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	key, err := ks.TryActivate(encrypted, []byte("CorrectPass123"))
+	if err != nil {
+		t.Fatalf("TryActivate with correct password should succeed: %v", err)
+	}
+	if string(key) != "sk-activate-key" {
+		t.Errorf("TryActivate returned key %q, want %q", key, "sk-activate-key")
+	}
+
+	if !ks.IsUnlocked() {
+		t.Fatal("keystore should be unlocked after TryActivate")
+	}
+
+	status := ks.GetLockStatus()
+	if status.FailedAttempts != 0 {
+		t.Errorf("FailedAttempts should be 0, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_TryActivate_WrongPassword(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	encrypted, err := flowcrypto.Encrypt("test-key", []byte("sk-activate-key"))
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	key, err := ks.TryActivate(encrypted, []byte("WrongPass123"))
+	if err != ErrWrongPassword {
+		t.Fatalf("expected ErrWrongPassword, got %v", err)
+	}
+	if key != nil {
+		t.Fatalf("expected nil key on wrong password, got %q", key)
+	}
+
+	if ks.IsUnlocked() {
+		t.Fatal("keystore should stay locked after wrong password")
+	}
+
+	status := ks.GetLockStatus()
+	if status.FailedAttempts != 1 {
+		t.Errorf("FailedAttempts should be 1, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_TryActivate_RateLimited(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	encrypted, err := flowcrypto.Encrypt("test-key", []byte("sk-activate-key"))
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		if _, err := ks.TryActivate(encrypted, []byte("WrongPass123")); err != ErrWrongPassword {
+			t.Fatalf("attempt %d: expected ErrWrongPassword, got %v", i+1, err)
+		}
+	}
+
+	_, err = ks.TryActivate(encrypted, []byte("CorrectPass123"))
+	if err != ErrRateLimited {
+		t.Fatalf("expected ErrRateLimited after 5 failed attempts, got %v", err)
+	}
+
+	if ks.LockedUntil().IsZero() {
+		t.Fatal("LockedUntil should be set after rate limiting")
+	}
+	if time.Now().After(ks.LockedUntil()) {
+		t.Fatal("LockedUntil should be in the future")
+	}
+}
+
+func TestKeyStore_TryActivate_SwitchZeroesOldKey(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	encrypted, err := flowcrypto.Encrypt("sk-new-after-switch", []byte("CorrectPass123"))
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	if err := ks.Unlock([]byte("sk-old-key")); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
+	}
+
+	key, err := ks.TryActivate(encrypted, []byte("CorrectPass123"))
+	if err != nil {
+		t.Fatalf("TryActivate failed: %v", err)
+	}
+	if string(key) != "sk-new-after-switch" {
+		t.Errorf("TryActivate returned %q, want %q", key, "sk-new-after-switch")
+	}
+	if got, _ := ks.GetKey(); string(got) != "sk-new-after-switch" {
+		t.Errorf("GetKey returned %q, want new key", got)
+	}
+}
+
+func TestKeyStore_LockedUntil(t *testing.T) {
+	Reset()
+	ks := Instance()
+
+	if !ks.LockedUntil().IsZero() {
+		t.Fatal("LockedUntil should be zero initially")
+	}
+
+	future := time.Now().Add(30 * time.Second)
+	ks.lockedUntil = future
+	if !ks.LockedUntil().Equal(future) {
+		t.Errorf("LockedUntil returned %v, want %v", ks.LockedUntil(), future)
+	}
+}

@@ -1,9 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { ChatArea } from './ChatArea'
 
 const mockSendMessage = vi.fn()
 const mockUpdateSettings = vi.fn()
+const mockWsSendMessage = vi.fn()
+const mockOnFinalAnswer = vi.fn(() => () => {})
+const mockOnError = vi.fn(() => () => {})
+const mockOnSecurityEvent = vi.fn(() => () => {})
+
+const mockLockStatus = {
+  locked: false,
+  failed_attempts: 0,
+  has_api_key: true,
+}
 
 vi.mock('@/hooks/useConversation', () => ({
   useConversation: () => ({
@@ -11,6 +21,7 @@ vi.mock('@/hooks/useConversation', () => ({
     loading: false,
     error: null,
     sendMessage: mockSendMessage,
+    addAssistantMessage: vi.fn(),
   }),
 }))
 
@@ -29,9 +40,38 @@ vi.mock('@/hooks/useSettings', () => ({
   }),
 }))
 
+vi.mock('@/hooks/useLock', () => ({
+  useLock: () => ({
+    lockStatus: mockLockStatus,
+    loading: false,
+    error: null,
+    unlock: vi.fn(),
+    lock: vi.fn(),
+    refreshStatus: vi.fn(),
+  }),
+}))
+
+vi.mock('@/hooks/useWebSocket', () => ({
+  useWebSocket: () => ({
+    connected: true,
+    reconnecting: false,
+    reconnectAttempts: 0,
+    isReconnectExhausted: false,
+    processing: false,
+    sendMessage: mockWsSendMessage,
+    events: [],
+    manualReconnect: vi.fn(),
+    onFinalAnswer: mockOnFinalAnswer,
+    onError: mockOnError,
+    onSecurityEvent: mockOnSecurityEvent,
+  }),
+}))
+
 describe('ChatArea empty state', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLockStatus.locked = false
+    mockWsSendMessage.mockReturnValue(true)
   })
 
   it('renders welcome message when no messages', () => {
@@ -58,6 +98,26 @@ describe('ChatArea empty state', () => {
 
   it('send button is disabled when input is empty', () => {
     render(<ChatArea />)
+    const button = screen.getByRole('button', { name: '发送' })
+    expect(button).toBeDisabled()
+  })
+
+  it('sends message when clicking send button with input', () => {
+    render(<ChatArea />)
+    const input = screen.getByPlaceholderText('输入消息...')
+    fireEvent.change(input, { target: { value: 'hello' } })
+    const button = screen.getByRole('button', { name: '发送' })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(mockSendMessage).toHaveBeenCalledWith('hello')
+    expect(mockWsSendMessage).toHaveBeenCalledWith('hello')
+  })
+
+  it('disables input and send button when API key is locked', () => {
+    mockLockStatus.locked = true
+    render(<ChatArea />)
+    const input = screen.getByPlaceholderText('输入消息...') as HTMLInputElement
+    expect(input.disabled).toBe(true)
     const button = screen.getByRole('button', { name: '发送' })
     expect(button).toBeDisabled()
   })

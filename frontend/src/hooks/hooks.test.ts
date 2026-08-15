@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useSettings } from '@/hooks/useSettings'
+import { createElement, type ReactNode } from 'react'
+import { useSettings, SettingsProvider } from '@/hooks/useSettings'
 import { useConversation } from '@/hooks/useConversation'
 
 const mockGetSettings = vi.fn()
@@ -14,6 +15,14 @@ vi.mock('@/lib/api', () => ({
   getConversation: () => mockGetConversation(),
   saveConversation: (m: unknown) => mockSaveConversation(m),
 }))
+
+function settingsWrapper({ children }: { children: ReactNode }) {
+  return createElement(SettingsProvider, null, children)
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('useSettings', () => {
   beforeEach(() => {
@@ -29,26 +38,26 @@ describe('useSettings', () => {
   })
 
   it('returns default settings initially', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     expect(result.current.settings.model).toBe('gpt-4')
     expect(result.current.loading).toBe(true)
   })
 
   it('loads settings on mount', async () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.settings.model).toBe('gpt-4')
   })
 
   it('shows error when loading fails', async () => {
     mockGetSettings.mockRejectedValue(new Error('Network error'))
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error).toBe('Network error')
   })
 
   it('updates settings immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5' })
     })
@@ -57,7 +66,7 @@ describe('useSettings', () => {
 
   it('debounces save', () => {
     vi.useFakeTimers()
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5' })
     })
@@ -237,7 +246,7 @@ describe('useSettings edge cases', () => {
 
   it('handles error from saveSettings', async () => {
     mockSaveSettings.mockRejectedValue(new Error('Save failed'))
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5' })
@@ -249,7 +258,7 @@ describe('useSettings edge cases', () => {
 
   it('debounces multiple rapid updates', () => {
     vi.useFakeTimers()
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5' })
@@ -277,7 +286,7 @@ describe('useSettings edge cases', () => {
   })
 
   it('merges partial settings correctly', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5' })
@@ -291,7 +300,7 @@ describe('useSettings edge cases', () => {
   })
 
   it('handles multiple field update', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ model: 'gpt-3.5', context_window: 4096 })
@@ -304,7 +313,7 @@ describe('useSettings edge cases', () => {
   it('rapid different field updates preserve all fields', () => {
     // 测试不同字段快速更新时不会丢失字段（stale closure 问题）
     vi.useFakeTimers()
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     // 快速更新不同字段
     act(() => {

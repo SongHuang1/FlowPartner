@@ -18,6 +18,9 @@ func TestCodeValues_Unchanged(t *testing.T) {
 		{"CodeDangerousAction", CodeDangerousAction, 4001},
 		{"CodePermissionDenied", CodePermissionDenied, 4002},
 		{"CodeUserRejected", CodeUserRejected, 4003},
+		{"CodeUnlockRateLimited", CodeUnlockRateLimited, 5001},
+		{"CodeAPIKeyNotConfigured", CodeAPIKeyNotConfigured, 5002},
+		{"CodeWrongPassword", CodeWrongPassword, 5003},
 	}
 
 	for _, tt := range tests {
@@ -44,6 +47,9 @@ func TestCodeRanges(t *testing.T) {
 		{"CodeDangerousAction", CodeDangerousAction, 4000, 4999},
 		{"CodePermissionDenied", CodePermissionDenied, 4000, 4999},
 		{"CodeUserRejected", CodeUserRejected, 4000, 4999},
+		{"CodeUnlockRateLimited", CodeUnlockRateLimited, 5000, 5999},
+		{"CodeAPIKeyNotConfigured", CodeAPIKeyNotConfigured, 5000, 5999},
+		{"CodeWrongPassword", CodeWrongPassword, 5000, 5999},
 	}
 
 	for _, tt := range tests {
@@ -66,6 +72,9 @@ func TestCodeUniqueness(t *testing.T) {
 		"CodeDangerousAction": CodeDangerousAction,
 		"CodePermissionDenied": CodePermissionDenied,
 		"CodeUserRejected":    CodeUserRejected,
+		"CodeUnlockRateLimited":  CodeUnlockRateLimited,
+		"CodeAPIKeyNotConfigured": CodeAPIKeyNotConfigured,
+		"CodeWrongPassword":       CodeWrongPassword,
 	}
 
 	// 用 map 检测重复值

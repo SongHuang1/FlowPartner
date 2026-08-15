@@ -132,6 +132,8 @@ func TestSettingsHandler_Put_EmptyModel(t *testing.T) {
 }
 
 func TestSettingsHandler_Put_NegativeContextWindow(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 	body := `{"model":"gpt-4","context_window":-1}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
@@ -139,8 +141,22 @@ func TestSettingsHandler_Put_NegativeContextWindow(t *testing.T) {
 
 	handler.Put(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (fallback to default), got %d", rec.Code)
+	}
+
+	// GET 验证 context_window 回退为默认值 8192
+	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rec = httptest.NewRecorder()
+	handler.Get(rec, req)
+
+	var resp response.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	data := resp.Data.(map[string]interface{})
+	if data["context_window"] != float64(8192) {
+		t.Errorf("expected context_window fallback to 8192, got %v", data["context_window"])
 	}
 }
 
@@ -164,8 +180,10 @@ func TestSettingsHandler_ResponseFormat(t *testing.T) {
 	}
 }
 
-// TestSettingsHandler_Put_ZeroContextWindow 验证 context_window=0 被拒绝
+// TestSettingsHandler_Put_ZeroContextWindow 验证 context_window=0 时回退为默认值
 func TestSettingsHandler_Put_ZeroContextWindow(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 	body := `{"model":"gpt-4","context_window":0}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
@@ -173,8 +191,8 @@ func TestSettingsHandler_Put_ZeroContextWindow(t *testing.T) {
 
 	handler.Put(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for context_window=0, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (fallback to default) for context_window=0, got %d", rec.Code)
 	}
 }
 

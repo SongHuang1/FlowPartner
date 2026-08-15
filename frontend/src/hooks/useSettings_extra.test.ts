@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useSettings, DefaultSettings } from '@/hooks/useSettings'
+import { createElement, type ReactNode } from 'react'
+import { useSettings, DefaultSettings, SettingsProvider } from '@/hooks/useSettings'
 
 const mockGetSettings = vi.fn()
 const mockSaveSettings = vi.fn()
@@ -9,6 +10,14 @@ vi.mock('@/lib/api', () => ({
   getSettings: () => mockGetSettings(),
   saveSettings: (s: unknown) => mockSaveSettings(s),
 }))
+
+function settingsWrapper({ children }: { children: ReactNode }) {
+  return createElement(SettingsProvider, null, children)
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('useSettings - new fields', () => {
   beforeEach(() => {
@@ -54,7 +63,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('loads new fields from API', async () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.settings.base_url).toBe('https://api.openai.com/v1')
@@ -70,7 +79,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates base_url immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ base_url: 'https://api.deepseek.com/v1' })
     })
@@ -78,7 +87,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates model_name immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ model_name: 'deepseek-chat' })
     })
@@ -86,7 +95,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates system_prompt immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ system_prompt: 'You are a code expert.' })
     })
@@ -94,7 +103,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates temperature immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ temperature: 1.5 })
     })
@@ -102,7 +111,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates close_behavior immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ close_behavior: 'minimize' })
     })
@@ -110,7 +119,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates close_remembered immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ close_remembered: true })
     })
@@ -118,7 +127,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates window state immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ window_x: 200, window_y: 150, window_width: 1400, window_height: 900 })
     })
@@ -129,7 +138,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates sidebar state immediately in state', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ sidebar_visible: false, sidebar_view: 'settings' })
     })
@@ -138,7 +147,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('preserves existing fields when updating new field', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ temperature: 1.0 })
     })
@@ -150,7 +159,7 @@ describe('useSettings - new fields', () => {
 
   it('debounces save for new fields', () => {
     vi.useFakeTimers()
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({ temperature: 1.5 })
     })
@@ -188,7 +197,7 @@ describe('useSettings - new fields', () => {
       sidebar_view: 'conversation',
     })
 
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // Should have the values returned by the API (after backend migration)
@@ -198,7 +207,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('updates multiple new fields at once', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
     act(() => {
       result.current.updateSettings({
         base_url: 'https://custom.api.com/v1',
@@ -212,7 +221,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('handles temperature boundary values', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ temperature: 0.0 })
@@ -226,7 +235,7 @@ describe('useSettings - new fields', () => {
   })
 
   it('handles all close_behavior values', () => {
-    const { result } = renderHook(() => useSettings())
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
 
     act(() => {
       result.current.updateSettings({ close_behavior: 'minimize' })
@@ -242,5 +251,66 @@ describe('useSettings - new fields', () => {
       result.current.updateSettings({ close_behavior: 'ask' })
     })
     expect(result.current.settings.close_behavior).toBe('ask')
+  })
+
+  it('getCurrentSettings returns latest merged settings', async () => {
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.updateSettings({ temperature: 0.5, model_name: 'deepseek-chat' })
+    })
+
+    const current = result.current.getCurrentSettings()
+    expect(current.model).toBe('gpt-4')
+    expect(current.temperature).toBe(0.5)
+    expect(current.model_name).toBe('deepseek-chat')
+    expect(current.agent_id).toBe('default')
+  })
+
+  it('refreshSettings reloads settings from API', async () => {
+    mockGetSettings.mockResolvedValue({
+      model: 'gpt-4o',
+      agent_id: 'default',
+      context_window: 8192,
+      working_directory: '',
+      language: 'zh-CN',
+      base_url: 'https://api.openai.com/v1',
+      encrypted_api_key: '',
+      model_name: 'gpt-4o',
+      system_prompt: '你是一个乐于助人的 AI 助手。',
+      temperature: 0.3,
+      close_behavior: 'ask',
+      close_remembered: false,
+      window_x: 100,
+      window_y: 100,
+      window_width: 1200,
+      window_height: 800,
+      sidebar_visible: true,
+      sidebar_view: 'conversation',
+    })
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      await result.current.refreshSettings()
+    })
+
+    expect(result.current.settings.model).toBe('gpt-4o')
+    expect(result.current.settings.temperature).toBe(0.3)
+    expect(mockGetSettings).toHaveBeenCalled()
+  })
+
+  it('refreshSettings sets error when API call fails', async () => {
+    const { result } = renderHook(() => useSettings(), { wrapper: settingsWrapper })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    mockGetSettings.mockRejectedValue(new Error('Refresh failed'))
+
+    await act(async () => {
+      await result.current.refreshSettings()
+    })
+
+    expect(result.current.error).toBe('Refresh failed')
   })
 })

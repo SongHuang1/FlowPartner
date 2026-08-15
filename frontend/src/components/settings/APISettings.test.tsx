@@ -1,39 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { APISettings } from '@/components/settings/APISettings'
+import type { LockStatus } from '@/types'
+
+const mockSettings = {
+  model: 'gpt-4',
+  agent_id: 'default',
+  context_window: 8192,
+  working_directory: '',
+  language: 'zh-CN',
+  base_url: 'https://api.openai.com/v1',
+  encrypted_api_key: '',
+  model_name: 'gpt-4',
+  system_prompt: '你是一个乐于助人的 AI 助手。',
+  temperature: 0.7,
+  close_behavior: 'ask',
+  close_remembered: false,
+  window_x: 100,
+  window_y: 100,
+  window_width: 1200,
+  window_height: 800,
+  sidebar_visible: true,
+  sidebar_view: 'conversation',
+  model_configs: [] as Array<Record<string, unknown>>,
+  active_config_id: '',
+}
 
 const mockUpdateSettings = vi.fn()
-const mockLockStatus = {
-  locked: true,
-  failed_attempts: 0,
-  has_api_key: false,
-}
+const mockGetCurrentSettings = vi.fn()
+const mockRefreshSettings = vi.fn()
+const mockLockStatus: LockStatus = { locked: true, failed_attempts: 0, has_api_key: false }
 const mockUnlock = vi.fn()
 const mockLock = vi.fn()
+const mockRefreshStatus = vi.fn()
+const mockSaveSettings = vi.fn()
+const mockClearApiKey = vi.fn()
 
 vi.mock('@/hooks/useSettings', () => ({
   useSettings: () => ({
-    settings: {
-      model: 'gpt-4',
-      agent_id: 'default',
-      context_window: 8192,
-      working_directory: '',
-      language: 'zh-CN',
-      base_url: 'https://api.openai.com/v1',
-      encrypted_api_key: '',
-      model_name: 'gpt-4',
-      system_prompt: 'You are a helpful AI assistant.',
-      temperature: 0.7,
-      close_behavior: 'ask',
-      close_remembered: false,
-      window_x: 100,
-      window_y: 100,
-      window_width: 1200,
-      window_height: 800,
-      sidebar_visible: true,
-      sidebar_view: 'conversation',
-    },
+    settings: mockSettings,
     updateSettings: mockUpdateSettings,
+    getCurrentSettings: mockGetCurrentSettings,
+    refreshSettings: mockRefreshSettings,
   }),
 }))
 
@@ -42,84 +50,143 @@ vi.mock('@/hooks/useLock', () => ({
     lockStatus: mockLockStatus,
     unlock: mockUnlock,
     lock: mockLock,
+    refreshStatus: mockRefreshStatus,
   }),
 }))
 
-describe('APISettings', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockLockStatus.locked = true
-    mockLockStatus.failed_attempts = 0
-    mockLockStatus.has_api_key = false
-    mockUnlock.mockResolvedValue(undefined)
-    mockLock.mockResolvedValue(undefined)
-  })
+vi.mock('@/lib/api', () => ({
+  saveSettings: (s: unknown) => mockSaveSettings(s),
+  clearApiKey: () => mockClearApiKey(),
+}))
 
-  it('renders section title', () => {
-    render(<APISettings />)
-    expect(screen.getByText('API 设置')).toBeInTheDocument()
-  })
+vi.mock('@/lib/validation', () => ({
+  isPasswordStrong: (pw: string) =>
+    pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw),
+}))
 
-  it('renders Base URL input', () => {
-    render(<APISettings />)
-    expect(screen.getByLabelText('接口地址')).toBeInTheDocument()
-  })
+const configOne = {
+  id: 'cfg-1',
+  name: 'OpenAI 主账号',
+  base_url: 'https://api.openai.com/v1',
+  model_name: 'gpt-4',
+  temperature: 0.7,
+  response_format: 'text',
+  timeout_secs: 30,
+}
 
-  it('renders Model Name input', () => {
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockLockStatus.locked = true
+  mockLockStatus.failed_attempts = 0
+  mockLockStatus.has_api_key = false
+  mockSettings.model_configs = []
+  mockSettings.active_config_id = ''
+  mockGetCurrentSettings.mockReturnValue(mockSettings)
+  mockRefreshSettings.mockResolvedValue(undefined)
+  mockRefreshStatus.mockResolvedValue(undefined)
+  mockUnlock.mockResolvedValue(undefined)
+  mockLock.mockResolvedValue(undefined)
+  mockSaveSettings.mockResolvedValue(undefined)
+  mockClearApiKey.mockResolvedValue(undefined)
+})
+
+describe('APISettings - Mode A: no API key configured', () => {
+  it('renders 新建 API 配置 form', () => {
     render(<APISettings />)
+    expect(screen.getByText('新建 API 配置')).toBeInTheDocument()
+    expect(screen.getByLabelText('配置名称')).toBeInTheDocument()
     expect(screen.getByLabelText('模型名称')).toBeInTheDocument()
-  })
-
-  it('renders API Key input', () => {
-    render(<APISettings />)
+    expect(screen.getByLabelText('接口地址')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('输入 API Key')).toBeInTheDocument()
+    expect(screen.getByLabelText('保护密码')).toBeInTheDocument()
+    expect(screen.getByLabelText('确认密码')).toBeInTheDocument()
   })
 
-  it('displays current base_url value', () => {
+  it('displays current base_url and model values', () => {
     render(<APISettings />)
-    const input = screen.getByLabelText('接口地址') as HTMLInputElement
-    expect(input.value).toBe('https://api.openai.com/v1')
+    expect((screen.getByLabelText('接口地址') as HTMLInputElement).value).toBe('https://api.openai.com/v1')
+    expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('gpt-4')
   })
 
-  it('displays current model_name value', () => {
+  it('save button is disabled when required fields are empty', () => {
     render(<APISettings />)
-    const inputs = screen.getAllByPlaceholderText('gpt-4')
-    expect(inputs.length).toBeGreaterThan(0)
-    expect(inputs[0]).toHaveValue('gpt-4')
+    expect(screen.getByText('保存配置')).toBeDisabled()
   })
 
-  it('shows unlock button when locked', () => {
+  it('first-time save calls saveSettings with api key and password', async () => {
     render(<APISettings />)
-    expect(screen.getByText('解锁')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('配置名称'), { target: { value: 'OpenAI 主账号' } })
+    fireEvent.change(screen.getByPlaceholderText('输入 API Key'), { target: { value: 'sk-test-123' } })
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'TestPass123' } })
+
+    fireEvent.click(screen.getByText('保存配置'))
+
+    await waitFor(() => {
+      expect(mockSaveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ api_key: 'sk-test-123', password: 'TestPass123' }),
+      )
+    })
+    expect(mockRefreshSettings).toHaveBeenCalled()
+    expect(mockRefreshStatus).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByText('API Key 配置成功')).toBeInTheDocument()
+    })
   })
 
-  it('shows lock button when unlocked', () => {
-    mockLockStatus.locked = false
+  it('shows weak password error on first-time save', async () => {
+    render(<APISettings />)
+    fireEvent.change(screen.getByLabelText('配置名称'), { target: { value: 'OpenAI 主账号' } })
+    fireEvent.change(screen.getByPlaceholderText('输入 API Key'), { target: { value: 'sk-test-123' } })
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'weak123' } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'weak123' } })
+
+    fireEvent.click(screen.getByText('保存配置'))
+
+    await waitFor(() => {
+      expect(screen.getByText('密码至少 8 位，且需包含大写字母、小写字母和数字')).toBeInTheDocument()
+    })
+    expect(mockSaveSettings).not.toHaveBeenCalled()
+  })
+
+  it('shows inline weak password hint', () => {
+    render(<APISettings />)
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'abc' } })
+    expect(screen.getByText('需包含大写、小写字母和数字')).toBeInTheDocument()
+  })
+
+  it('shows inline password mismatch hint', () => {
+    render(<APISettings />)
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'Different1' } })
+    expect(screen.getByText('密码不一致')).toBeInTheDocument()
+  })
+
+  it('toggles API Key visibility with eye button', () => {
+    render(<APISettings />)
+    const input = screen.getByPlaceholderText('输入 API Key') as HTMLInputElement
+    expect(input.type).toBe('password')
+    const toggle = input.closest('div')!.querySelector('button')!
+    fireEvent.click(toggle)
+    expect((screen.getByPlaceholderText('输入 API Key') as HTMLInputElement).type).toBe('text')
+  })
+})
+
+describe('APISettings - Mode B: locked with API key', () => {
+  beforeEach(() => {
     mockLockStatus.has_api_key = true
-    render(<APISettings />)
-    expect(screen.getByText('锁定')).toBeInTheDocument()
   })
 
-  it('shows API Key configured indicator when has_api_key is true', () => {
-    mockLockStatus.has_api_key = true
+  it('renders unlock UI', () => {
     render(<APISettings />)
-    expect(screen.getByText('API Key 已配置')).toBeInTheDocument()
-  })
-
-  it('does not show API Key configured indicator when has_api_key is false', () => {
-    render(<APISettings />)
-    expect(screen.queryByText('API Key 已配置')).not.toBeInTheDocument()
-  })
-
-  it('shows password input when locked', () => {
-    render(<APISettings />)
+    expect(screen.getByText('API Key 已加密')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('输入密码解锁')).toBeInTheDocument()
+    expect(screen.getByText('解锁')).toBeInTheDocument()
   })
 
   it('calls unlock with password when unlock button clicked', async () => {
     render(<APISettings />)
-    const passwordInput = screen.getByPlaceholderText('输入密码解锁')
-    fireEvent.change(passwordInput, { target: { value: 'TestPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('输入密码解锁'), { target: { value: 'TestPass123' } })
     fireEvent.click(screen.getByText('解锁'))
 
     await waitFor(() => {
@@ -127,22 +194,16 @@ describe('APISettings', () => {
     })
   })
 
-  it('calls lock when lock button clicked', async () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = true
+  it('shows error when unlock clicked with empty password', () => {
     render(<APISettings />)
-    fireEvent.click(screen.getByText('锁定'))
-
-    await waitFor(() => {
-      expect(mockLock).toHaveBeenCalled()
-    })
+    fireEvent.click(screen.getByText('解锁'))
+    expect(screen.getByText('请输入密码')).toBeInTheDocument()
   })
 
-  it('shows error message when unlock fails', async () => {
+  it('shows error when unlock fails', async () => {
     mockUnlock.mockRejectedValue(new Error('Wrong password'))
     render(<APISettings />)
-    const passwordInput = screen.getByPlaceholderText('输入密码解锁')
-    fireEvent.change(passwordInput, { target: { value: 'WrongPass123' } })
+    fireEvent.change(screen.getByPlaceholderText('输入密码解锁'), { target: { value: 'WrongPass123' } })
     fireEvent.click(screen.getByText('解锁'))
 
     await waitFor(() => {
@@ -150,132 +211,149 @@ describe('APISettings', () => {
     })
   })
 
-  it('shows error message when lock fails', async () => {
-    mockLockStatus.locked = false
+  it('lists saved configs when locked', () => {
+    mockSettings.model_configs = [configOne]
+    mockSettings.active_config_id = 'cfg-1'
+    render(<APISettings />)
+    expect(screen.getByText('已保存的配置')).toBeInTheDocument()
+    expect(screen.getByText('OpenAI 主账号')).toBeInTheDocument()
+    expect(screen.getByText('https://api.openai.com/v1')).toBeInTheDocument()
+  })
+})
+
+describe('APISettings - Mode C: unlocked with API key', () => {
+  beforeEach(() => {
     mockLockStatus.has_api_key = true
-    mockLock.mockRejectedValue(new Error('Lock failed'))
+    mockLockStatus.locked = false
+  })
+
+  it('renders model config and edit key sections', () => {
+    render(<APISettings />)
+    expect(screen.getByText('模型配置')).toBeInTheDocument()
+    expect(screen.getByText('修改当前密钥')).toBeInTheDocument()
+    expect(screen.getByText('修改并重新加密')).toBeInTheDocument()
+    expect(screen.getByText('清除')).toBeInTheDocument()
+    expect(screen.getByText('锁定')).toBeInTheDocument()
+  })
+
+  it('calls lock when lock button clicked', async () => {
     render(<APISettings />)
     fireEvent.click(screen.getByText('锁定'))
-
     await waitFor(() => {
-      expect(screen.getByText('Lock failed')).toBeInTheDocument()
+      expect(mockLock).toHaveBeenCalled()
     })
   })
 
-  it('shows placeholder for API Key when already configured', () => {
-    mockLockStatus.has_api_key = true
+  it('saves a new API key with password', async () => {
     render(<APISettings />)
-    expect(screen.getByPlaceholderText('已配置（输入新值可修改）')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('新 API Key'), { target: { value: 'sk-new-key' } })
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'NewPass123' } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'NewPass123' } })
+    fireEvent.click(screen.getByText('修改并重新加密'))
+
+    await waitFor(() => {
+      expect(mockSaveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ api_key: 'sk-new-key', password: 'NewPass123' }),
+      )
+    })
+    expect(mockRefreshSettings).toHaveBeenCalled()
+    expect(mockRefreshStatus).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByText('API Key 已更新')).toBeInTheDocument()
+    })
   })
 
-  it('shows placeholder for API Key when not configured', () => {
+  it('shows weak password error when editing API key', async () => {
     render(<APISettings />)
-    expect(screen.getByPlaceholderText('输入 API Key')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('新 API Key'), { target: { value: 'sk-new-key' } })
+    fireEvent.change(screen.getByLabelText('保护密码'), { target: { value: 'weak123' } })
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'weak123' } })
+    fireEvent.click(screen.getByText('修改并重新加密'))
+
+    await waitFor(() => {
+      expect(screen.getByText('密码至少 8 位，且需包含大写字母和数字')).toBeInTheDocument()
+    })
+    expect(mockSaveSettings).not.toHaveBeenCalled()
   })
 
-  it('disables API Key input when unlocked and has_api_key', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = true
-    render(<APISettings />)
-    const apiKeyInput = screen.getByPlaceholderText('已配置（输入新值可修改）') as HTMLInputElement
-    expect(apiKeyInput.disabled).toBe(true)
-  })
-
-  it('enables save button when API Key input has value and unlocked', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = true
-    render(<APISettings />)
-    // API Key input is disabled when unlocked and has_api_key
-    // So save button should also be disabled
-    const saveButton = screen.getByText('保存 API Key')
-    expect(saveButton).toBeDisabled()
-  })
-
-  it('disables save button when locked', () => {
-    render(<APISettings />)
-    const saveButton = screen.getByText('保存 API Key')
-    expect(saveButton).toBeDisabled()
-  })
-
-  it('disables clear button when no API key configured', () => {
-    render(<APISettings />)
-    const clearButton = screen.getByText('清除')
-    expect(clearButton).toBeDisabled()
-  })
-
-  it('enables clear button when API key configured', () => {
-    mockLockStatus.has_api_key = true
-    render(<APISettings />)
-    const clearButton = screen.getByText('清除')
-    expect(clearButton).not.toBeDisabled()
-  })
-
-  it('shows eye toggle button for API Key visibility', () => {
-    render(<APISettings />)
-    expect(screen.getByRole('button', { name: '显示' })).toBeInTheDocument()
-  })
-
-  it('toggles API Key visibility when eye button clicked', () => {
-    render(<APISettings />)
-    const toggleButton = screen.getByRole('button', { name: '显示' })
-    fireEvent.click(toggleButton)
-    expect(screen.getByRole('button', { name: '隐藏' })).toBeInTheDocument()
-  })
-
-  it('shows password dialog when showPasswordDialog is true', () => {
-    // This test verifies the password dialog rendering
-    // The dialog is shown when showPasswordDialog state is true
-    // Since it's controlled by internal state, we need to trigger it
-    render(<APISettings />)
-    // Initially the dialog should not be visible
-    expect(screen.queryByText('设置保护密码（至少 8 位，含大写字母、小写字母和数字）')).not.toBeInTheDocument()
-  })
-
-  it('shows error when saving API Key without value', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = false
-    render(<APISettings />)
-    // API Key input is empty, save button should be disabled
-    const saveButton = screen.getByText('保存 API Key')
-    expect(saveButton).toBeDisabled()
-  })
-
-  it('shows error when saving API Key without password', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = false
-    render(<APISettings />)
-    const apiKeyInput = screen.getByPlaceholderText('输入 API Key')
-    fireEvent.change(apiKeyInput, { target: { value: 'sk-test-key' } })
-    // Save button should be enabled now
-    const saveButton = screen.getByText('保存 API Key')
-    expect(saveButton).not.toBeDisabled()
-  })
-
-  it('clears API Key input when clear button clicked', () => {
-    mockLockStatus.has_api_key = true
+  it('clears API key when clear button clicked', async () => {
     render(<APISettings />)
     fireEvent.click(screen.getByText('清除'))
-    // After clear, the API Key input should be empty
-    const apiKeyInput = screen.getByPlaceholderText('已配置（输入新值可修改）') as HTMLInputElement
-    expect(apiKeyInput.value).toBe('')
+
+    await waitFor(() => {
+      expect(mockClearApiKey).toHaveBeenCalled()
+    })
+    expect(mockRefreshSettings).toHaveBeenCalled()
+    expect(mockRefreshStatus).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByText('API Key 已清除')).toBeInTheDocument()
+    })
   })
 
-  it('shows error when password is weak', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = false
+  it('adds a new config via the form', async () => {
     render(<APISettings />)
-    const apiKeyInput = screen.getByPlaceholderText('输入 API Key')
-    fireEvent.change(apiKeyInput, { target: { value: 'sk-test-key' } })
-    // The password dialog would need to be shown to test this
-    // For now, just verify the component renders correctly
-    expect(screen.getByText('保存 API Key')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('新增配置'))
+    const form = screen.getByText('新增配置').closest('.rounded-lg') as HTMLElement
+    fireEvent.change(within(form).getByLabelText('名称'), { target: { value: 'Claude' } })
+    fireEvent.change(within(form).getByLabelText('模型'), { target: { value: 'claude-3' } })
+    fireEvent.change(within(form).getByLabelText('接口地址'), { target: { value: 'https://api.anthropic.com/v1' } })
+    fireEvent.change(within(form).getByLabelText('API Key'), { target: { value: 'sk-claude' } })
+    fireEvent.change(within(form).getByLabelText('保护密码'), { target: { value: 'ClaudePass1' } })
+    fireEvent.change(within(form).getByLabelText('确认密码'), { target: { value: 'ClaudePass1' } })
+    fireEvent.click(within(form).getByText('保存'))
+
+    await waitFor(() => {
+      expect(mockSaveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-3',
+          base_url: 'https://api.anthropic.com/v1',
+          api_key: 'sk-claude',
+          password: 'ClaudePass1',
+          model_configs: expect.arrayContaining([
+            expect.objectContaining({ name: 'Claude', model_name: 'claude-3' }),
+          ]),
+          active_config_id: expect.any(String),
+        }),
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getByText('新配置已添加')).toBeInTheDocument()
+    })
   })
 
-  it('shows error when passwords do not match', () => {
-    mockLockStatus.locked = false
-    mockLockStatus.has_api_key = false
+  it('shows inline validation hints in the add-config form', () => {
     render(<APISettings />)
-    // The password dialog would need to be shown to test this
-    expect(screen.getByText('API 设置')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('新增配置'))
+    const form = screen.getByText('新增配置').closest('.rounded-lg') as HTMLElement
+    fireEvent.change(within(form).getByLabelText('保护密码'), { target: { value: 'abc' } })
+    expect(screen.getByText('需包含大写、小写字母和数字')).toBeInTheDocument()
+    fireEvent.change(within(form).getByLabelText('保护密码'), { target: { value: 'ClaudePass1' } })
+    fireEvent.change(within(form).getByLabelText('确认密码'), { target: { value: 'Different1' } })
+    expect(screen.getByText('密码不一致')).toBeInTheDocument()
+  })
+
+  it('deletes a config after confirming', async () => {
+    mockSettings.model_configs = [configOne]
+    mockSettings.active_config_id = 'cfg-1'
+    render(<APISettings />)
+
+    const row = screen.getByText('OpenAI 主账号').closest('.rounded-lg')!
+    fireEvent.click(within(row as HTMLElement).getByRole('button'))
+    fireEvent.click(screen.getByText('确认删除'))
+
+    expect(mockUpdateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ model_configs: [], active_config_id: '' }),
+    )
+    expect(mockRefreshStatus).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByText('配置已删除')).toBeInTheDocument()
+    })
+  })
+
+  it('clicking a config row sets it active', () => {
+    mockSettings.model_configs = [configOne]
+    render(<APISettings />)
+    fireEvent.click(screen.getByText('OpenAI 主账号'))
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ active_config_id: 'cfg-1' })
   })
 })

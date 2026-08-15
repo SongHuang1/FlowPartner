@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import App from './App'
-import { AllProviders } from './test-setup'
+import { LockProvider } from '@/hooks/useLock'
+import { SettingsProvider } from '@/hooks/useSettings'
 
 function renderApp() {
   return render(
-    <AllProviders>
-      <App />
-    </AllProviders>
+    <SettingsProvider>
+      <LockProvider>
+        <App />
+      </LockProvider>
+    </SettingsProvider>
   )
 }
 
