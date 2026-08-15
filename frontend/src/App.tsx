@@ -4,10 +4,12 @@ import { ActivityBar } from '@/components/layout/ActivityBar'
 import { ChatArea } from '@/components/chat/ChatArea'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { CloseDialog } from '@/components/layout/CloseDialog'
+import { useSettings } from '@/hooks/useSettings'
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const { updateSettings } = useSettings()
 
   useEffect(() => {
     window.flowPartner.onCloseAction(() => {
@@ -22,6 +24,7 @@ export default function App() {
 
   const handleRememberAction = (behavior: 'minimize' | 'quit') => {
     window.flowPartner.updateCloseBehavior(behavior, true)
+    updateSettings({ close_behavior: behavior, close_remembered: true })
   }
 
   return (

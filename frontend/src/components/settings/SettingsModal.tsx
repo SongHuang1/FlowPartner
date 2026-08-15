@@ -22,14 +22,15 @@ const tabs: { id: TabId; label: string; icon: typeof Key }[] = [
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('api')
-  const { getCurrentSettings, refreshSettings } = useSettings()
+  const { getCurrentSettings } = useSettings()
   const [saving, setSaving] = useState(false)
 
   const handleSaveAll = async () => {
     setSaving(true)
     try {
-      await saveSettings(getCurrentSettings())
-      await refreshSettings()
+      const current = getCurrentSettings()
+      await saveSettings(current)
+      window.flowPartner.updateCloseBehavior(current.close_behavior, current.close_remembered)
     } finally {
       setSaving(false)
     }

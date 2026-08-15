@@ -10,6 +10,7 @@ let pythonProcess = null
 let mainWindow = null
 let tray = null
 let backendPort = null
+let backendGrpcPort = null
 let isQuiting = false
 let closeBehaviorCache = null
 let agentAuthToken = null
@@ -45,6 +46,7 @@ function filterSafeEnv(env) {
   const allowedKeys = [
     'PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'COMSPEC',
     'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM',
+    'TEMP', 'TMP', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES',
   ]
   const safeEnv = {}
   for (const key of allowedKeys) {
@@ -78,6 +80,10 @@ function startGoProcess(port) {
 
     if (output.includes('__FP_BACKEND_READY__') && backendPort === null) {
       backendPort = port
+      const grpcMatch = output.match(/gRPC=::?(\d+)/)
+      if (grpcMatch) {
+        backendGrpcPort = parseInt(grpcMatch[1], 10)
+      }
     }
   })
 
@@ -96,12 +102,17 @@ function startGoProcess(port) {
   })
 }
 
-function startPythonAgent() {
+function startPythonAgent(grpcPort) {
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
   agentAuthToken = generateAuthToken()
 
   const safeEnv = filterSafeEnv(process.env)
   safeEnv.AGENT_AUTH_TOKEN = agentAuthToken
+  if (grpcPort) {
+    safeEnv.AGENT_GRPC_PORT = String(grpcPort)
+  }
+
+  console.log(`[main.cjs] Starting Python Agent, gRPC port: ${grpcPort || 'not set (will use default 50051)'}`)
 
   if (isDev) {
     pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
@@ -115,8 +126,12 @@ function startPythonAgent() {
     })
   }
 
+  pythonProcess.stdout.on('data', (data) => {
+    process.stdout.write(`[Python Agent stdout] ${data}`)
+  })
+
   pythonProcess.stderr.on('data', (data) => {
-    process.stderr.write(`[Python Agent] ${data}`)
+    process.stderr.write(`[Python Agent stderr] ${data}`)
   })
 
   pythonProcess.on('error', (err) => {
@@ -132,10 +147,15 @@ function startPythonAgent() {
   })
 
   pythonProcess.on('exit', (code) => {
+    pythonProcess = null
     if (code !== 0 && !isQuiting) {
       dialog.showErrorBox('Agent abnormal termination', `Python Agent exited, code: ${code}`)
+      setTimeout(() => {
+        if (!isQuiting && backendGrpcPort) {
+          startPythonAgent(backendGrpcPort)
+        }
+      }, 1000)
     }
-    pythonProcess = null
   })
 }
 
@@ -549,10 +569,10 @@ app.whenReady().then(async () => {
   }
 
   startGoProcess(port)
-  startPythonAgent()
 
   try {
     const readyPort = await waitForReady(10000)
+    startPythonAgent(backendGrpcPort)
     createWindow(readyPort)
   } catch (err) {
     dialog.showErrorBox('Fail', 'Fail to start golang backend.')

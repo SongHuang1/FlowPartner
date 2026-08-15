@@ -1,10 +1,11 @@
 import logging
 import asyncio
+import os
 from pathlib import Path
 from grpc_client import FlowPartnerClient
 
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
@@ -15,13 +16,20 @@ def init_workspace():
         workspace_dir.mkdir()
     return str(workspace_dir)
 
+def get_grpc_address():
+    port = os.environ.get('AGENT_GRPC_PORT')
+    if port:
+        return f"localhost:{port}"
+    return "localhost:50051"
+
 async def main():
     logging.info("Agent starting...")
     workspace = init_workspace()
     logging.info(f"Agent initialized, working directory: {workspace}")
 
-    # 启动 gRPC 客户端 (目前 Go 还没写好 Server，所以连接会失败，这是预期的)
-    client = FlowPartnerClient(workspace_path=workspace)
+    grpc_address = get_grpc_address()
+    logging.info(f"Connecting to Go backend at {grpc_address}")
+    client = FlowPartnerClient(workspace_path=workspace, server_address=grpc_address)
     await client.connect_and_listen()
 
 if __name__ == "__main__":

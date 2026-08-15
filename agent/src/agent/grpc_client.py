@@ -146,33 +146,47 @@ class FlowPartnerClient:
 
     async def connect_and_listen(self):
         logging.info(f"Preparing to connect to Go server: {self.server_address}")
-        self.channel = grpc.aio.insecure_channel(self.server_address)
-        self.stub = agent_pb2_grpc.FlowPartnerServiceStub(self.channel)
+        max_retries = 10
+        retry_delay = 2
 
-        outgoing_queue = asyncio.Queue()
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.channel = grpc.aio.insecure_channel(self.server_address)
+                self.stub = agent_pb2_grpc.FlowPartnerServiceStub(self.channel)
 
-        async def request_generator():
-            while True:
-                event = await outgoing_queue.get()
-                yield event
+                outgoing_queue = asyncio.Queue()
 
-        try:
-            stream = self.stub.SyncChannel(request_generator())
-            logging.info("Bidirectional stream established, waiting for Go commands...")
+                async def request_generator():
+                    while True:
+                        event = await outgoing_queue.get()
+                        yield event
 
-            async for command in stream:
-                logging.info(f"[Command received] {command.command_type} | Session: {command.session_id}")
+                stream = self.stub.SyncChannel(request_generator())
+                logging.info("Bidirectional stream established, waiting for Go commands...")
 
-                if command.command_type == "start_chat":
-                    asyncio.create_task(
-                        self.handle_chat(command, outgoing_queue)
-                    )
+                async for command in stream:
+                    logging.info(f"[Command received] {command.command_type} | Session: {command.session_id}")
 
-        except grpc.aio.AioRpcError as e:
-            logging.error(f"Connection lost: {e.code()}, {e.details()}")
-        finally:
-            if self.channel:
-                await self.channel.close()
+                    if command.command_type == "start_chat":
+                        asyncio.create_task(
+                            self.handle_chat(command, outgoing_queue)
+                        )
+
+            except grpc.aio.AioRpcError as e:
+                logging.warning(f"Connection lost (attempt {attempt}/{max_retries}): {e.code()}, {e.details()}")
+            except Exception as e:
+                logging.error(f"Unexpected error (attempt {attempt}/{max_retries}): {e}")
+            finally:
+                if self.channel:
+                    await self.channel.close()
+                    self.channel = None
+                    self.stub = None
+
+            if attempt < max_retries:
+                logging.info(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logging.error("Max retries reached, giving up.")
 
     async def handle_chat(self, command, queue):
         """处理一次完整的对话"""

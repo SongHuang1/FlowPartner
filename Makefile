@@ -53,7 +53,12 @@ test-agent:
 
 build-agent:
 	cd $(AGENT_DIR) && uv sync --frozen
-	cd $(AGENT_DIR) && uv run pyinstaller --onefile --name flowpartner-agent src/agent/main.py
+	cd $(AGENT_DIR) && uv run pyinstaller --onefile --name flowpartner-agent \
+		--hidden-import=agent_pb2 \
+		--hidden-import=agent_pb2_grpc \
+		--hidden-import=grpc \
+		--hidden-import=google \
+		src/agent/main.py
 	cp $(AGENT_DIR)/dist/flowpartner-agent$(EXE) $(FRONTEND_DIR)/bin/flowpartner-agent$(EXE)
 
 gen-proto:

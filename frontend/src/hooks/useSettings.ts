@@ -76,6 +76,10 @@ export function useSettings(): UseSettingsReturn {
   const getCurrentSettings = () => settingsRef.current
 
   const refreshSettings = async () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
     try {
       const s = await getSettings()
       settingsRef.current = s
