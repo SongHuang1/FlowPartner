@@ -74,38 +74,33 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 
 // CallLLM 服务端流式 RPC：解析 Python 请求 → 合并配置 → 调用 LLM → 逐 chunk 返回
 func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerService_CallLLMServer) error {
-	log.Printf("[CallLLM-START] Session: %s, Payload length: %d", req.SessionId, len(req.JsonPayload))
+	log.Printf("[CallLLM] Session: %s, Payload length: %d", req.SessionId, len(req.JsonPayload))
 
 	messageID := uuid.NewString()
 
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(req.JsonPayload), &payload); err != nil {
-		log.Printf("[CallLLM-ERR] Invalid JSON: %v", err)
 		return h.sendError(stream, messageID, llm.InvalidJSONError())
 	}
 
 	messages, ok := payload["messages"].([]interface{})
 	if !ok || len(messages) == 0 {
-		log.Printf("[CallLLM-ERR] Messages empty or invalid")
 		return h.sendError(stream, messageID, llm.MessagesEmptyError())
 	}
 
 	settings := LoadSettings()
 	cfg := settings.activeConfig()
 	if cfg == nil {
-		log.Printf("[CallLLM-ERR] No active config")
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4002,
 			Message: "没有激活的模型配置",
 			Guess:   "请先在设置中添加并激活模型配置",
 		})
 	}
-	log.Printf("[CallLLM-CFG] Model: %s, BaseURL: %s, Timeout: %ds", cfg.ModelName, cfg.BaseURL, cfg.TimeoutSecs)
 
 	ks := keystore.Instance()
 	apiKey, ok := ks.GetKey()
 	if !ok {
-		log.Printf("[CallLLM-ERR] API key locked or missing")
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    4001,
 			Message: "模型配置已锁定",
@@ -114,21 +109,18 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	}
 	keyCopy := make([]byte, len(apiKey))
 	copy(keyCopy, apiKey)
-	log.Printf("[CallLLM-KEY] API key length: %d", len(keyCopy))
 
 	targetURL, err := llm.NormalizeChatCompletionsURL(cfg.BaseURL)
 	if err != nil {
 		for i := range keyCopy {
 			keyCopy[i] = 0
 		}
-		log.Printf("[CallLLM-ERR] Invalid BaseURL: %v", err)
 		return h.sendError(stream, messageID, &llm.LLMError{
 			Code:    400,
 			Message: "接口地址格式无效",
 			Guess:   "请检查模型配置中的接口地址（Base URL）",
 		})
 	}
-	log.Printf("[CallLLM-URL] Target: %s", targetURL)
 
 	var tools, toolChoice []byte
 	if t, ok := payload["tools"].([]interface{}); ok {
@@ -153,20 +145,16 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		Timeout:        time.Duration(cfg.TimeoutSecs) * time.Second,
 	}
 
-	log.Printf("[CallLLM-STREAM] Starting LLM stream...")
 	chunkChan, err := h.llmClient.Stream(stream.Context(), streamReq)
 	if err != nil {
 		for i := range keyCopy {
 			keyCopy[i] = 0
 		}
-		log.Printf("[CallLLM-ERR] Stream error: %v", err)
+		log.Printf("[CallLLM] Stream error: %v", err)
 		return h.sendError(stream, messageID, llm.NetworkError(err))
 	}
 
-	log.Printf("[CallLLM-STREAM] Stream started, waiting for chunks...")
-	chunkCount := 0
 	for chunk := range chunkChan {
-		chunkCount++
 		if chunk.Done && chunk.Data == "" {
 			continue
 		}
@@ -176,11 +164,10 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 			MessageId:   messageID,
 		}
 		if err := stream.Send(resp); err != nil {
-			log.Printf("[CallLLM-ERR] Send failed after %d chunks: %s", chunkCount, sanitize.Error(err))
+			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
 			return nil
 		}
 	}
-	log.Printf("[CallLLM-DONE] Stream finished, total chunks: %d", chunkCount)
 
 	return nil
 }

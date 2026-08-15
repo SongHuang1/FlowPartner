@@ -74,19 +74,14 @@ class FlowPartnerClient:
                 session_id=session_id,
                 json_payload=json_payload
             )
-            logging.info(f"[CallLLM] Sending request to Go, payload length: {len(json_payload)}")
             full_content = ""
             tool_calls_map: dict[int, dict] = {}
             finish_reason = ""
             usage: dict | None = None
-            chunk_count = 0
 
             async for response in self.stub.CallLLM(request):
-                chunk_count += 1
-                logging.info(f"[CallLLM] Received chunk #{chunk_count}, is_error={response.is_error}")
                 if response.is_error:
                     error_data = json.loads(response.json_response)
-                    logging.error(f"[CallLLM] Error from Go: {error_data}")
                     return {
                         "success": False,
                         "error_message": error_data.get("message", "未知错误"),
@@ -133,7 +128,6 @@ class FlowPartnerClient:
                         "finish_reason": choices[0].get("finish_reason")
                     })
 
-            logging.info(f"[CallLLM] Stream finished, total chunks: {chunk_count}")
             result: dict = {
                 "success": True,
                 "content": full_content,
@@ -147,10 +141,8 @@ class FlowPartnerClient:
             return result
 
         except grpc.aio.AioRpcError as e:
-            logging.error(f"[CallLLM] gRPC error: {e.code()}, {e.details()}")
             return {"success": False, "error_message": f"gRPC error: {e.details()}", "error_guess": "", "json_response": ""}
         except (json.JSONDecodeError, KeyError) as e:
-            logging.error(f"[CallLLM] Parse error: {e}")
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
     async def connect_and_listen(self):
@@ -180,6 +172,7 @@ class FlowPartnerClient:
                         asyncio.create_task(
                             self.handle_chat(command, outgoing_queue)
                         )
+                        logging.info(f"[Chat] Task created for session: {command.session_id}")
 
             except grpc.aio.AioRpcError as e:
                 logging.warning(f"Connection lost (attempt {attempt}/{max_retries}): {e.code()}, {e.details()}")
@@ -212,8 +205,6 @@ class FlowPartnerClient:
             send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
             tool_registry=self.tool_registry
         )
-        logging.info(f"[Chat] Agent created, starting run()...")
-
         # 执行 ReAct 循环
         final_answer = await agent.run(user_message, send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue))
 
