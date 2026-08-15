@@ -150,7 +150,6 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		for i := range keyCopy {
 			keyCopy[i] = 0
 		}
-		log.Printf("[CallLLM] Stream error: %v", err)
 		return h.sendError(stream, messageID, llm.NetworkError(err))
 	}
 

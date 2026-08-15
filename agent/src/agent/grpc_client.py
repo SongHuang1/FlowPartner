@@ -172,7 +172,6 @@ class FlowPartnerClient:
                         asyncio.create_task(
                             self.handle_chat(command, outgoing_queue)
                         )
-                        logging.info(f"[Chat] Task created for session: {command.session_id}")
 
             except grpc.aio.AioRpcError as e:
                 logging.warning(f"Connection lost (attempt {attempt}/{max_retries}): {e.code()}, {e.details()}")

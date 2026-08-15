@@ -80,6 +80,25 @@ jobs:
           echo "Built: $OUTPUT"
           ls -la "$OUTPUT"
 
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        shell: bash
+        run: pip install uv
+
+      - name: Build Python Agent
+        working-directory: agent
+        shell: bash
+        run: |
+          uv sync --frozen
+          uv run pyinstaller flowpartner-agent.spec
+          cp dist/flowpartner-agent${{ matrix.ext }} ../frontend/bin/flowpartner-agent${{ matrix.ext }}
+          echo "Built: ../frontend/bin/flowpartner-agent${{ matrix.ext }}"
+          ls -la ../frontend/bin/flowpartner-agent${{ matrix.ext }}
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --prefer-offline --no-audit --no-fund
