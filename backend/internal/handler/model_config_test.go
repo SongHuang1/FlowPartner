@@ -14,7 +14,7 @@ import (
 
 func setupTestStorage(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := newPersistentTestDir(t)
 	storage.SetDataDirForTest(dir)
 	keystore.Reset()
 }
@@ -252,6 +252,332 @@ func TestMergeModelConfigs(t *testing.T) {
 	}
 	if configMap["c"].Name != "Config C" {
 		t.Errorf("config c should be added")
+	}
+}
+
+func TestModelConfig_List(t *testing.T) {
+	setupTestStorage(t)
+
+	initial := `{
+		"model_configs": [
+			{"id": "cfg-1", "name": "Config A", "base_url": "https://api.openai.com/v1", "model_name": "gpt-4"},
+			{"id": "cfg-2", "name": "Config B", "base_url": "https://api.deepseek.com/v1", "model_name": "deepseek-chat"}
+		],
+		"active_config_id": "cfg-1"
+	}`
+	storage.WriteJSON("settings.json", json.RawMessage(initial))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/model_configs", nil)
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.List(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].([]interface{})
+	if len(data) != 2 {
+		t.Fatalf("expected 2 configs, got %d", len(data))
+	}
+}
+
+func TestModelConfig_Update(t *testing.T) {
+	setupTestStorage(t)
+
+	body := `{"name":"Original","base_url":"https://api.openai.com/v1","model_name":"gpt-4"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	updateBody := `{"id":"` + id + `","name":"Renamed","base_url":"https://api.openai.com/v1","model_name":"gpt-4","temperature":0.3}`
+	req = httptest.NewRequest(http.MethodPut, "/api/model_configs/"+id, bytes.NewReader([]byte(updateBody)))
+	w = httptest.NewRecorder()
+	h.Update(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	settings := LoadSettings()
+	if len(settings.ModelConfigs) != 1 {
+		t.Fatalf("expected 1 config, got %d", len(settings.ModelConfigs))
+	}
+	if settings.ModelConfigs[0].Name != "Renamed" {
+		t.Errorf("name: got %q, want Renamed", settings.ModelConfigs[0].Name)
+	}
+	if settings.ModelConfigs[0].Temperature != 0.3 {
+		t.Errorf("temperature: got %f, want 0.3", settings.ModelConfigs[0].Temperature)
+	}
+}
+
+func TestModelConfig_UpdateNotFound(t *testing.T) {
+	setupTestStorage(t)
+
+	updateBody := `{"id":"missing-id","name":"Renamed","base_url":"https://api.openai.com/v1","model_name":"gpt-4"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/model_configs/missing-id", bytes.NewReader([]byte(updateBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Update(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestModelConfig_Activate_Success(t *testing.T) {
+	setupTestStorage(t)
+
+	createBody := `{"name":"Secure","base_url":"https://api.openai.com/v1","model_name":"gpt-4","api_key":"sk-secret-key","password":"CorrectPass123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(createBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	activateBody := `{"password":"CorrectPass123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+	w = httptest.NewRecorder()
+	h.Activate(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	ks := keystore.Instance()
+	if !ks.IsUnlocked() {
+		t.Fatal("keystore should be unlocked after activation")
+	}
+	if key, ok := ks.GetKey(); !ok || string(key) != "sk-secret-key" {
+		t.Fatalf("keystore should hold the activated key, got %q, ok=%v", key, ok)
+	}
+
+	settings := LoadSettings()
+	if settings.ActiveConfigID != id {
+		t.Errorf("active_config_id: got %q, want %q", settings.ActiveConfigID, id)
+	}
+}
+
+func TestModelConfig_Activate_NotFound(t *testing.T) {
+	setupTestStorage(t)
+
+	activateBody := `{"password":"CorrectPass123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs/missing/activate", bytes.NewReader([]byte(activateBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Activate(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestModelConfig_Activate_NoAPIKey(t *testing.T) {
+	setupTestStorage(t)
+
+	body := `{"name":"NoKey","base_url":"https://api.openai.com/v1","model_name":"gpt-4"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	activateBody := `{"password":"CorrectPass123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+	w = httptest.NewRecorder()
+	h.Activate(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "配置 API Key") {
+		t.Errorf("expected API Key error, got %s", w.Body.String())
+	}
+}
+
+func TestModelConfig_Activate_WrongPassword(t *testing.T) {
+	setupTestStorage(t)
+
+	createBody := `{"name":"Secure","base_url":"https://api.openai.com/v1","model_name":"gpt-4","api_key":"sk-secret-key","password":"CorrectPass123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(createBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	activateBody := `{"password":"WrongPass123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+	w = httptest.NewRecorder()
+	h.Activate(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "密码错误") {
+		t.Errorf("expected wrong password error, got %s", w.Body.String())
+	}
+}
+
+func TestModelConfig_Activate_RateLimited(t *testing.T) {
+	setupTestStorage(t)
+
+	createBody := `{"name":"Secure","base_url":"https://api.openai.com/v1","model_name":"gpt-4","api_key":"sk-secret-key","password":"CorrectPass123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(createBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	for i := 0; i < 5; i++ {
+		activateBody := `{"password":"WrongPass123"}`
+		req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+		w = httptest.NewRecorder()
+		h.Activate(w, req)
+	}
+
+	// 第 6 次尝试即使密码正确也应被限流
+	activateBody := `{"password":"CorrectPass123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+	w = httptest.NewRecorder()
+	h.Activate(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestModelConfig_DeleteActiveConfig(t *testing.T) {
+	setupTestStorage(t)
+
+	createBody := `{"name":"ToDelete","base_url":"https://api.openai.com/v1","model_name":"gpt-4","api_key":"sk-secret-key","password":"CorrectPass123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/model_configs", bytes.NewReader([]byte(createBody)))
+	w := httptest.NewRecorder()
+	h := &ModelConfigHandler{}
+	h.Create(w, req)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	data, _ := resp["data"].(map[string]interface{})
+	id := data["id"].(string)
+
+	activateBody := `{"password":"CorrectPass123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/model_configs/"+id+"/activate", bytes.NewReader([]byte(activateBody)))
+	w = httptest.NewRecorder()
+	h.Activate(w, req)
+
+	ks := keystore.Instance()
+	if !ks.IsUnlocked() {
+		t.Fatal("keystore should be unlocked before delete")
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/model_configs/"+id, nil)
+	w = httptest.NewRecorder()
+	h.Delete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	settings := LoadSettings()
+	if settings.ActiveConfigID != "" {
+		t.Errorf("active_config_id should be cleared, got %q", settings.ActiveConfigID)
+	}
+	if ks.IsUnlocked() {
+		t.Fatal("keystore should be locked after deleting active config")
+	}
+}
+
+func TestEnsureUniqueName(t *testing.T) {
+	configs := []ModelConfig{
+		{ID: "a", Name: "Test"},
+		{ID: "b", Name: "Test (2)"},
+	}
+
+	tests := []struct {
+		name      string
+		input     string
+		excludeID string
+		want      string
+	}{
+		{"unique name unchanged", "Unique", "", "Unique"},
+		{"duplicate gets suffix", "Test", "", "Test (3)"},
+		{"suffixed name gets own suffix", "Test (2)", "", "Test (2) (2)"},
+		{"excluded id ignores its own name", "Test", "a", "Test"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ensureUniqueName(tt.input, configs, tt.excludeID)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("ensureUniqueName(%q, excludeID=%q) = %q, want %q", tt.input, tt.excludeID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSettings_ClearAPIKey(t *testing.T) {
+	setupTestStorage(t)
+
+	// 先设置 API Key
+	putBody := `{"api_key":"sk-cleared-key","password":"CorrectPass123","model":"gpt-4","context_window":8192,"language":"zh-CN"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader([]byte(putBody)))
+	w := httptest.NewRecorder()
+	h := &SettingsHandler{}
+	h.Put(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Put failed: %d %s", w.Code, w.Body.String())
+	}
+
+	ks := keystore.Instance()
+	if !ks.IsUnlocked() {
+		t.Fatal("keystore should be unlocked after setting API key")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/settings/clear-api-key", nil)
+	w = httptest.NewRecorder()
+	h.ClearAPIKey(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	settings := LoadSettings()
+	if settings.EncryptedAPIKey != "" {
+		t.Errorf("encrypted_api_key should be cleared, got %q", settings.EncryptedAPIKey)
+	}
+	if ks.IsUnlocked() {
+		t.Fatal("keystore should be locked after clearing API key")
+	}
+	if status := ks.GetLockStatus(); status.HasAPIKey {
+		t.Fatal("HasAPIKey should be false after clearing API key")
 	}
 }
 

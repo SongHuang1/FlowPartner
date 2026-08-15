@@ -1,8 +1,6 @@
 import { vi, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { LockProvider } from './hooks/useLock'
-import { SettingsProvider } from './hooks/useSettings'
 
 if (!HTMLElement.prototype.scrollTo) {
   HTMLElement.prototype.scrollTo = vi.fn()
@@ -23,16 +21,4 @@ Object.defineProperty(window, 'flowPartner', {
   },
 })
 
-function AllProviders({ children }: { children: React.ReactNode }) {
-  return (
-    <SettingsProvider>
-      <LockProvider>
-        {children}
-      </LockProvider>
-    </SettingsProvider>
-  )
-}
-
 afterEach(cleanup)
-
-export { AllProviders }
