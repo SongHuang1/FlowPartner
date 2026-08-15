@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initApi } from './lib/api'
+import { SettingsProvider } from './hooks/useSettings'
 
 async function bootstrap() {
   const port = await window.flowPartner.fetchBackendPort()
@@ -10,7 +11,9 @@ async function bootstrap() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <SettingsProvider>
+        <App />
+      </SettingsProvider>
     </StrictMode>,
   )
 }
