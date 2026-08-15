@@ -94,6 +94,11 @@ func LoadSettings() Settings {
 	defaults := DefaultSettings()
 	isOldConfig := settings.AgentID == "" && settings.WindowWidth == 0
 
+	// 旧格式迁移必须在默认值填充之前执行：
+	// 若先填充 base_url/model_name 默认值，删除全部配置或清除 API Key 后，
+	// 下次加载会用默认值凭空重新迁移出一个 "default" 配置
+	settings.migrateOldConfig()
+
 	if settings.BaseURL == "" {
 		settings.BaseURL = defaults.BaseURL
 	}
@@ -118,7 +123,6 @@ func LoadSettings() Settings {
 		settings.SidebarView = defaults.SidebarView
 	}
 
-	settings.migrateOldConfig()
 	settings.deriveFlatFields()
 
 	return settings
@@ -129,7 +133,9 @@ func (s *Settings) migrateOldConfig() {
 	if len(s.ModelConfigs) > 0 {
 		return
 	}
-	if s.BaseURL == "" && s.ModelName == "" {
+	// 仅当确实存在旧格式数据时才迁移（扁平字段或扁平密钥任一非空），
+	// 避免删除全部配置 / 清除 API Key 后凭空重新生成 "default" 配置
+	if s.BaseURL == "" && s.ModelName == "" && s.EncryptedAPIKey == "" {
 		return
 	}
 
@@ -382,8 +388,11 @@ func (h *SettingsHandler) ClearAPIKey(w http.ResponseWriter, r *http.Request) {
 	ks := keystore.Instance()
 	settings := LoadSettings()
 
-	// 清除加密的 API Key
+	// 清除加密的 API Key（扁平字段 + 所有模型配置中的密钥）
 	settings.EncryptedAPIKey = ""
+	for i := range settings.ModelConfigs {
+		settings.ModelConfigs[i].EncryptedAPIKey = ""
+	}
 
 	// 锁定 KeyStore
 	ks.Lock()

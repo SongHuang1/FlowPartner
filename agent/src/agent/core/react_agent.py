@@ -12,7 +12,7 @@ class ReactAgent:
         self.tools = tool_registry
         self.max_iterations = 10
 
-    async def run(self, user_message: str, history: list = None, send_event_func=None) -> str:
+    async def run(self, user_message: str, history: list | None = None, send_event_func=None) -> str:
         """执行完整的 ReAct 循环"""
         if history is None:
             history = []
@@ -60,8 +60,12 @@ class ReactAgent:
 
                 for tool_call in llm_resp["tool_calls"]:
                     func_name = tool_call["function"]["name"]
-                    func_args = json.loads(tool_call["function"]["arguments"])
-                    call_id = tool_call["id"]
+                    try:
+                        func_args = json.loads(tool_call["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        logging.warning(f"[ReAct] Tool {func_name} called with malformed JSON arguments, using empty args")
+                        func_args = {}
+                    call_id = tool_call.get("id", "")
 
                     logging.info(f"[ReAct] Calling tool: {func_name}({func_args})")
                     await self.send_event(self.session_id, "tool_call", {
