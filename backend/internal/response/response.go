@@ -14,7 +14,7 @@ type Response struct {
 	Message   string      `json:"message"`    // 人类可读消息
 	Data      interface{} `json:"data"`       // 业务数据（成功时填充）
 	Timestamp int64       `json:"timestamp"`  // Unix 秒
-	RequestID string      `json:"request_id"` // UUID（暂未使用，保留字段）
+	RequestID string      `json:"request_id"` // 请求追踪 ID（WriteJSON 未指定时自动生成 UUID）
 }
 
 // Error 错误响应快捷构造

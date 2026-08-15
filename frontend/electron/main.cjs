@@ -16,7 +16,7 @@ let closeBehaviorCache = null
 let agentAuthToken = null
 let cleanupDone = false
 
-// TODO: 本文件没有任何测试，需要添加
+// TODO: Electron 主进程尚无测试，需要补充
 function getBackendBinPath() {
   const exeName = process.platform === 'win32' ? 'flowpartner-backend.exe' : 'flowpartner-backend'
   return path.join(process.resourcesPath, 'bin', exeName)
@@ -159,7 +159,7 @@ function startPythonAgent(grpcPort) {
   })
 }
 
-// TODO: 这个代码是没有windows的安全退出的
+// TODO: Windows 下 SIGTERM 无法保证优雅退出，需平台相关的进程终止方案
 function stopPythonAgent() {
   if (!pythonProcess) return Promise.resolve()
   return new Promise((resolve) => {
@@ -205,7 +205,7 @@ function waitForReady(timeoutMs) {
   })
 }
 
-// TODO: 这个代码需要和python的退出一起解决
+// TODO: 退出流程需与 Python Agent 的关闭机制一起设计
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
@@ -265,7 +265,7 @@ function saveWindowState(state) {
     fs.renameSync(tmpPath, settingsPath)
   } catch (err) {
     console.error('Failed to save window state:', err)
-    // TODO: 这个部分可以专门写一个应用内报错的方案，现在只是在控制台写入错误
+    // TODO: 错误上报方案待设计，当前仅输出到控制台
   }
 }
 

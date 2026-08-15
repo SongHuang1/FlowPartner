@@ -78,7 +78,7 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 
 	apiKey, err := flowcrypto.Decrypt(settings.EncryptedAPIKey, []byte(req.Password))
 	if err != nil {
-		// 解密失败时直接增加计数器，无需再次解密（VerifyPassword 内部会重复 Argon2id 计算）
+		// 解密已失败，直接计数即可；无需调用 VerifyPassword 重复昂贵的 Argon2id 解密
 		ks.RecordFailedAttempt()
 		response.WriteJSON(w, http.StatusUnauthorized,
 			response.Error(response.CodeWrongPassword, "密码错误"))

@@ -22,7 +22,7 @@ func TestFindAvailablePort_Success(t *testing.T) {
 	listener.Close()
 }
 
-// TestFindAvailablePort_HTTPAndGRPCDistinct 验证 HTTP 与 gRPC 端口探索结果不同（A15）
+// TestFindAvailablePort_HTTPAndGRPCDistinct 验证 HTTP 与 gRPC 端口探索结果不同
 func TestFindAvailablePort_HTTPAndGRPCDistinct(t *testing.T) {
 	httpListener, httpPort, err := FindAvailablePort(":8080", nil)
 	if err != nil {

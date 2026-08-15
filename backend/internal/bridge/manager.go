@@ -82,7 +82,7 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 	// 将 protobuf 消息组装成前端易懂的 JSON 格式
 	payload := map[string]interface{}{
 		"event_type": event.EventType,
-		"payload":    event.Payload, // 这里已经是 JSON 字符串了
+		"payload":    event.Payload, // event.Payload 已是 JSON 字符串，直接透传
 	}
 	if err := conn.WriteJSON(payload); err != nil {
 		log.Printf("Failed to send WebSocket message to frontend: %v", err)

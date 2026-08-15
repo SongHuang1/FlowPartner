@@ -93,7 +93,7 @@ func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 	}
 }
 
-// TestWebSocketHandler_Close 验证 Close 后 HandleWS 循环确实退出（A13）
+// TestWebSocketHandler_Close 验证 Close 后 HandleWS 循环确实退出
 func TestWebSocketHandler_Close(t *testing.T) {
 	mgr := bridge.NewManager()
 	wsHandler := NewWebSocketHandler(mgr)
@@ -124,7 +124,7 @@ func TestWebSocketHandler_Close(t *testing.T) {
 	}
 }
 
-// TestWebSocketHandler_Close_MessageInFlight 验证消息在途时 Close 不泄漏 goroutine（A8）
+// TestWebSocketHandler_Close_MessageInFlight 验证消息在途时 Close 不泄漏 goroutine
 // 场景：读取 goroutine 已读到消息但尚未被主循环消费时触发 Close
 func TestWebSocketHandler_Close_MessageInFlight(t *testing.T) {
 	mgr := bridge.NewManager()

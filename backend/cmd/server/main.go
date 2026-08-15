@@ -131,7 +131,7 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
 }
 
-// readySignal 生成 Electron 识别的后端就绪信号（A7）
+// readySignal 生成 Electron 主进程识别的后端就绪信号
 func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }

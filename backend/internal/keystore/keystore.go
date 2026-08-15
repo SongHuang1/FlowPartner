@@ -111,7 +111,7 @@ func (ks *KeyStore) Lock() {
 	ks.unlocked = false
 }
 
-// SwitchKey 原子切换：锁定旧 Key → 零化 → 存入新 Key → 解锁
+// SwitchKey 原子切换：在单次写锁内零化旧 Key → 存入新 Key → 保持解锁，避免 TOCTOU 竞态
 func (ks *KeyStore) SwitchKey(newKey []byte) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()

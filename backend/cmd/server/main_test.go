@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// TestReadySignal 验证就绪信号格式（A7）
+// TestReadySignal 验证就绪信号格式
 func TestReadySignal(t *testing.T) {
 	got := readySignal(8080, 50051)
 	want := "__FP_BACKEND_READY__ HTTP=:8080 gRPC=:50051"
@@ -42,7 +42,7 @@ func TestReadySignal(t *testing.T) {
 	}
 }
 
-// TestHTTPRoutes 验证 registerRoutes 注册的全部 REST 端点（A1/A2/A3）
+// TestHTTPRoutes 验证 registerRoutes 注册的全部 REST 端点
 func TestHTTPRoutes(t *testing.T) {
 	keystore.Reset()
 	storage.ResetDataDirCache()
@@ -93,7 +93,7 @@ func TestHTTPRoutes(t *testing.T) {
 	}
 }
 
-// TestHTTPRoutes_UnlockFlow 验证完整解锁流程（A3）：设置 API Key → 解锁 → 状态变化
+// TestHTTPRoutes_UnlockFlow 验证完整解锁流程：设置 API Key → 解锁 → 状态变化
 func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	keystore.Reset()
 	storage.ResetDataDirCache()
