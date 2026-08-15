@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { initApi } from './lib/api'
 import { SettingsProvider } from './hooks/useSettings'
+import { LockProvider } from './hooks/useLock'
 
 async function bootstrap() {
   const port = await window.flowPartner.fetchBackendPort()
@@ -12,7 +13,9 @@ async function bootstrap() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <SettingsProvider>
-        <App />
+        <LockProvider>
+          <App />
+        </LockProvider>
       </SettingsProvider>
     </StrictMode>,
   )

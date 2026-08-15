@@ -31,7 +31,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/test-setup.ts'],
+    setupFiles: ['./src/test-setup.tsx'],
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'electron/__tests__/**/*.{test,spec}.ts'],
     pool: 'forks',
     poolOptions: {
