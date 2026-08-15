@@ -324,8 +324,6 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(settings.ModelConfigs) > 0 {
-		existing := LoadSettings()
-		settings.ModelConfigs = mergeModelConfigs(existing.ModelConfigs, settings.ModelConfigs)
 		settings.deriveFlatFields()
 	}
 

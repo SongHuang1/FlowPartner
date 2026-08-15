@@ -20,7 +20,7 @@ interface ModelConfig {
 
 export function APISettings() {
   const { settings, updateSettings, getCurrentSettings, refreshSettings } = useSettings()
-  const { lockStatus, unlock, lock } = useLock()
+  const { lockStatus, unlock, lock, refreshStatus } = useLock()
   const [showApiKey, setShowApiKey] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [password, setPassword] = useState('')
@@ -93,6 +93,7 @@ export function APISettings() {
       setApiKeyInput('')
       setPassword('')
       setPasswordConfirm('')
+      await refreshStatus()
       setLocalSuccess('API Key 已更新')
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '保存失败')
@@ -163,6 +164,7 @@ export function APISettings() {
       setNewConfigPassword('')
       setNewConfigPasswordConfirm('')
       setShowAddConfig(false)
+      await refreshStatus()
       setLocalSuccess('新配置已添加')
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '新增配置失败')
@@ -180,6 +182,7 @@ export function APISettings() {
     try {
       updateSettings({ model_configs: updatedConfigs, active_config_id: newActiveId } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
       setDeletingId(null)
+      await refreshStatus()
       setLocalSuccess('配置已删除')
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '删除失败')
@@ -232,6 +235,7 @@ export function APISettings() {
       setPassword('')
       setPasswordConfirm('')
       setFirstConfigName('')
+      await refreshStatus()
       setLocalSuccess('API Key 配置成功')
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '保存失败')
