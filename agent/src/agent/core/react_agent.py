@@ -12,7 +12,7 @@ class ReactAgent:
         self.tools = tool_registry
         self.max_iterations = 10
 
-    async def run(self, user_message: str, history: list = None) -> str:
+    async def run(self, user_message: str, history: list = None, send_event_func=None) -> str:
         """执行完整的 ReAct 循环"""
         if history is None:
             history = []
@@ -37,7 +37,7 @@ class ReactAgent:
                 "tools": tools_def if tools_def else None,
             }, ensure_ascii=False)
 
-            llm_resp = await self.call_llm(self.session_id, payload)
+            llm_resp = await self.call_llm(self.session_id, payload, send_event_func=send_event_func)
 
             if not llm_resp.get("success"):
                 error_msg = llm_resp.get("error_message", "未知错误")

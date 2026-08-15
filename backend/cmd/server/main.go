@@ -14,6 +14,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/config"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
+	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/server"
 	"github.com/songhuang/flowpartner/backend/internal/static"
 	"github.com/songhuang/flowpartner/backend/proto"
@@ -22,11 +23,14 @@ import (
 
 func main() {
 	// 1. 读取配置
-	cfg := config.Load()
+ 	cfg := config.Load()
 
-	// 2. 创建 bridge.Manager 和 WebSocketHandler（共享桥接层）
-	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr)
+ 	// 2. 初始化 keystore 状态（从已保存的 settings.json 恢复 hasAPIKey）
+ 	initializeKeystore()
+
+ 	// 3. 创建 bridge.Manager 和 WebSocketHandler（共享桥接层）
+ 	mgr := bridge.NewManager()
+ 	wsHandler := handler.NewWebSocketHandler(mgr)
 
 	// 3. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
@@ -129,6 +133,15 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 		modelConfigHandler.HandleByID(w, r)
 	})
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
+}
+
+// initializeKeystore 从已保存的 settings.json 恢复 keystore 的 hasAPIKey 状态
+func initializeKeystore() {
+	settings := handler.LoadSettings()
+	if settings.EncryptedAPIKey != "" {
+		ks := keystore.Instance()
+		ks.SetAPIKeyConfigured(true)
+	}
 }
 
 // readySignal 生成 Electron 主进程识别的后端就绪信号

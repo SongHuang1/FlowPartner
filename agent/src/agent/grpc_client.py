@@ -67,21 +67,26 @@ class FlowPartnerClient:
         )
         await queue.put(event)
 
-    async def call_llm_via_go(self, session_id: str, json_payload: str) -> dict:
+    async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None) -> dict:
         """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""
         try:
             request = agent_pb2.LLMRequest(
                 session_id=session_id,
                 json_payload=json_payload
             )
+            logging.info(f"[CallLLM] Sending request to Go, payload length: {len(json_payload)}")
             full_content = ""
             tool_calls_map: dict[int, dict] = {}
             finish_reason = ""
             usage: dict | None = None
+            chunk_count = 0
 
             async for response in self.stub.CallLLM(request):
+                chunk_count += 1
+                logging.info(f"[CallLLM] Received chunk #{chunk_count}, is_error={response.is_error}")
                 if response.is_error:
                     error_data = json.loads(response.json_response)
+                    logging.error(f"[CallLLM] Error from Go: {error_data}")
                     return {
                         "success": False,
                         "error_message": error_data.get("message", "未知错误"),
@@ -122,11 +127,13 @@ class FlowPartnerClient:
                 if chunk.get("usage"):
                     usage = chunk["usage"]
 
-                await self.send_event(session_id, "llm_chunk", {
-                    "content": delta.get("content", ""),
-                    "finish_reason": choices[0].get("finish_reason")
-                })
+                if send_event_func:
+                    await send_event_func(session_id, "llm_chunk", {
+                        "content": delta.get("content", ""),
+                        "finish_reason": choices[0].get("finish_reason")
+                    })
 
+            logging.info(f"[CallLLM] Stream finished, total chunks: {chunk_count}")
             result: dict = {
                 "success": True,
                 "content": full_content,
@@ -140,8 +147,10 @@ class FlowPartnerClient:
             return result
 
         except grpc.aio.AioRpcError as e:
+            logging.error(f"[CallLLM] gRPC error: {e.code()}, {e.details()}")
             return {"success": False, "error_message": f"gRPC error: {e.details()}", "error_guess": "", "json_response": ""}
         except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"[CallLLM] Parse error: {e}")
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
     async def connect_and_listen(self):
@@ -194,7 +203,7 @@ class FlowPartnerClient:
         payload = json.loads(command.payload) if command.payload else {}
         user_message = payload.get("user_message", "")
 
-        logging.info(f"Chat started | Session: {session_id} | User: {user_message}")
+        logging.info(f"[Chat started] Session: {session_id} | User: {user_message}")
 
         # 创建 ReAct Agent 实例
         agent = ReactAgent(
@@ -203,9 +212,10 @@ class FlowPartnerClient:
             send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
             tool_registry=self.tool_registry
         )
+        logging.info(f"[Chat] Agent created, starting run()...")
 
         # 执行 ReAct 循环
-        final_answer = await agent.run(user_message)
+        final_answer = await agent.run(user_message, send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue))
 
         # 保存历史记录
         history_file = self.history_dir / f"{session_id}.json"
