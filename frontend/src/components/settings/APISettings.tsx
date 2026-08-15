@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { saveApiKey, clearApiKey } from '@/lib/api'
+import { clearApiKey, saveSettings } from '@/lib/api'
+import type { Settings } from '@/types'
 import { isPasswordStrong } from '@/lib/validation'
 
 interface ModelConfig {
@@ -89,7 +90,13 @@ export function APISettings() {
     }
     try {
       const current = getCurrentSettings()
-      await saveApiKey(apiKeyInput.trim(), password, current.model, current.base_url)
+      const fullSettings = {
+        ...current,
+        api_key: apiKeyInput.trim(),
+        password,
+      }
+      await saveSettings(fullSettings as Settings & { api_key: string; password: string })
+      await refreshSettings()
       setApiKeyInput('')
       setPassword('')
       setPasswordConfirm('')
@@ -105,11 +112,12 @@ export function APISettings() {
     setLocalSuccess(null)
     try {
       await clearApiKey()
+      await refreshSettings()
       setApiKeyInput('')
       setPassword('')
       setPasswordConfirm('')
+      await refreshStatus()
       setLocalSuccess('API Key 已清除')
-      await refreshSettings()
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : '清除 API Key 失败')
     }
@@ -155,8 +163,18 @@ export function APISettings() {
 
     const updatedConfigs = [...modelConfigs, newConfig]
     try {
-      await saveApiKey(newConfigKey.trim(), newConfigPassword, newConfigModel.trim(), newConfigBaseUrl.trim())
-      updateSettings({ model_configs: updatedConfigs, active_config_id: newConfig.id } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
+      const current = getCurrentSettings()
+      const fullSettings = {
+        ...current,
+        model: newConfigModel.trim(),
+        base_url: newConfigBaseUrl.trim(),
+        api_key: newConfigKey.trim(),
+        password: newConfigPassword,
+        model_configs: updatedConfigs,
+        active_config_id: newConfig.id,
+      }
+      await saveSettings(fullSettings as Settings & { api_key: string; password: string })
+      await refreshSettings()
       setNewConfigName('')
       setNewConfigBaseUrl('')
       setNewConfigModel('')
@@ -226,11 +244,17 @@ export function APISettings() {
     }
 
     try {
-      await saveApiKey(apiKeyInput.trim(), password, current.model, current.base_url)
-      updateSettings({
+      const fullSettings = {
+        ...current,
+        model: current.model,
+        base_url: current.base_url,
+        api_key: apiKeyInput.trim(),
+        password,
         model_configs: [newConfig],
         active_config_id: newConfig.id,
-      } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
+      }
+      await saveSettings(fullSettings as Settings & { api_key: string; password: string })
+      await refreshSettings()
       setApiKeyInput('')
       setPassword('')
       setPasswordConfirm('')

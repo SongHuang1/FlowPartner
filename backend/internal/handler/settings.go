@@ -318,6 +318,15 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 		}
 		settings.EncryptedAPIKey = encrypted
 
+		if settings.ActiveConfigID != "" {
+			for i := range settings.ModelConfigs {
+				if settings.ModelConfigs[i].ID == settings.ActiveConfigID {
+					settings.ModelConfigs[i].EncryptedAPIKey = encrypted
+					break
+				}
+			}
+		}
+
 		ks := keystore.Instance()
 		ks.SetAPIKeyConfigured(true)
 		ks.Unlock([]byte(apiKey))
