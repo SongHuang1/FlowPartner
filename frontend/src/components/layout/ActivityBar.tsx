@@ -4,10 +4,12 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 interface ActivityBarProps {
+  onChatClick: () => void
   onSettingsClick: () => void
+  chatActive?: boolean
 }
 
-export function ActivityBar({ onSettingsClick }: ActivityBarProps) {
+export function ActivityBar({ onChatClick, onSettingsClick, chatActive }: ActivityBarProps) {
   return (
     <div className="w-12 flex flex-col items-center py-2 border-r border-neutral-200 bg-neutral-100 gap-1 shrink-0">
       <Tooltip content="聊天">
@@ -16,8 +18,9 @@ export function ActivityBar({ onSettingsClick }: ActivityBarProps) {
           size="icon"
           className={cn(
             'w-9 h-9 border-neutral-200 bg-white shadow-sm',
-            'bg-blue-500 text-white border-blue-500 hover:bg-blue-600 hover:border-blue-600'
+            chatActive && 'bg-blue-500 text-white border-blue-500 hover:bg-blue-600 hover:border-blue-600'
           )}
+          onClick={onChatClick}
           aria-label="聊天"
         >
           <MessageSquare className="w-5 h-5" />

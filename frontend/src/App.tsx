@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { ActivityBar } from '@/components/layout/ActivityBar'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { StatusBar } from '@/components/layout/StatusBar'
 import { ChatArea } from '@/components/chat/ChatArea'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { CloseDialog } from '@/components/layout/CloseDialog'
@@ -9,6 +11,7 @@ import { useSettings } from '@/hooks/useSettings'
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const [sidebarVisible, setSidebarVisible] = useState(true)
   const { updateSettings } = useSettings()
 
   useEffect(() => {
@@ -31,9 +34,14 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
-        <ActivityBar onSettingsClick={() => setSettingsOpen(true)} />
+        <ActivityBar
+          onChatClick={() => setSidebarVisible(!sidebarVisible)}
+          onSettingsClick={() => setSettingsOpen(true)}
+        />
+        <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
         <ChatArea />
       </div>
+      <StatusBar />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {closeDialogOpen && (
         <CloseDialog

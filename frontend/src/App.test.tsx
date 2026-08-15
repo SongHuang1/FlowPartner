@@ -18,27 +18,32 @@ describe('App Integration', () => {
     expect(screen.getByText('界面框架')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '聊天' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
-    expect(screen.getByText('浏览器运行 · 仅 UI 预览')).toBeInTheDocument()
+    expect(screen.getByText('聊天记录')).toBeInTheDocument()
+    expect(screen.getByText('桌面版 · FlowPartner')).toBeInTheDocument()
   })
 
-  it('sidebar switches to settings panel when clicking settings icon', () => {
+  it('settings icon opens modal, not sidebar', () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
 
-    expect(screen.getByText('API 设置')).toBeInTheDocument()
-    expect(screen.queryByText('欢迎使用 FlowPartner')).not.toBeInTheDocument()
+    expect(screen.getByText('API 配置')).toBeInTheDocument()
+    expect(screen.getByText('聊天记录')).toBeInTheDocument()
   })
 
-  it('sidebar switches back to conversation panel when clicking conversation icon', () => {
+  it('chat icon toggles sidebar visibility', () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    expect(screen.getByText('API 设置')).toBeInTheDocument()
+    let sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar).toHaveClass('w-64')
 
     fireEvent.click(screen.getByRole('button', { name: '聊天' }))
-    expect(screen.getByText('欢迎使用 FlowPartner')).toBeInTheDocument()
+    sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar).toHaveClass('w-0')
+
+    fireEvent.click(screen.getByRole('button', { name: '聊天' }))
+    sidebar = document.querySelector('[data-testid="sidebar-panel"]')
+    expect(sidebar).toHaveClass('w-64')
   })
 
   it('sidebar collapses when clicking close button', () => {
