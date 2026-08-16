@@ -28,10 +28,9 @@ docs/
 MANIFEST
 
 # PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
+#   agent/flowpartner-agent.spec is versioned — it is the single source of
+#   truth for the agent build definition.
 *.manifest
-*.spec
 
 # Installer logs
 pip-log.txt

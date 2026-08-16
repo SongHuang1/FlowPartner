@@ -19,6 +19,15 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # NOTE: PyInstaller is not a cross-compiler — the agent binary takes the
+      # architecture of the runner it is built on. Therefore each matrix row
+      # must run on a runner whose native arch matches the target arch:
+      #   - windows x64  -> windows-latest        (x64)
+      #   - windows arm64 -> windows-11-arm       (arm64)
+      #   - macos x64    -> macos-15-intel        (Intel)
+      #   - macos arm64  -> macos-latest          (Apple Silicon)
+      #   - linux x64    -> ubuntu-latest         (x64)
+      #   - linux arm64  -> ubuntu-24.04-arm      (arm64)
       matrix:
         include:
           - platform: windows-latest
@@ -26,12 +35,12 @@ jobs:
             go_arch: amd64
             arch: x64
             ext: .exe
-          - platform: windows-latest
+          - platform: windows-11-arm
             go_os: windows
             go_arch: arm64
             arch: arm64
             ext: .exe
-          - platform: macos-latest
+          - platform: macos-15-intel
             go_os: darwin
             go_arch: amd64
             arch: x64
@@ -46,7 +55,7 @@ jobs:
             go_arch: amd64
             arch: x64
             ext: ''
-          - platform: ubuntu-latest
+          - platform: ubuntu-24.04-arm
             go_os: linux
             go_arch: arm64
             arch: arm64
@@ -75,6 +84,7 @@ jobs:
         working-directory: backend
         shell: bash
         run: |
+          mkdir -p ../frontend/bin
           OUTPUT="../frontend/bin/flowpartner-backend${{ matrix.ext }}"
           GOOS=${{ matrix.go_os }} GOARCH=${{ matrix.go_arch }} go build -ldflags="-s -w" -o "$OUTPUT" ./cmd/server/
           echo "Built: $OUTPUT"
