@@ -1,9 +1,10 @@
 import logging
-from typing import Callable, Any
+from collections.abc import Callable
+
 
 class ToolRegistry:
     """工具注册表：管理所有 Agent 可用的本地工具"""
-    
+
     def __init__(self):
         self._tools: dict[str, dict] = {}
 

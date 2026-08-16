@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+
 async def read_file(path: str) -> str:
     """读取本地文件内容"""
     logging.info(f"[Tool] Reading file: {path}")
