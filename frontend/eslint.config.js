@@ -16,7 +16,7 @@ export default tseslint.config(
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
     },
-    rules: {
+rules: {
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": [
         "warn",
@@ -27,5 +27,14 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
     },
-  }
+  },
+  {
+    files: ["src/hooks/useLock.tsx", "src/hooks/useSettings.tsx"],
+    rules: {
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true, allowExportNames: ["useLock", "useSettings"] },
+      ],
+    },
+  },
 )

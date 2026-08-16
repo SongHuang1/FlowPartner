@@ -1,14 +1,16 @@
-import { useState, useRef, useLayoutEffect } from 'react'
+import { useState, useRef, useLayoutEffect, useEffect } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Message } from '@/types'
-import { useConversation } from '@/hooks/useConversation'
+import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { sendMessage as apiSendMessage } from '@/lib/api'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import { MessageBubble } from './MessageBubble'
 import { WelcomeView } from './WelcomeView'
+import { EventDetail } from './EventDetail'
+import { ConnectionStatus } from './ConnectionStatus'
 
 export function MessageList({ messages }: { messages: Message[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -34,9 +36,10 @@ interface ChatInputProps {
   onChange: (v: string) => void
   onSend: () => void
   disabled?: boolean
+  loading?: boolean
 }
 
-export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, disabled, loading }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleSend = () => {
@@ -71,51 +74,91 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
         onClick={handleSend}
         aria-label="发送"
       >
-        {disabled ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
       </Button>
     </div>
   )
 }
 
-function LoadingSpinner() {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-sm text-neutral-400">加载中...</div>
-    </div>
-  )
+interface ThinkingIndicatorProps {
+  iteration?: number
+  maxIterations?: number
 }
 
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-sm text-red-500 bg-red-50 px-4 py-2 rounded-md">
-        {message}
-      </div>
-    </div>
-  )
-}
+function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorProps) {
+  const label = iteration > 0
+    ? maxIterations
+      ? `思考中 (${iteration}/${maxIterations})`
+      : `思考中（第 ${iteration} 轮）`
+    : '思考中...'
 
-function ThinkingIndicator() {
   return (
     <div className="flex items-center gap-2 p-4 text-sm text-neutral-500">
       <Loader2 className="w-4 h-4 animate-spin" />
-      <span>思考中...</span>
+      <span>{label}</span>
     </div>
   )
 }
 
-export function ChatArea() {
-  const { messages, loading, error, sendMessage, addAssistantMessage } = useConversation()
+function EventList({ events }: { events: import('@/hooks/useWebSocket').ChatEvent[] }) {
+  return (
+    <div className="px-4 py-2 space-y-2 border-t border-neutral-100">
+      {events.map((evt, i) => (
+        <EventDetail key={i} eventType={evt.event_type} payload={evt.payload} />
+      ))}
+    </div>
+  )
+}
+
+interface ChatAreaProps {
+  conversation: UseConversationReturn
+}
+
+export function ChatArea({ conversation }: ChatAreaProps) {
+  const { messages, sessionId, sendMessage, addAssistantMessage } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
+  const {
+    connected,
+    reconnecting,
+    reconnectAttempts,
+    isReconnectExhausted,
+    processing,
+    sendMessage: wsSendMessage,
+    events,
+    manualReconnect,
+    onFinalAnswer,
+    onError,
+    onSecurityEvent,
+  } = useWebSocket()
+
   const [inputValue, setInputValue] = useState('')
-  const [thinking, setThinking] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  const [securityWarning, setSecurityWarning] = useState<string | null>(null)
 
-  if (loading) return <LoadingSpinner />
-  if (error) return <ErrorBanner message={error} />
+  const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
+  const unregisterErrorRef = useRef<(() => void) | null>(null)
+  const unregisterSecurityRef = useRef<(() => void) | null>(null)
 
-  const handleSend = async () => {
+  useEffect(() => {
+    unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
+      addAssistantMessage(answer)
+    })
+    unregisterErrorRef.current = onError((message) => {
+      setChatError(message)
+    })
+    unregisterSecurityRef.current = onSecurityEvent((message) => {
+      setSecurityWarning(message)
+    })
+
+    return () => {
+      unregisterFinalAnswerRef.current?.()
+      unregisterErrorRef.current?.()
+      unregisterSecurityRef.current?.()
+    }
+  }, [onFinalAnswer, onError, onSecurityEvent, addAssistantMessage])
+
+  const handleSend = () => {
     const trimmed = inputValue.trim()
     if (!trimmed) return
 
@@ -126,17 +169,28 @@ export function ChatArea() {
 
     setInputValue('')
     setChatError(null)
-    sendMessage(trimmed)
+    const history = sendMessage(trimmed)
 
-    setThinking(true)
+    const sent = wsSendMessage(trimmed, sessionId, history)
+    if (!sent) {
+      if (!connected) {
+        setChatError('网络连接中，请稍后重试')
+      } else {
+        setChatError('消息发送失败，请重试')
+      }
+    }
+  }
+
+  const latestStatusUpdate = [...events]
+    .reverse()
+    .find((e) => e.event_type === 'status_update')
+  let iteration = 0
+  if (latestStatusUpdate) {
     try {
-      const response = await apiSendMessage(trimmed)
-      addAssistantMessage(response.content)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '发送失败'
-      setChatError(msg)
-    } finally {
-      setThinking(false)
+      const parsed = JSON.parse(latestStatusUpdate.payload) as { iteration?: number }
+      iteration = parsed.iteration ?? 0
+    } catch {
+      /* malformed payload, use default iteration = 0 */
     }
   }
 
@@ -148,12 +202,27 @@ export function ChatArea() {
           inputValue={inputValue}
           onInputChange={setInputValue}
           onSend={handleSend}
-          disabled={thinking || lockStatus.locked}
+          disabled={lockStatus.locked}
+          loading={processing}
         />
       ) : (
         <>
+          <ConnectionStatus
+            connected={connected}
+            reconnecting={reconnecting}
+            reconnectAttempts={reconnectAttempts}
+            maxReconnectAttempts={5}
+            reconnectExhausted={isReconnectExhausted}
+            onManualReconnect={manualReconnect}
+          />
           <MessageList messages={messages} />
-          {thinking && <ThinkingIndicator />}
+          {processing && <ThinkingIndicator iteration={iteration} />}
+          {events.length > 0 && <EventList events={events} />}
+          {securityWarning && (
+            <div className="px-4 py-2 text-sm text-amber-800 bg-amber-50 border-t border-amber-200">
+              {securityWarning}
+            </div>
+          )}
           {chatError && (
             <div className="px-4 py-2 text-sm text-red-500 bg-red-50">
               {chatError}
@@ -163,7 +232,8 @@ export function ChatArea() {
             value={inputValue}
             onChange={setInputValue}
             onSend={handleSend}
-            disabled={thinking}
+            disabled={lockStatus.locked}
+            loading={processing}
           />
         </>
       )}

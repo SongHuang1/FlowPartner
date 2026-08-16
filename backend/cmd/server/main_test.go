@@ -1,604 +1,263 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"regexp"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/config"
-	"github.com/songhuang/flowpartner/backend/internal/response"
+	"github.com/gorilla/websocket"
+	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/handler"
+	"github.com/songhuang/flowpartner/backend/internal/keystore"
+	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// uuidRegex 匹配 UUID v4 格式
-var uuidRegex = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-func newTestFrontendDir(t *testing.T) string {
-	dir := t.TempDir()
-	indexPath := filepath.Join(dir, "index.html")
-	if err := os.WriteFile(indexPath, []byte("<html><body>Test</body></html>"), 0644); err != nil {
-		t.Fatalf("failed to create index.html: %v", err)
+// TestMain 将数据目录隔离到临时目录，避免与其他测试二进制并行写入 ~/.flowpartner 冲突
+func TestMain(m *testing.M) {
+	tmpDir, err := os.MkdirTemp("", "flowpartner-cmd-test-*")
+	if err != nil {
+		panic(err)
 	}
-	assetsDir := filepath.Join(dir, "assets")
-	if err := os.MkdirAll(assetsDir, 0755); err != nil {
-		t.Fatalf("failed to create assets dir: %v", err)
-	}
-	appJS := filepath.Join(assetsDir, "app.js")
-	if err := os.WriteFile(appJS, []byte("// app code"), 0644); err != nil {
-		t.Fatalf("failed to create app.js: %v", err)
-	}
-	return dir
+	storage.SetDataDirForTest(tmpDir)
+	code := m.Run()
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
-func TestSetupRoutes_DevMode_Returns404ForRoot(t *testing.T) {
-	cfg := &config.Config{
-		DevMode:  true,
-		HTTPPort: ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404 in DevMode for GET /, got %d", rec.Code)
+// TestReadySignal 验证就绪信号格式
+func TestReadySignal(t *testing.T) {
+	got := readySignal(8080, 50051)
+	want := "__FP_BACKEND_READY__ HTTP=:8080 gRPC=:50051"
+	if got != want {
+		t.Errorf("readySignal = %q, want %q", got, want)
 	}
 }
 
-func TestSetupRoutes_DevMode_HealthStillWorks(t *testing.T) {
-	cfg := &config.Config{
-		DevMode:  true,
-		HTTPPort: ":0",
-	}
-	handler := setupRoutes(cfg)
+// TestHTTPRoutes 验证 registerRoutes 注册的全部 REST 端点
+func TestHTTPRoutes(t *testing.T) {
+	keystore.Reset()
+	storage.ResetDataDirCache()
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	mgr := bridge.NewManager()
+	wsHandler := handler.NewWebSocketHandler(mgr)
+	mux := http.NewServeMux()
+	registerRoutes(mux, wsHandler)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for /health, got %d", rec.Code)
-	}
-}
-
-func TestSetupRoutes_Production_ServesIndexHTML(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for GET /, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if body != "<html><body>Test</body></html>" {
-		t.Errorf("unexpected body: %s", body)
-	}
-}
-
-func TestSetupRoutes_Production_SPAFallback(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/chat/123", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for SPA fallback, got %d", rec.Code)
-	}
-}
-
-func TestSetupRoutes_Production_APIEndpoint_Returns501(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501 for /api/unknown, got %d", rec.Code)
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		wantStatus int
+	}{
+		{"settings GET", http.MethodGet, "/api/settings", "", http.StatusOK},
+		{"settings PUT", http.MethodPut, "/api/settings",
+			`{"model":"gpt-4","context_window":4096,"language":"zh-CN"}`, http.StatusOK},
+		{"clear_api_key POST", http.MethodPost, "/api/settings/clear_api_key", "", http.StatusOK},
+		{"history GET", http.MethodGet, "/api/history", "", http.StatusOK},
+		{"history session GET", http.MethodGet, "/api/history/sess_test_1", "", http.StatusNotFound},
+		{"unlock POST", http.MethodPost, "/api/unlock", `{"password":"WrongPass123"}`, http.StatusBadRequest},
+		{"lock POST", http.MethodPost, "/api/lock", "", http.StatusOK},
+		{"lock_status GET", http.MethodGet, "/api/lock_status", "", http.StatusOK},
+		{"settings POST 405", http.MethodPost, "/api/settings", "", http.StatusMethodNotAllowed},
+		{"history POST 405", http.MethodPost, "/api/history", "", http.StatusMethodNotAllowed},
+		{"lock GET 405", http.MethodGet, "/api/lock", "", http.StatusMethodNotAllowed},
+		{"unknown 404", http.MethodGet, "/api/unknown", "", http.StatusNotFound},
 	}
 
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	if resp.Code != response.CodeNotImplemented {
-		t.Errorf("expected code %d, got %d", response.CodeNotImplemented, resp.Code)
-	}
-	if resp.RequestID == "" {
-		t.Error("request_id must not be empty")
-	}
-}
-
-func TestSetupRoutes_Production_AssetsServed(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for /assets/app.js, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if body != "// app code" {
-		t.Errorf("unexpected asset body: %s", body)
-	}
-}
-
-func TestSetupRoutes_Production_PathTraversalBlocked(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/../etc/passwd", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	if body == "root:x:0:0:root:/root:/bin/bash" {
-		t.Error("path traversal leaked system file content")
-	}
-}
-
-func TestSetupRoutes_Production_MissingAsset_Returns404(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound && rec.Code != http.StatusOK {
-		t.Logf("status code for missing asset: %d", rec.Code)
-	}
-}
-
-// TestSetupRoutes_DevMode_APIEndpoint_StillReturns501 验证 DevMode 下 /api/ 仍返回 501
-func TestSetupRoutes_DevMode_APIEndpoint_StillReturns404(t *testing.T) {
-	cfg := &config.Config{
-		DevMode:  true,
-		HTTPPort: ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/anything", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("expected 404 for unknown /api/ in DevMode, got %d", rec.Code)
-	}
-}
-
-// TestSetupRoutes_Production_HealthEndpoint_Works 验证生产模式下 /health 正常返回
-func TestSetupRoutes_Production_HealthEndpoint_Works(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for /health in production, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if body != `{"status":"ok"}` {
-		t.Errorf("unexpected health response body: %s", body)
-	}
-}
-
-// TestSetupRoutes_Production_APIEndpoint_AllFiveFieldsPresent 验证 501 响应包含全部 5 个标准字段
-func TestSetupRoutes_Production_APIEndpoint_AllFiveFieldsPresent(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	var raw map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	requiredFields := []string{"code", "message", "data", "timestamp", "request_id"}
-	for _, field := range requiredFields {
-		if _, ok := raw[field]; !ok {
-			t.Errorf("missing required field in response: %s", field)
-		}
-	}
-}
-
-// TestSetupRoutes_Production_APIEndpoint_RequestIDIsValidUUID 验证 request_id 是有效 UUID 格式
-func TestSetupRoutes_Production_APIEndpoint_RequestIDIsValidUUID(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	if !uuidRegex.MatchString(resp.RequestID) {
-		t.Errorf("request_id is not a valid UUID format: %q", resp.RequestID)
-	}
-}
-
-// TestSetupRoutes_Production_SPAFallback_AssetsPath_NoFallback 验证 /assets/ 路径不存在时返回 404 而非 fallback 到 index.html
-func TestSetupRoutes_Production_SPAFallback_AssetsPath_NoFallback(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/assets/nonexistent.css", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	// 不应该返回 index.html 的内容
-	if body == "<html><body>Test</body></html>" {
-		t.Error("asset path should not fallback to index.html")
-	}
-}
-
-// TestSetupRoutes_Production_MultipleAPIEndpoints_AllReturn501 验证多个 /api/ 子路径都返回 501
-func TestSetupRoutes_Production_NotImplementedEndpoint(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/not-implemented", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501 for /api/not-implemented, got %d", rec.Code)
-	}
-
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	if resp.Code != response.CodeNotImplemented {
-		t.Errorf("expected code %d, got %d", response.CodeNotImplemented, resp.Code)
-	}
-	if resp.Message != "API not implemented yet" {
-		t.Errorf("unexpected message: %s", resp.Message)
-	}
-}
-
-// TestServeSPA_DirectCall_APIEndpoint 验证 serveSPA 直接调用时 /api/ 路径返回 501
-func TestServeSPA_DirectCall_APIEndpoint(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-	rec := httptest.NewRecorder()
-	serveSPA(rec, req, frontendDir)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501 from serveSPA for /api/ path, got %d", rec.Code)
-	}
-}
-
-// TestServeSPA_DirectCall_KnownFile 验证 serveSPA 直接调用时已知文件正确返回
-func TestServeSPA_DirectCall_KnownFile(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
-	rec := httptest.NewRecorder()
-	serveSPA(rec, req, frontendDir)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 from serveSPA for known asset, got %d", rec.Code)
-	}
-	if rec.Body.String() != "// app code" {
-		t.Errorf("unexpected body: %s", rec.Body.String())
-	}
-}
-
-// TestServeSPA_DirectCall_IndexFallback 验证 serveSPA 对未知路径 fallback 到 index.html
-func TestServeSPA_DirectCall_IndexFallback(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/some/spa/route", nil)
-	rec := httptest.NewRecorder()
-	serveSPA(rec, req, frontendDir)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 from serveSPA fallback, got %d", rec.Code)
-	}
-	if rec.Body.String() != "<html><body>Test</body></html>" {
-		t.Errorf("expected index.html content, got: %s", rec.Body.String())
-	}
-}
-
-// TestNotImplementedHandler_ResponseStructure 验证 notImplementedHandler 的响应结构完整性
-func TestNotImplementedHandler_ResponseStructure(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-	rec := httptest.NewRecorder()
-	notImplementedHandler(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501, got %d", rec.Code)
-	}
-
-	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", ct)
-	}
-
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	if resp.Code != response.CodeNotImplemented {
-		t.Errorf("expected code %d, got %d", response.CodeNotImplemented, resp.Code)
-	}
-	if resp.Message != "API not implemented yet" {
-		t.Errorf("unexpected message: %s", resp.Message)
-	}
-	if resp.Data != nil {
-		t.Errorf("expected nil data, got %v", resp.Data)
-	}
-	if resp.Timestamp == 0 {
-		t.Error("timestamp should not be zero")
-	}
-	if !uuidRegex.MatchString(resp.RequestID) {
-		t.Errorf("request_id is not valid UUID: %q", resp.RequestID)
-	}
-}
-
-// TestSetupRoutes_Production_PathTraversal_VariousAttacks 验证多种路径穿越攻击被阻止
-func TestSetupRoutes_Production_PathTraversal_VariousAttacks(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	attackPaths := []string{
-		"/../etc/passwd",
-		"/..%2f..%2fetc%2fpasswd",
-		"/assets/../../../etc/passwd",
-	}
-
-	for _, path := range attackPaths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body *strings.Reader
+			if tt.body == "" {
+				body = strings.NewReader("")
+			} else {
+				body = strings.NewReader(tt.body)
+			}
+			req := httptest.NewRequest(tt.method, tt.path, body)
 			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			body := rec.Body.String()
-			// 不应该泄露系统文件
-			if body == "root:x:0:0:root:/root:/bin/bash" {
-				t.Errorf("path traversal leaked system file for %s", path)
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Errorf("%s %s = %d, want %d (body: %s)", tt.method, tt.path, rec.Code, tt.wantStatus, rec.Body.String())
 			}
 		})
 	}
 }
 
-// TestSetupRoutes_API_SettingsEndpoint 验证 /api/settings 路由正确分发
-func TestSetupRoutes_API_SettingsEndpoint(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
+// TestHTTPRoutes_UnlockFlow 验证完整解锁流程：设置 API Key → 解锁 → 状态变化
+func TestHTTPRoutes_UnlockFlow(t *testing.T) {
+	keystore.Reset()
+	storage.ResetDataDirCache()
 
-	// GET /api/settings 应该返回 200
-	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	mgr := bridge.NewManager()
+	wsHandler := handler.NewWebSocketHandler(mgr)
+	mux := http.NewServeMux()
+	registerRoutes(mux, wsHandler)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("GET /api/settings expected 200, got %d", rec.Code)
-	}
-
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("parse response: %v", err)
-	}
-	if resp.Code != 0 {
-		t.Errorf("expected code 0, got %d", resp.Code)
-	}
-}
-
-// TestSetupRoutes_API_ConversationEndpoint 验证 /api/conversation 路由正确分发
-func TestSetupRoutes_API_ConversationEndpoint(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	// GET /api/conversation 应该返回 200
-	req := httptest.NewRequest(http.MethodGet, "/api/conversation", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("GET /api/conversation expected 200, got %d", rec.Code)
+	// 设置 API Key
+	putReq := httptest.NewRequest(http.MethodPut, "/api/settings",
+		strings.NewReader(`{"model":"gpt-4","context_window":4096,"language":"zh-CN","api_key":"sk-test-key-abc","password":"TestPass123"}`))
+	putRec := httptest.NewRecorder()
+	mux.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT settings = %d, want 200: %s", putRec.Code, putRec.Body.String())
 	}
 
-	var resp response.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("parse response: %v", err)
+	// 锁定
+	lockReq := httptest.NewRequest(http.MethodPost, "/api/lock", nil)
+	lockRec := httptest.NewRecorder()
+	mux.ServeHTTP(lockRec, lockReq)
+	if lockRec.Code != http.StatusOK {
+		t.Fatalf("POST lock = %d, want 200", lockRec.Code)
 	}
-	if resp.Code != 0 {
-		t.Errorf("expected code 0, got %d", resp.Code)
+
+	// 正确密码解锁
+	unlockReq := httptest.NewRequest(http.MethodPost, "/api/unlock",
+		strings.NewReader(`{"password":"TestPass123"}`))
+	unlockRec := httptest.NewRecorder()
+	mux.ServeHTTP(unlockRec, unlockReq)
+	if unlockRec.Code != http.StatusOK {
+		t.Fatalf("POST unlock = %d, want 200: %s", unlockRec.Code, unlockRec.Body.String())
+	}
+
+	// 状态应为已解锁
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/lock_status", nil)
+	statusRec := httptest.NewRecorder()
+	mux.ServeHTTP(statusRec, statusReq)
+	var resp map[string]interface{}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parse lock_status: %v", err)
+	}
+	data, _ := resp["data"].(map[string]interface{})
+	if data["locked"] != false {
+		t.Errorf("expected unlocked after correct password, got %v", data["locked"])
 	}
 }
 
-// TestSetupRoutes_API_MethodNotAllowed 验证不支持的 HTTP 方法返回 501
-func TestSetupRoutes_API_MethodNotAllowed(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
+// TestShutdown_ClosesAllServers 验证 shutdown 按顺序关闭 gRPC → WebSocket → HTTP
+func TestShutdown_ClosesAllServers(t *testing.T) {
+	mgr := bridge.NewManager()
+	wsHandler := handler.NewWebSocketHandler(mgr)
+
+	mux := http.NewServeMux()
+	registerRoutes(mux, wsHandler)
+	httpServer := &http.Server{Handler: mux}
+
+	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen http: %v", err)
 	}
-	handler := setupRoutes(cfg)
+	defer httpLis.Close()
+	go httpServer.Serve(httpLis)
 
-	// DELETE /api/settings 应该返回 501
-	req := httptest.NewRequest(http.MethodDelete, "/api/settings", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("DELETE /api/settings expected 501, got %d", rec.Code)
+	grpcLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen grpc: %v", err)
 	}
+	defer grpcLis.Close()
+	grpcServer := grpc.NewServer()
+	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr))
+	go grpcServer.Serve(grpcLis)
 
-	// PUT /api/conversation 应该返回 501
-	req = httptest.NewRequest(http.MethodPut, "/api/conversation", nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("PUT /api/conversation expected 501, got %d", rec.Code)
+	// 建立 WebSocket 连接并注册 session（带重试等待 server 就绪）
+	wsURL := "ws://" + httpLis.Addr().String() + "/ws"
+	var conn *websocket.Conn
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		conn, _, err = websocket.DefaultDialer.Dial(wsURL, nil)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("dial ws: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-}
+	defer conn.Close()
+	mgr.RegisterSession("sess_shutdown_test", conn)
 
-// TestSetupRoutes_Production_HealthEndpoint_ExactBody 验证 /health 响应体精确匹配
-func TestSetupRoutes_Production_HealthEndpoint_ExactBody(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
-	cfg := &config.Config{
-		DevMode:     false,
-		FrontendDir: frontendDir,
-		HTTPPort:    ":0",
-	}
-	handler := setupRoutes(cfg)
+	start := time.Now()
+	shutdown(grpcServer, httpServer, mgr, wsHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	expected := `{"status":"ok"}`
-	if body != expected {
-		t.Errorf("expected body %q, got %q", expected, body)
-	}
-}
-
-// TestSetupRoutes_DevMode_AllRoutesWork 验证 DevMode 下所有路由正常工作
-func TestSetupRoutes_DevMode_AllRoutesWork(t *testing.T) {
-	cfg := &config.Config{
-		DevMode:  true,
-		HTTPPort: ":0",
-	}
-	handler := setupRoutes(cfg)
-
-	// /health 在 DevMode 下仍然可用
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("GET /health in DevMode expected 200, got %d", rec.Code)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("shutdown took %v, expected < 2s", elapsed)
 	}
 
-	// /api/settings 在 DevMode 下仍然可用
-	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("GET /api/settings in DevMode expected 200, got %d", rec.Code)
+	// HTTP server 应已关闭：请求应失败
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	_, err = client.Get("http://" + httpLis.Addr().String() + "/api/settings")
+	if err == nil {
+		t.Error("expected HTTP request to fail after shutdown")
 	}
 
-	// /api/conversation 在 DevMode 下仍然可用
-	req = httptest.NewRequest(http.MethodGet, "/api/conversation", nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("GET /api/conversation in DevMode expected 200, got %d", rec.Code)
+	// WebSocket 连接应已关闭
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Error("expected websocket to be closed after shutdown")
 	}
 }
 
-// TestServeSPA_DirectCall_HealthPath 验证 serveSPA 直接调用时 /health 正常返回
-func TestServeSPA_DirectCall_HealthPath(t *testing.T) {
-	frontendDir := newTestFrontendDir(t)
+// TestShutdown_ForceStopsStuckGRPC 验证 GracefulStop 超时 2 秒后强制停止（§5.5）
+func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
+	mgr := bridge.NewManager()
+	wsHandler := handler.NewWebSocketHandler(mgr)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	serveSPA(rec, req, frontendDir)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 from serveSPA for /health, got %d", rec.Code)
+	httpServer := &http.Server{Handler: http.NewServeMux()}
+	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen http: %v", err)
 	}
-	if rec.Body.String() != `{"status":"ok"}` {
-		t.Errorf("unexpected body: %s", rec.Body.String())
+	defer httpLis.Close()
+
+	grpcLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen grpc: %v", err)
+	}
+	defer grpcLis.Close()
+	grpcServer := grpc.NewServer()
+	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr))
+	go grpcServer.Serve(grpcLis)
+
+	// 建立 gRPC 双向流并保持打开，模拟 Python Agent 卡死
+	grpcConn, err := grpc.NewClient(grpcLis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc dial: %v", err)
+	}
+	defer grpcConn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client := proto.NewFlowPartnerServiceClient(grpcConn)
+	stream, err := client.SyncChannel(ctx)
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	defer stream.CloseSend()
+
+	start := time.Now()
+	shutdown(grpcServer, httpServer, mgr, wsHandler)
+
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("shutdown took %v, expected force stop within ~2s", elapsed)
+	}
+
+	// 强制停止后流应被终止：Recv 应在超时内返回错误
+	recvDone := make(chan struct{})
+	go func() {
+		defer close(recvDone)
+		stream.Recv()
+	}()
+	select {
+	case <-recvDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("gRPC stream still open after shutdown")
 	}
 }

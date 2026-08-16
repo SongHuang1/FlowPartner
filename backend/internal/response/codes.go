@@ -12,7 +12,7 @@ const (
 	// 2000-2999 服务端错误
 	CodeInternalError = 2001
 
-	// 4000-4999 安全拦截（后续步骤使用）
+	// 4000-4999 安全拦截（预留错误码，业务代码尚未使用）
 	CodeDangerousAction  = 4001
 	CodePermissionDenied = 4002
 	CodeUserRejected     = 4003

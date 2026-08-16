@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import type { LockStatus } from '@/types'
 import { getLockStatus, unlock as apiUnlock, lock as apiLock } from '@/lib/api'
 
@@ -11,7 +11,9 @@ interface UseLockReturn {
   refreshStatus: () => Promise<void>
 }
 
-export function useLock(): UseLockReturn {
+const LockContext = createContext<UseLockReturn | null>(null)
+
+export function LockProvider({ children }: { children: React.ReactNode }) {
   const [lockStatus, setLockStatus] = useState<LockStatus>({
     locked: true,
     failed_attempts: 0,
@@ -53,10 +55,16 @@ export function useLock(): UseLockReturn {
       await apiLock()
       await refreshStatus()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '上锁失败')
+      setError(e instanceof Error ? e.message : '锁定失败')
     } finally {
       setLoading(false)
     }
+  }, [refreshStatus])
+
+  useEffect(() => {
+    ;(async () => {
+      await refreshStatus()
+    })()
   }, [refreshStatus])
 
   useEffect(() => {
@@ -67,5 +75,17 @@ export function useLock(): UseLockReturn {
     return () => window.removeEventListener('system-lock', handleSystemLock)
   }, [lock])
 
-  return { lockStatus, loading, error, unlock, lock, refreshStatus }
+  return (
+    <LockContext.Provider value={{ lockStatus, loading, error, unlock, lock, refreshStatus }}>
+      {children}
+    </LockContext.Provider>
+  )
+}
+
+export function useLock(): UseLockReturn {
+  const ctx = useContext(LockContext)
+  if (!ctx) {
+    throw new Error('useLock must be used within LockProvider')
+  }
+  return ctx
 }

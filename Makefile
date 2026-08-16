@@ -2,9 +2,13 @@
 PKG := ./...
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
+AGENT_DIR := agent
+EXE := $(if $(OS),.exe,)
 
 .PHONY: build-backend test-backend vet-backend run-backend clean
 .PHONY: build-frontend dev-frontend lint-frontend typecheck-frontend test-frontend
+.PHONY: sync-agent lint-agent typecheck-agent test-agent build-agent
+.PHONY: gen-proto
 .PHONY: build-go-binary build-electron test-all
 .PHONY: cross-build-all
 
@@ -35,14 +39,41 @@ typecheck-frontend:
 test-frontend:
 	cd $(FRONTEND_DIR) && npm run test
 
+sync-agent:
+	cd $(AGENT_DIR) && uv sync --frozen
+
+lint-agent:
+	cd $(AGENT_DIR) && uv run ruff check .
+
+typecheck-agent:
+	cd $(AGENT_DIR) && uv run mypy .
+
+test-agent:
+	cd $(AGENT_DIR) && uv run pytest -v --cov=.
+
+build-agent:
+	cd $(AGENT_DIR) && uv sync --frozen
+	cd $(AGENT_DIR) && uv run pyinstaller --onefile --name flowpartner-agent \
+		--paths src \
+		--hidden-import=agent.agent_pb2 \
+		--hidden-import=agent.agent_pb2_grpc \
+		--hidden-import=grpc \
+		--hidden-import=google \
+		src/agent/main.py
+	cp $(AGENT_DIR)/dist/flowpartner-agent$(EXE) $(FRONTEND_DIR)/bin/flowpartner-agent$(EXE)
+
+gen-proto:
+	cd $(BACKEND_DIR) && protoc --go_out=. --go-grpc_out=. proto/agent.proto
+	cd $(AGENT_DIR) && uv run python -m grpc_tools.protoc -I ../backend/proto --python_out=src/agent --grpc_python_out=src/agent agent.proto
+
 clean:
 	$(GO) clean -cache -testcache
 	rm -rf $(FRONTEND_DIR)/bin/* $(FRONTEND_DIR)/dist-electron/*
 
 build-go-binary:
-	cd $(BACKEND_DIR) && GOOS=windows GOARCH=amd64 $(GO) build -ldflags="-s -w" -o ../$(FRONTEND_DIR)/bin/flowpartner-backend.exe ./cmd/server/
+	cd $(BACKEND_DIR) && $(GO) build -ldflags="-s -w" -o ../$(FRONTEND_DIR)/bin/flowpartner-backend$(EXE) ./cmd/server/
 
-build-electron: build-frontend build-go-binary
+build-electron: build-frontend build-go-binary build-agent
 	cd $(FRONTEND_DIR) && npm run build:electron
 
 cross-build-all: build-frontend
@@ -63,5 +94,5 @@ cross-build-all: build-frontend
 	@echo "=== All binaries built ==="
 	@ls -la $(FRONTEND_DIR)/bin/
 
-test-all: build-frontend test-frontend build-go-binary build-backend vet-backend test-backend
+test-all: build-frontend test-frontend build-go-binary vet-backend test-backend sync-agent lint-agent test-agent
 	@echo "All tests passed!"

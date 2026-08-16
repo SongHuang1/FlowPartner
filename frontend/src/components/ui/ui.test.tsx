@@ -1,9 +1,22 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Button } from './button'
 import { Input } from './input'
 import { Tooltip } from './tooltip'
 import { Separator } from './separator'
+
+beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { value: 1024, writable: true, configurable: true })
+  Object.defineProperty(window, 'innerHeight', { value: 768, writable: true, configurable: true })
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+    cb(0)
+    return 0
+  })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('Button', () => {
   it('renders with default variant and size', () => {
@@ -143,28 +156,34 @@ describe('Tooltip', () => {
     expect(tooltip).toHaveClass('top-full')
   })
 
-  it('positions tooltip at top when side is top', () => {
-    render(
-      <Tooltip content="Top tip" side="top">
-        <button>Hover</button>
-      </Tooltip>
-    )
+  it('auto-flips tooltip when overflowing bottom', () => {
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    spy.mockReturnValue({
+      top: 750, left: 100, bottom: 780, right: 180, width: 80, height: 30,
+      x: 100, y: 750, toJSON: () => {},
+    })
+
+    render(<Tooltip content="Overflow tip"><button>Hover</button></Tooltip>)
     const wrapper = screen.getByRole('button', { name: 'Hover' }).parentElement!
     fireEvent.mouseEnter(wrapper)
-    const tooltip = screen.getByText('Top tip')
+    const tooltip = screen.getByText('Overflow tip')
     expect(tooltip).toHaveClass('bottom-full')
+    spy.mockRestore()
   })
 
-  it('positions tooltip at left when side is left', () => {
-    render(
-      <Tooltip content="Left tip" side="left">
-        <button>Hover</button>
-      </Tooltip>
-    )
+  it('keeps tooltip position when not overflowing', () => {
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    spy.mockReturnValue({
+      top: 100, left: 100, bottom: 130, right: 180, width: 80, height: 30,
+      x: 100, y: 100, toJSON: () => {},
+    })
+
+    render(<Tooltip content="Normal tip"><button>Hover</button></Tooltip>)
     const wrapper = screen.getByRole('button', { name: 'Hover' }).parentElement!
     fireEvent.mouseEnter(wrapper)
-    const tooltip = screen.getByText('Left tip')
-    expect(tooltip).toHaveClass('right-full')
+    const tooltip = screen.getByText('Normal tip')
+    expect(tooltip).toHaveClass('top-full')
+    spy.mockRestore()
   })
 
   it('positions tooltip at right when side is right', () => {

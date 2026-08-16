@@ -111,6 +111,57 @@ func (ks *KeyStore) Lock() {
 	ks.unlocked = false
 }
 
+// SwitchKey 原子切换：在单次写锁内零化旧 Key → 存入新 Key → 保持解锁，避免 TOCTOU 竞态
+func (ks *KeyStore) SwitchKey(newKey []byte) {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	if ks.apiKey != nil {
+		for i := range ks.apiKey {
+			ks.apiKey[i] = 0
+		}
+	}
+	ks.apiKey = make([]byte, len(newKey))
+	copy(ks.apiKey, newKey)
+	ks.unlocked = true
+	ks.failedAttempts = 0
+}
+
+var (
+	ErrRateLimited = fmt.Errorf("too many failed attempts")
+	ErrWrongPassword = fmt.Errorf("wrong password")
+)
+
+// TryActivate 原子操作：检查锁定状态 → 解密 → 切换 Key
+// 在单次写锁内完成检查和切换，避免 TOCTOU 竞态
+func (ks *KeyStore) TryActivate(encryptedKey string, password []byte) ([]byte, error) {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	if time.Now().Before(ks.lockedUntil) {
+		return nil, ErrRateLimited
+	}
+
+	apiKey, err := flowcrypto.Decrypt(encryptedKey, password)
+	if err != nil {
+		ks.failedAttempts++
+		if ks.failedAttempts >= 5 {
+			ks.lockedUntil = time.Now().Add(30 * time.Second)
+		}
+		return nil, ErrWrongPassword
+	}
+
+	if ks.apiKey != nil {
+		for i := range ks.apiKey {
+			ks.apiKey[i] = 0
+		}
+	}
+	ks.apiKey = []byte(apiKey)
+	ks.unlocked = true
+	ks.failedAttempts = 0
+	return []byte(apiKey), nil
+}
+
 func (ks *KeyStore) GetKey() ([]byte, bool) {
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
@@ -137,4 +188,10 @@ func (ks *KeyStore) GetLockStatus() LockStatus {
 		FailedAttempts: ks.failedAttempts,
 		HasAPIKey:      ks.hasAPIKey,
 	}
+}
+
+func (ks *KeyStore) LockedUntil() time.Time {
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+	return ks.lockedUntil
 }

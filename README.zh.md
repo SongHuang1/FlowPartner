@@ -12,45 +12,57 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 - **防呆第一。** 任何可能让用户陷入不可恢复状态的设计，直接否决。
 - **安全优先于功能。** 危险操作默认拦截。用户可以覆盖，但必须主动、有意识地选择。
-- **永远可恢复。** 
+- **永远可恢复。**
+
+
+---
 
 ## 当前状态
 
-早期开发阶段。项目已有可运行的 Go backend 和 Electron + React 桌面前端，Python Agent 层尚待开发。
+早期开发阶段。项目三层架构已就位：
 
-**仓库中已有：**
+- `frontend/` — Electron + React + TypeScript + Tailwind
+- `backend/` — Go：gRPC、WebSocket、bridge 管理器、API Key 加密、LLM HTTP 流式客户端
+- `agent/` — Python：gRPC 客户端、ReAct 循环、工具注册表
 
-- `backend/` — Go HTTP 服务：配置加载、标准响应格式、健康检查、SPA 静态资源服务
-- `frontend/` — Electron + React + TypeScript + Tailwind：桌面应用，含系统托盘、原生菜单、开发/生产双模式
-- `proto/` — gRPC 协议定义（占位，尚未填充）
-
-**尚未实现：**
-
-- Python Agent 编排层
-- 业务逻辑与 API 端点
-- WebSocket 实时通信
-- 安全机制（危险操作黑名单、自动备份、操作日志）
+**通信流程：** Electron（端口发现）→ 前端（bootstrap）→ WebSocket → Go bridge → gRPC 双向流 → Python Agent → gRPC CallLLM（服务端流式）→ Go LLM 客户端 → OpenAI 兼容 API → SSE 分块 → 流式回传前端
 
 ## 项目结构
 
 ```
-flowpartner/
-├── proto/              # gRPC proto 定义
-├── frontend/           # Electron + React 前端（TypeScript + Vite + Tailwind）
-├── backend/            # Go 后端（HTTP 服务、安全层）
-├── agent/              # Python Agent 编排层（即将开发）
-├── .github/            # CI 工作流、Issue 模板、PR 模板
-├── Makefile            # 构建和测试目标
-├── LICENSE             # MIT 许可证
-├── SECURITY.md         # 安全政策
-└── README.md           # 本文件
+FlowPartner/
+├── .github/workflows/    # CI: ci.yml, release.yml
+├── agent/                # Python Agent 层
+│   ├── proto/            # proto 文件（与 backend/proto/ 同步）
+│   ├── src/agent/        # main.py, grpc_client.py, core/, tools/
+│   └── pyproject.toml
+├── backend/              # Go 后端
+│   ├── cmd/server/main.go
+│   ├── internal/
+│   │   ├── bridge/       # WebSocket ↔ gRPC 桥接
+│   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
+│   │   ├── crypto/       # API Key 加密/零化
+│   │   ├── keystore/     # API Key 内存管理
+│   │   ├── llm/          # LLM HTTP 流式客户端（SSE）
+│   │   ├── sanitize/     # 错误信息净化
+│   │   ├── server/       # 端口发现
+│   │   └── storage/      # 原子 JSON 写入
+│   └── proto/            # proto 定义 + 生成的 .pb.go
+├── frontend/             # Electron + React + TypeScript + Tailwind
+│   ├── electron/
+│   │   ├── main.cjs      # Electron 主进程（启动 Go + Python）
+│   │   └── preload.cjs   # IPC 桥接到渲染进程
+│   ├── src/              # React UI
+│   ├── electron-builder.yml
+│   └── package.json
+├── Makefile
+└── README.md
 ```
-
 
 ## 贡献
 
-参见 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解贡献指南。
+参见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 安全
 
-参见 [SECURITY.md](./SECURITY.md) 了解安全政策和漏洞报告方式。
+参见 [SECURITY.md](./SECURITY.md)。

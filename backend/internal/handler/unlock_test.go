@@ -14,9 +14,10 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
-func setupUnlockTest() (*UnlockHandler, *keystore.KeyStore) {
+func setupUnlockTest(t *testing.T) (*UnlockHandler, *keystore.KeyStore) {
 	keystore.Reset()
 	ks := keystore.Instance()
+	storage.SetDataDirForTest(t.TempDir())
 	storage.ResetDataDirCache()
 	return &UnlockHandler{}, ks
 }
@@ -35,7 +36,7 @@ func saveEncryptedKeyForTest(t *testing.T, apiKey, password string) {
 }
 
 func TestUnlock_Success(t *testing.T) {
-	_, ks := setupUnlockTest()
+	_, ks := setupUnlockTest(t)
 
 	password := "TestPass123"
 	apiKey := "sk-test-api-key"
@@ -62,7 +63,7 @@ func TestUnlock_Success(t *testing.T) {
 }
 
 func TestUnlock_WrongPassword(t *testing.T) {
-	_, ks := setupUnlockTest()
+	_, ks := setupUnlockTest(t)
 	ks.SetAPIKeyConfigured(true)
 	saveEncryptedKeyForTest(t, "sk-test", "CorrectPass123")
 
@@ -79,7 +80,8 @@ func TestUnlock_WrongPassword(t *testing.T) {
 }
 
 func TestUnlock_NoAPIKeyConfigured(t *testing.T) {
-	_, _ = setupUnlockTest()
+	_, _ = setupUnlockTest(t)
+
 
 	reqBody, _ := json.Marshal(UnlockRequest{Password: "AnyPass123"})
 	req := httptest.NewRequest(http.MethodPost, "/api/unlock", bytes.NewReader(reqBody))
@@ -94,7 +96,8 @@ func TestUnlock_NoAPIKeyConfigured(t *testing.T) {
 }
 
 func TestUnlock_InvalidJSON(t *testing.T) {
-	_, _ = setupUnlockTest()
+	_, _ = setupUnlockTest(t)
+
 
 	req := httptest.NewRequest(http.MethodPost, "/api/unlock", bytes.NewReader([]byte("invalid json")))
 	w := httptest.NewRecorder()
@@ -108,7 +111,7 @@ func TestUnlock_InvalidJSON(t *testing.T) {
 }
 
 func TestLock_Success(t *testing.T) {
-	_, ks := setupUnlockTest()
+	_, ks := setupUnlockTest(t)
 	ks.SetAPIKeyConfigured(true)
 	ks.Unlock([]byte("sk-test-key"))
 
@@ -128,7 +131,8 @@ func TestLock_Success(t *testing.T) {
 }
 
 func TestStatus_Initial(t *testing.T) {
-	_, _ = setupUnlockTest()
+	_, _ = setupUnlockTest(t)
+
 
 	req := httptest.NewRequest(http.MethodGet, "/api/lock_status", nil)
 	w := httptest.NewRecorder()
@@ -148,7 +152,7 @@ func TestStatus_Initial(t *testing.T) {
 }
 
 func TestStatus_AfterUnlock(t *testing.T) {
-	_, ks := setupUnlockTest()
+	_, ks := setupUnlockTest(t)
 	ks.SetAPIKeyConfigured(true)
 	ks.Unlock([]byte("sk-test-key"))
 

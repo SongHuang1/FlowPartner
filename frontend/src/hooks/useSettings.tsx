@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import type { Settings } from '@/types'
 import { getSettings, saveSettings } from '@/lib/api'
 
-// TODO: 这怎么能直接写入呢……这个得改成setting文件
 export function DefaultSettings(): Settings {
   return {
     model: 'gpt-4',
@@ -13,7 +12,7 @@ export function DefaultSettings(): Settings {
     base_url: 'https://api.openai.com/v1',
     encrypted_api_key: '',
     model_name: 'gpt-4',
-    system_prompt: '你是一个有帮助的 AI 助手。',
+    system_prompt: '你是一个乐于助人的 AI 助手。',
     temperature: 0.7,
     close_behavior: 'ask',
     close_remembered: false,
@@ -26,14 +25,18 @@ export function DefaultSettings(): Settings {
   }
 }
 
-interface UseSettingsReturn {
+interface SettingsContextValue {
   settings: Settings
   loading: boolean
   error: string | null
   updateSettings: (patch: Partial<Settings>) => void
+  getCurrentSettings: () => Settings
+  refreshSettings: () => Promise<void>
 }
 
-export function useSettings(): UseSettingsReturn {
+const SettingsContext = createContext<SettingsContextValue | null>(null)
+
+export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DefaultSettings())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,15 +59,48 @@ export function useSettings(): UseSettingsReturn {
     }
   }, [])
 
-  const updateSettings = (patch: Partial<Settings>) => {
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
     const newSettings = { ...settingsRef.current, ...patch }
     settingsRef.current = newSettings
     setSettings(newSettings)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      saveSettings(newSettings).catch((e: Error) => setError(`保存设置失败: ${e.message}`))
+      saveSettings(newSettings)
+        .then((saved) => {
+          settingsRef.current = saved
+          setSettings(saved)
+        })
+        .catch((e: Error) => setError(`保存设置失败：${e.message}`))
     }, 300)
-  }
+  }, [])
 
-  return { settings, loading, error, updateSettings }
+  const getCurrentSettings = useCallback(() => settingsRef.current, [])
+
+  const refreshSettings = useCallback(async () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+    try {
+      const s = await getSettings()
+      settingsRef.current = s
+      setSettings(s)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '刷新设置失败')
+    }
+  }, [])
+
+  return (
+    <SettingsContext.Provider value={{ settings, loading, error, updateSettings, getCurrentSettings, refreshSettings }}>
+      {children}
+    </SettingsContext.Provider>
+  )
+}
+
+export function useSettings(): SettingsContextValue {
+  const ctx = useContext(SettingsContext)
+  if (!ctx) {
+    throw new Error('useSettings must be used within SettingsProvider')
+  }
+  return ctx
 }

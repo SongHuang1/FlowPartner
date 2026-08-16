@@ -10,13 +10,20 @@ let pythonProcess = null
 let mainWindow = null
 let tray = null
 let backendPort = null
+let backendGrpcPort = null
 let isQuiting = false
+let closeBehaviorCache = null
 let agentAuthToken = null
 let cleanupDone = false
 
-// TODO: 本文件没有任何测试，需要添加
+// TODO: Electron 主进程尚无测试，需要补充
 function getBackendBinPath() {
   const exeName = process.platform === 'win32' ? 'flowpartner-backend.exe' : 'flowpartner-backend'
+  return path.join(process.resourcesPath, 'bin', exeName)
+}
+
+function getAgentBinPath() {
+  const exeName = process.platform === 'win32' ? 'flowpartner-agent.exe' : 'flowpartner-agent'
   return path.join(process.resourcesPath, 'bin', exeName)
 }
 
@@ -39,6 +46,7 @@ function filterSafeEnv(env) {
   const allowedKeys = [
     'PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'COMSPEC',
     'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM',
+    'TEMP', 'TMP', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES',
   ]
   const safeEnv = {}
   for (const key of allowedKeys) {
@@ -60,8 +68,9 @@ function startGoProcess(port) {
     })
   } else {
     const binPath = getBackendBinPath()
+    const staticDir = path.join(process.resourcesPath, 'dist')
     goProcess = spawn(binPath, [], {
-      env: { ...process.env, FP_HTTP_PORT: `:${port}` },
+      env: { ...process.env, FP_HTTP_PORT: `:${port}`, FP_FRONTEND_DIR: staticDir },
     })
   }
 
@@ -71,6 +80,10 @@ function startGoProcess(port) {
 
     if (output.includes('__FP_BACKEND_READY__') && backendPort === null) {
       backendPort = port
+      const grpcMatch = output.match(/gRPC=::?(\d+)/)
+      if (grpcMatch) {
+        backendGrpcPort = parseInt(grpcMatch[1], 10)
+      }
     }
   })
 
@@ -89,46 +102,64 @@ function startGoProcess(port) {
   })
 }
 
-function startPythonAgent() {
+function startPythonAgent(grpcPort) {
   const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
   agentAuthToken = generateAuthToken()
 
   const safeEnv = filterSafeEnv(process.env)
   safeEnv.AGENT_AUTH_TOKEN = agentAuthToken
+  if (grpcPort) {
+    safeEnv.AGENT_GRPC_PORT = String(grpcPort)
+  }
+
+  console.log(`[main.cjs] Starting Python Agent, gRPC port: ${grpcPort || 'not set (will use default 50051)'}`)
 
   if (isDev) {
-    pythonProcess = spawn('python', ['agent/main.py'], {
+    pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
       cwd: path.join(__dirname, '..', '..'),
       env: safeEnv,
     })
   } else {
-    pythonProcess = spawn('python', ['agent/main.py'], {
-      cwd: process.resourcesPath,
+    const agentPath = getAgentBinPath()
+    pythonProcess = spawn(agentPath, [], {
       env: safeEnv,
     })
   }
 
+  pythonProcess.stdout.on('data', (data) => {
+    process.stdout.write(`[Python Agent stdout] ${data}`)
+  })
+
   pythonProcess.stderr.on('data', (data) => {
-    process.stderr.write(`[Python Agent] ${data}`)
+    process.stderr.write(`[Python Agent stderr] ${data}`)
   })
 
   pythonProcess.on('error', (err) => {
     if (err.code === 'ENOENT') {
-      dialog.showErrorBox('Fail', 'Cannot find Python >= 3.9')
+      const isDev = !app.isPackaged || process.env.ELECTRON_DEV === 'true'
+      const msg = isDev
+        ? 'Cannot find Python >= 3.12. Please install Python and try again.'
+        : 'Cannot find Agent binary. Please reinstall FlowPartner.'
+      dialog.showErrorBox('Fail', msg)
     } else if (!isQuiting) {
       dialog.showErrorBox('Agent failed to startup', `Fail to startup Python Agent: ${err.message}`)
     }
   })
 
   pythonProcess.on('exit', (code) => {
+    pythonProcess = null
     if (code !== 0 && !isQuiting) {
       dialog.showErrorBox('Agent abnormal termination', `Python Agent exited, code: ${code}`)
+      setTimeout(() => {
+        if (!isQuiting && backendGrpcPort) {
+          startPythonAgent(backendGrpcPort)
+        }
+      }, 1000)
     }
-    pythonProcess = null
   })
 }
 
-// TODO: 这个代码是没有windows的安全退出的
+// TODO: Windows 下 SIGTERM 无法保证优雅退出，需平台相关的进程终止方案
 function stopPythonAgent() {
   if (!pythonProcess) return Promise.resolve()
   return new Promise((resolve) => {
@@ -174,7 +205,7 @@ function waitForReady(timeoutMs) {
   })
 }
 
-// TODO: 这个代码需要和python的退出一起解决
+// TODO: 退出流程需与 Python Agent 的关闭机制一起设计
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
@@ -234,7 +265,7 @@ function saveWindowState(state) {
     fs.renameSync(tmpPath, settingsPath)
   } catch (err) {
     console.error('Failed to save window state:', err)
-    // TODO: 这个部分可以专门写一个应用内报错的方案，现在只是在控制台写入错误
+    // TODO: 错误上报方案待设计，当前仅输出到控制台
   }
 }
 
@@ -355,17 +386,44 @@ function createWindow(port) {
     if (!isQuiting) {
       event.preventDefault()
 
-      const { behavior, remembered } = getCloseBehavior()
+      const { behavior, remembered } = closeBehaviorCache || getCloseBehavior()
 
-      if (remembered && behavior !== 'ask') {
-        if (behavior === 'quit') {
-          quitAppWithCleanup()
-        } else {
-          mainWindow.hide()
-        }
-      } else {
+      if (behavior === 'minimize' && remembered) {
         mainWindow.hide()
+        return
       }
+
+      if (behavior === 'quit' && remembered) {
+        quitAppWithCleanup()
+        return
+      }
+
+      mainWindow.webContents.send('request-close-action')
+    }
+  })
+
+  ipcMain.on('close-action-response', async (_, action) => {
+    if (action === 'minimize') {
+      mainWindow.hide()
+    } else if (action === 'quit') {
+      await quitAppWithCleanup()
+    }
+  })
+
+  ipcMain.on('update-close-behavior', (_, behavior, remembered) => {
+    closeBehaviorCache = { behavior, remembered }
+    try {
+      const configPath = path.join(getDataPath(), 'config')
+      const settingsPath = path.join(configPath, 'settings.json')
+      const data = fs.readFileSync(settingsPath, 'utf-8')
+      const settings = JSON.parse(data)
+      settings.close_behavior = behavior
+      settings.close_remembered = remembered
+      const tmpPath = settingsPath + '.tmp'
+      fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2))
+      fs.renameSync(tmpPath, settingsPath)
+    } catch (err) {
+      console.error('Failed to persist close behavior:', err)
     }
   })
 
@@ -417,8 +475,8 @@ function createApplicationMenu() {
     {
       label: '视图',
       submenu: [
-        { role: 'reload', label: '刷新' },
-        { role: 'forceReload', label: '强制刷新' },
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
         { role: 'toggleDevTools', label: '切换开发者工具' },
         { type: 'separator' },
         { role: 'resetZoom', label: '实际大小' },
@@ -443,7 +501,7 @@ function createApplicationMenu() {
               type: 'info',
               title: '关于 FlowPartner',
               message: 'FlowPartner',
-              detail: `版本 ${app.getVersion()}\n\nAI 助手桌面应用，为非技术用户提供安全可靠的智能助理服务。`,
+              detail: `版本 ${app.getVersion()}\n\n一款面向非技术用户的安全可靠的 AI 助手桌面应用。`,
             })
           },
         },
@@ -471,6 +529,10 @@ function setupPowerMonitor() {
 
 ipcMain.handle('get-app-version', () => {
   return app.getVersion()
+})
+
+ipcMain.handle('get-backend-port', () => {
+  return backendPort
 })
 
 app.whenReady().then(async () => {
@@ -507,10 +569,10 @@ app.whenReady().then(async () => {
   }
 
   startGoProcess(port)
-  startPythonAgent()
 
   try {
     const readyPort = await waitForReady(10000)
+    startPythonAgent(backendGrpcPort)
     createWindow(readyPort)
   } catch (err) {
     dialog.showErrorBox('Fail', 'Fail to start golang backend.')

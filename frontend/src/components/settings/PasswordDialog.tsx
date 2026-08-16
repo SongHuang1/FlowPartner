@@ -22,7 +22,7 @@ export function PasswordDialog({ open, onClose, onConfirm, title = '设置保护
   const handleConfirm = () => {
     setLocalError(null)
     if (!isPasswordStrong(password)) {
-      setLocalError('密码需≥8位，包含大小写字母和数字')
+      setLocalError('密码至少 8 位，且需包含大写字母、小写字母和数字')
       return
     }
     if (password !== passwordConfirm) {
@@ -76,7 +76,7 @@ export function PasswordDialog({ open, onClose, onConfirm, title = '设置保护
         />
 
         {!isPasswordStrong(password) && password.length > 0 && (
-          <p className="text-xs text-amber-600">密码需≥8位，包含大小写字母和数字</p>
+          <p className="text-xs text-amber-600">密码至少 8 位，且需包含大写字母、小写字母和数字</p>
         )}
         {password && password !== passwordConfirm && passwordConfirm.length > 0 && (
           <p className="text-xs text-red-500">两次输入的密码不一致</p>

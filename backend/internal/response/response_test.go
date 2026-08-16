@@ -10,13 +10,13 @@ import (
 
 // TestError_SetsCorrectFields 验证 Error() 正确设置所有字段
 func TestError_SetsCorrectFields(t *testing.T) {
-	resp := Error(CodeInvalidParam, "参数错误")
+	resp := Error(CodeInvalidParam, "Invalid parameter")
 
 	if resp.Code != CodeInvalidParam {
 		t.Errorf("expected code %d, got %d", CodeInvalidParam, resp.Code)
 	}
-	if resp.Message != "参数错误" {
-		t.Errorf("expected message '参数错误', got '%s'", resp.Message)
+	if resp.Message != "Invalid parameter" {
+		t.Errorf("expected message 'Invalid parameter', got '%s'", resp.Message)
 	}
 	if resp.Data != nil {
 		t.Errorf("expected nil data, got %v", resp.Data)
@@ -26,7 +26,7 @@ func TestError_SetsCorrectFields(t *testing.T) {
 // TestError_TimestampIsRecent 验证 Error() 的时间戳在合理范围内
 func TestError_TimestampIsRecent(t *testing.T) {
 	before := time.Now().Unix()
-	resp := Error(CodeInternalError, "内部错误")
+	resp := Error(CodeInternalError, "Internal error")
 	after := time.Now().Unix()
 
 	if resp.Timestamp < before || resp.Timestamp > after {
@@ -134,7 +134,7 @@ func TestResponse_JSONSerialization(t *testing.T) {
 
 // TestResponse_JSONDeserialization 验证可以从 JSON 反序列化
 func TestResponse_JSONDeserialization(t *testing.T) {
-	jsonStr := `{"code":1001,"message":"参数错误","data":null,"timestamp":1700000000,"request_id":"abc-123"}`
+	jsonStr := `{"code":1001,"message":"Invalid parameter","data":null,"timestamp":1700000000,"request_id":"abc-123"}`
 
 	var resp Response
 	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
@@ -144,8 +144,8 @@ func TestResponse_JSONDeserialization(t *testing.T) {
 	if resp.Code != 1001 {
 		t.Errorf("expected code 1001, got %d", resp.Code)
 	}
-	if resp.Message != "参数错误" {
-		t.Errorf("expected message '参数错误', got '%s'", resp.Message)
+	if resp.Message != "Invalid parameter" {
+		t.Errorf("expected message 'Invalid parameter', got '%s'", resp.Message)
 	}
 	if resp.Timestamp != 1700000000 {
 		t.Errorf("expected timestamp 1700000000, got %d", resp.Timestamp)

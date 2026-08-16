@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useLock } from '@/hooks/useLock'
+import { createElement, type ReactNode } from 'react'
+import { useLock, LockProvider } from '@/hooks/useLock'
 
 const mockGetLockStatus = vi.fn()
 const mockUnlock = vi.fn()
@@ -11,6 +12,10 @@ vi.mock('@/lib/api', () => ({
   unlock: (password: string) => mockUnlock(password),
   lock: () => mockLock(),
 }))
+
+function lockWrapper({ children }: { children: ReactNode }) {
+  return createElement(LockProvider, null, children)
+}
 
 describe('useLock', () => {
   beforeEach(() => {
@@ -25,7 +30,7 @@ describe('useLock', () => {
   })
 
   it('returns initial lock status', () => {
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
     expect(result.current.lockStatus.locked).toBe(true)
     expect(result.current.lockStatus.failed_attempts).toBe(0)
     expect(result.current.lockStatus.has_api_key).toBe(false)
@@ -34,7 +39,7 @@ describe('useLock', () => {
   })
 
   it('unlock calls API and refreshes status', async () => {
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.unlock('TestPass123')
@@ -51,7 +56,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.unlock('TestPass123')
@@ -63,9 +68,9 @@ describe('useLock', () => {
   })
 
   it('unlock sets error on failure', async () => {
-    mockUnlock.mockRejectedValue(new Error('密码错误'))
+    mockUnlock.mockRejectedValue(new Error('Wrong password'))
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       try {
@@ -75,18 +80,18 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('密码错误')
+    expect(result.current.error).toBe('Wrong password')
   })
 
   it('unlock refreshes status on failure', async () => {
-    mockUnlock.mockRejectedValue(new Error('密码错误'))
+    mockUnlock.mockRejectedValue(new Error('Wrong password'))
     mockGetLockStatus.mockResolvedValue({
       locked: true,
       failed_attempts: 1,
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       try {
@@ -101,7 +106,7 @@ describe('useLock', () => {
   })
 
   it('lock calls API and refreshes status', async () => {
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.lock()
@@ -118,7 +123,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.lock()
@@ -129,15 +134,15 @@ describe('useLock', () => {
   })
 
   it('lock sets error on failure', async () => {
-    mockLock.mockRejectedValue(new Error('上锁失败'))
+    mockLock.mockRejectedValue(new Error('Lock failed'))
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.lock()
     })
 
-    expect(result.current.error).toBe('上锁失败')
+    expect(result.current.error).toBe('Lock failed')
   })
 
   it('refreshStatus updates lock status', async () => {
@@ -147,7 +152,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.refreshStatus()
@@ -161,7 +166,7 @@ describe('useLock', () => {
   it('refreshStatus sets error on failure', async () => {
     mockGetLockStatus.mockRejectedValue(new Error('Network error'))
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.refreshStatus()
@@ -174,7 +179,7 @@ describe('useLock', () => {
   it('refreshStatus sets default error for non-Error exception', async () => {
     mockGetLockStatus.mockRejectedValue('string error')
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.refreshStatus()
@@ -188,7 +193,7 @@ describe('useLock', () => {
     let resolveUnlock: (value: unknown) => void
     mockUnlock.mockImplementation(() => new Promise((resolve) => { resolveUnlock = resolve }))
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     act(() => {
       result.current.unlock('TestPass123')
@@ -207,7 +212,7 @@ describe('useLock', () => {
     let resolveLock: (value: unknown) => void
     mockLock.mockImplementation(() => new Promise((resolve) => { resolveLock = resolve }))
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     act(() => {
       result.current.lock()
@@ -225,7 +230,7 @@ describe('useLock', () => {
   it('handles non-Error exception in unlock', async () => {
     mockUnlock.mockRejectedValue('string error')
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       try {
@@ -241,13 +246,13 @@ describe('useLock', () => {
   it('handles non-Error exception in lock', async () => {
     mockLock.mockRejectedValue('string error')
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.lock()
     })
 
-    expect(result.current.error).toBe('上锁失败')
+    expect(result.current.error).toBe('锁定失败')
   })
 
   it('handles rate limit status', async () => {
@@ -258,7 +263,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       await result.current.refreshStatus()
@@ -271,8 +276,8 @@ describe('useLock', () => {
 
   it('clears error on successful unlock after failure', async () => {
     // First fail
-    mockUnlock.mockRejectedValueOnce(new Error('密码错误'))
-    const { result } = renderHook(() => useLock())
+    mockUnlock.mockRejectedValueOnce(new Error('Wrong password'))
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     await act(async () => {
       try {
@@ -282,7 +287,7 @@ describe('useLock', () => {
       }
     })
 
-    expect(result.current.error).toBe('密码错误')
+    expect(result.current.error).toBe('Wrong password')
 
     // Then succeed
     mockUnlock.mockResolvedValue(undefined)
@@ -306,7 +311,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    renderHook(() => useLock())
+    renderHook(() => useLock(), { wrapper: lockWrapper })
 
     // Dispatch system-lock event (simulating powerMonitor suspend/lock-screen)
     await act(async () => {
@@ -325,7 +330,7 @@ describe('useLock', () => {
       has_api_key: true,
     })
 
-    const { result } = renderHook(() => useLock())
+    const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     // Dispatch system-lock event
     await act(async () => {
@@ -338,7 +343,7 @@ describe('useLock', () => {
   })
 
   it('does not call lock() for other custom events', async () => {
-    renderHook(() => useLock())
+    renderHook(() => useLock(), { wrapper: lockWrapper })
 
     // Dispatch an unrelated custom event
     await act(async () => {
@@ -350,7 +355,7 @@ describe('useLock', () => {
   })
 
   it('cleans up event listener on unmount', async () => {
-    const { unmount } = renderHook(() => useLock())
+    const { unmount } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
     // Unmount the hook
     unmount()
@@ -367,7 +372,7 @@ describe('useLock', () => {
   it('handles lock() failure gracefully on system-lock event', async () => {
     mockLock.mockRejectedValue(new Error('Lock failed'))
 
-    renderHook(() => useLock())
+    renderHook(() => useLock(), { wrapper: lockWrapper })
 
     // Dispatch system-lock event - should not throw
     await act(async () => {

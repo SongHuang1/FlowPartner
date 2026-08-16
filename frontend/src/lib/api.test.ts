@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getSettings, saveSettings, getConversation, saveConversation } from '@/lib/api'
-import type { Settings, Conversation, Message } from '@/types'
+import { getSettings, saveSettings, getHistoryList, getHistorySession, initApi } from '@/lib/api'
+import type { Settings } from '@/types'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -17,6 +17,7 @@ function mockResponse(data: unknown, ok = true, status = 200): Response {
 describe('api', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    initApi(12345)
   })
 
   describe('getSettings', () => {
@@ -30,7 +31,7 @@ describe('api', () => {
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
         model_name: 'gpt-4',
-        system_prompt: '你是一个有帮助的 AI 助手。',
+        system_prompt: 'You are a helpful AI assistant.',
         temperature: 0.7,
         close_behavior: 'ask',
         close_remembered: false,
@@ -47,7 +48,7 @@ describe('api', () => {
 
       const result = await getSettings()
       expect(result).toEqual(mockSettings)
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', expect.any(Object))
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', expect.any(Object))
     })
 
     it('throws error on non-ok response', async () => {
@@ -80,7 +81,7 @@ describe('api', () => {
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
         model_name: 'gpt-4',
-        system_prompt: '你是一个有帮助的 AI 助手。',
+        system_prompt: 'You are a helpful AI assistant.',
         temperature: 0.7,
         close_behavior: 'ask',
         close_remembered: false,
@@ -97,7 +98,7 @@ describe('api', () => {
 
       await saveSettings(settings)
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
@@ -114,71 +115,49 @@ describe('api', () => {
     })
   })
 
-  describe('getConversation', () => {
-    it('returns conversation data on success', async () => {
-      const mockConv: Conversation = {
-        messages: [
-          { id: 'msg_1', role: 'user', content: 'hello', timestamp: 1000 },
-        ],
-        updated_at: 1000,
-      }
+  describe('getHistoryList', () => {
+    it('returns history entries on success', async () => {
+      const mockEntries = [
+        { session_id: 'sess_1', title: '第一个问题', updated_at: 1000, message_count: 2 },
+      ]
       mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: mockConv, timestamp: 123, request_id: 'uuid' })
+        mockResponse({ code: 0, message: 'success', data: mockEntries, timestamp: 123, request_id: 'uuid' })
       )
 
-      const result = await getConversation()
-      expect(result).toEqual(mockConv)
-      expect(mockFetch).toHaveBeenCalledWith('/api/conversation', expect.any(Object))
-    })
-
-    it('returns empty conversation when no messages', async () => {
-      const mockConv: Conversation = { messages: [], updated_at: 0 }
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: mockConv, timestamp: 123, request_id: 'uuid' })
-      )
-
-      const result = await getConversation()
-      expect(result.messages).toEqual([])
+      const result = await getHistoryList()
+      expect(result).toEqual(mockEntries)
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/history', expect.any(Object))
     })
 
     it('throws error on network failure', async () => {
       mockFetch.mockRejectedValue(new Error('Network error'))
 
-      await expect(getConversation()).rejects.toThrow('Network error')
+      await expect(getHistoryList()).rejects.toThrow('Network error')
     })
   })
 
-  describe('saveConversation', () => {
-    it('sends POST request with messages and updated_at', async () => {
-      const messages: Message[] = [
-        { id: 'msg_1', role: 'user', content: 'test', timestamp: 1000 },
-      ]
+  describe('getHistorySession', () => {
+    it('returns session messages on success', async () => {
+      const mockSession = {
+        session_id: 'sess_1',
+        messages: [
+          { role: 'user', content: 'hello' },
+          { role: 'assistant', content: 'hi' },
+        ],
+      }
       mockFetch.mockResolvedValue(
-        mockResponse({ code: 0, message: 'success', data: null, timestamp: 123, request_id: 'uuid' })
+        mockResponse({ code: 0, message: 'success', data: mockSession, timestamp: 123, request_id: 'uuid' })
       )
 
-      await saveConversation(messages)
-
-      expect(mockFetch).toHaveBeenCalledWith('/api/conversation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: expect.stringContaining('"messages"'),
-        signal: expect.any(AbortSignal),
-      })
-
-      // Verify body contains messages and updated_at
-      const callArgs = mockFetch.mock.calls[0]
-      const body = JSON.parse((callArgs[1] as RequestInit).body as string)
-      expect(body.messages).toEqual(messages)
-      expect(body.updated_at).toBeTypeOf('number')
+      const result = await getHistorySession('sess_1')
+      expect(result).toEqual(mockSession)
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/history/sess_1', expect.any(Object))
     })
 
-    it('throws error on failure', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse({ code: 2001, message: 'Failed to save', data: null, timestamp: 123, request_id: 'uuid' }, false, 500)
-      )
+    it('throws error on network failure', async () => {
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
-      await expect(saveConversation([])).rejects.toThrow('Failed to save')
+      await expect(getHistorySession('sess_1')).rejects.toThrow('Network error')
     })
   })
 
@@ -191,7 +170,7 @@ describe('api', () => {
       const { saveApiKey } = await import('@/lib/api')
       await saveApiKey('sk-test-key-12345', 'StrongPass1')
 
-      expect(mockFetch).toHaveBeenCalledWith('/api/settings', {
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:12345/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: 'sk-test-key-12345', password: 'StrongPass1' }),

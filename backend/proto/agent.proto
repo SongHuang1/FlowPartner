@@ -1,0 +1,38 @@
+syntax = "proto3";
+option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
+package flowpartner;
+
+// --- 1. Python 发给 Go 的事件 (实时汇报) ---
+message AgentEvent {
+    string session_id = 1;
+    string event_type = 2; // 例如: "status_update", "tool_call", "llm_chunk", "final_answer", "error"
+    string payload = 3;    // JSON 格式的具体内容
+}
+
+// --- 2. Go 发给 Python 的指令 (下发任务) ---
+message ServerCommand {
+    string session_id = 1;
+    string command_type = 2; // 例如: "start_chat", "cancel_task"
+    string payload = 3;      // JSON 格式，包含用户提问、历史上下文等
+}
+
+// --- 3. Agent 请求 Go 代为调用大模型 (保持同步调用，方便 Go 控制 API Key 和计费) ---
+message LLMRequest {
+    string session_id = 1;
+    string json_payload = 2; // Python 组装好的完整请求体
+}
+
+message LLMResponse {
+    bool is_error = 1;         // 是否为错误终止信号。true 表示此次推送为错误终止
+    string json_response = 2;  // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
+    string message_id = 3;     // 消息唯一标识，用于前端追踪
+}
+
+// --- 4. 核心服务定义 ---
+service FlowPartnerService {
+    // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+    rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
+
+    // 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+    rpc CallLLM (LLMRequest) returns (stream LLMResponse);
+}

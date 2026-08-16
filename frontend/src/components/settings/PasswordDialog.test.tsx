@@ -53,7 +53,7 @@ describe('PasswordDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'Ab1' } })
     fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'Ab1' } })
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
@@ -62,7 +62,7 @@ describe('PasswordDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'abcdefgh1' } })
     fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'abcdefgh1' } })
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
@@ -71,7 +71,7 @@ describe('PasswordDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'ABCDEFGH1' } })
     fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'ABCDEFGH1' } })
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
@@ -80,7 +80,7 @@ describe('PasswordDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'Abcdefgh' } })
     fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: 'Abcdefgh' } })
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
@@ -96,7 +96,7 @@ describe('PasswordDialog', () => {
   it('shows password strength hint when password is weak', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: 'weak' } })
-    expect(screen.getByText('密码需≥8位，包含大小写字母和数字')).toBeInTheDocument()
+    expect(screen.getByText('密码至少 8 位，且需包含大写字母、小写字母和数字')).toBeInTheDocument()
   })
 
   it('shows mismatch hint when passwords differ', () => {
@@ -133,10 +133,10 @@ describe('PasswordDialog', () => {
         open={true}
         onClose={mockOnClose}
         onConfirm={mockOnConfirm}
-        title="修改保护密码"
+        title="Change protection password"
       />
     )
-    expect(screen.getByText('修改保护密码')).toBeInTheDocument()
+    expect(screen.getByText('Change protection password')).toBeInTheDocument()
   })
 
   it('renders description when provided', () => {
@@ -145,15 +145,15 @@ describe('PasswordDialog', () => {
         open={true}
         onClose={mockOnClose}
         onConfirm={mockOnConfirm}
-        description="请设置一个强密码来保护您的 API Key"
+        description="Please set a strong password to protect your API Key"
       />
     )
-    expect(screen.getByText('请设置一个强密码来保护您的 API Key')).toBeInTheDocument()
+    expect(screen.getByText('Please set a strong password to protect your API Key')).toBeInTheDocument()
   })
 
   it('does not render description when not provided', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
-    expect(screen.queryByText('请设置一个强密码来保护您的 API Key')).not.toBeInTheDocument()
+    expect(screen.queryByText('Please set a strong password to protect your API Key')).not.toBeInTheDocument()
   })
 
   it('clears inputs after successful confirm', () => {
@@ -171,7 +171,7 @@ describe('PasswordDialog', () => {
   it('handles empty password submit', () => {
     render(<PasswordDialog open={true} onClose={mockOnClose} onConfirm={mockOnConfirm} />)
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 
@@ -180,7 +180,7 @@ describe('PasswordDialog', () => {
     fireEvent.change(screen.getByPlaceholderText('输入密码'), { target: { value: '!@#$%^&*' } })
     fireEvent.change(screen.getByPlaceholderText('确认密码'), { target: { value: '!@#$%^&*' } })
     fireEvent.click(screen.getByText('确认'))
-    expect(screen.getAllByText('密码需≥8位，包含大小写字母和数字').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('密码至少 8 位，且需包含大写字母、小写字母和数字').length).toBeGreaterThan(0)
     expect(mockOnConfirm).not.toHaveBeenCalled()
   })
 

@@ -60,19 +60,19 @@ describe('UnlockDialog', () => {
   })
 
   it('shows error when unlock fails', async () => {
-    mockOnUnlock.mockRejectedValue(new Error('密码错误'))
+    mockOnUnlock.mockRejectedValue(new Error('Wrong password'))
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
     const passwordInput = screen.getByPlaceholderText('输入保护密码')
     fireEvent.change(passwordInput, { target: { value: 'WrongPass123' } })
     fireEvent.click(screen.getByText('解锁'))
 
     await waitFor(() => {
-      expect(screen.getByText('密码错误')).toBeInTheDocument()
+      expect(screen.getByText('Wrong password')).toBeInTheDocument()
     })
   })
 
   it('clears password after failed unlock', async () => {
-    mockOnUnlock.mockRejectedValue(new Error('密码错误'))
+    mockOnUnlock.mockRejectedValue(new Error('Wrong password'))
     render(<UnlockDialog open={true} onClose={mockOnClose} onUnlock={mockOnUnlock} failedAttempts={0} />)
     const passwordInput = screen.getByPlaceholderText('输入保护密码') as HTMLInputElement
     fireEvent.change(passwordInput, { target: { value: 'WrongPass123' } })

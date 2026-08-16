@@ -54,7 +54,7 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
 
         {isLocked && (
           <div className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-md">
-            账户已锁定，请 {lockedUntil ? new Date(lockedUntil).toLocaleTimeString() : '稍后'} 再试
+            账户已锁定，请稍后重试
           </div>
         )}
 
@@ -66,7 +66,7 @@ export function UnlockDialog({ open, onClose, onUnlock, failedAttempts, lockedUn
 
         {failedAttempts > 0 && !isLocked && (
           <p className="text-xs text-amber-600">
-            已失败 {failedAttempts} 次，连续 5 次错误将锁定 30 秒
+            已失败 {failedAttempts} 次，连续失败 5 次将锁定 30 秒
           </p>
         )}
 

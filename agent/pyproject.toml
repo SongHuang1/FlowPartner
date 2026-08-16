@@ -2,15 +2,49 @@
 name = "agent"
 version = "0.0.1"
 requires-python = ">=3.12"
+dependencies = [
+    "grpcio>=1.83.0",
+    "grpcio-tools>=1.83.0",
+]
 
 [dependency-groups]
 dev = [
     "mypy>=2.3.0",
     "pyinstaller>=6.21.0",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.0",
+    "types-grpcio>=1.60.0",
+    "types-protobuf>=5.28.0",
 ]
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501"]
+exclude = ["src/agent/agent_pb2_grpc.py", "src/agent/agent_pb2.py"]
+
+[tool.mypy]
+python_version = "3.12"
+# src 作为包基：tests 的 `from agent.* import` 与包内 `from agent.* import` 统一解析，避免双路径冲突
+mypy_path = "src"
+files = ["src", "tests"]
+# protoc 生成文件：动态构建的 protobuf 类无法静态分析，排除出检查范围（导入处视为 Any）
+exclude = ["src/agent/agent_pb2.py", "src/agent/agent_pb2_grpc.py"]
+
+# protoc 生成文件：跳过其内部检查（导入处视为 Any）
+[[tool.mypy.overrides]]
+module = ["agent.agent_pb2", "agent.agent_pb2_grpc"]
+follow_imports = "skip"

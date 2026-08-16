@@ -5,7 +5,7 @@ export function TitleBar() {
       <span className="ml-3 flex items-center">
         <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
       </span>
-      <span className="ml-2 text-xs text-neutral-500">UI Shell</span>
+      <span className="ml-2 text-xs text-neutral-500">界面框架</span>
     </div>
   )
 }
