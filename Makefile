@@ -46,7 +46,7 @@ lint-agent:
 	cd $(AGENT_DIR) && uv run ruff check .
 
 typecheck-agent:
-	cd $(AGENT_DIR) && uv run mypy . --explicit-package-bases
+	cd $(AGENT_DIR) && uv run mypy .
 
 test-agent:
 	cd $(AGENT_DIR) && uv run pytest -v --cov=.
@@ -54,8 +54,9 @@ test-agent:
 build-agent:
 	cd $(AGENT_DIR) && uv sync --frozen
 	cd $(AGENT_DIR) && uv run pyinstaller --onefile --name flowpartner-agent \
-		--hidden-import=agent_pb2 \
-		--hidden-import=agent_pb2_grpc \
+		--paths src \
+		--hidden-import=agent.agent_pb2 \
+		--hidden-import=agent.agent_pb2_grpc \
 		--hidden-import=grpc \
 		--hidden-import=google \
 		src/agent/main.py
