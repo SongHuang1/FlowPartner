@@ -1,8 +1,9 @@
-import logging
 import asyncio
+import logging
 import os
 from pathlib import Path
-from grpc_client import FlowPartnerClient
+
+from agent.grpc_client import FlowPartnerClient
 
 logging.basicConfig(
     level=logging.INFO,

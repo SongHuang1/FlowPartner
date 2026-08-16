@@ -4,6 +4,23 @@ import App from './App'
 import { LockProvider } from '@/hooks/useLock'
 import { SettingsProvider } from '@/hooks/useSettings'
 
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return {
+    ...actual,
+    getHistoryList: vi.fn().mockResolvedValue([
+      { session_id: 'sess_1', title: '测试对话', updated_at: 1000, message_count: 2 },
+    ]),
+    getHistorySession: vi.fn().mockResolvedValue({
+      session_id: 'sess_1',
+      messages: [
+        { role: 'user', content: '你好' },
+        { role: 'assistant', content: '你好！' },
+      ],
+    }),
+  }
+})
+
 function renderApp() {
   return render(
     <SettingsProvider>
@@ -96,13 +113,27 @@ describe('App Integration', () => {
     expect(sidebar?.className).toContain('w-64')
   })
 
-  it('suggested action buttons in sidebar are disabled', () => {
+  it('suggested action buttons are enabled and functional', async () => {
+    vi.useRealTimers()
     renderApp()
 
     const newChatButton = screen.getByRole('button', { name: '开始新对话' })
     const historyButton = screen.getByRole('button', { name: '查看历史' })
 
-    expect(newChatButton).toBeDisabled()
-    expect(historyButton).toBeDisabled()
+    expect(newChatButton).toBeEnabled()
+    expect(historyButton).toBeEnabled()
+
+    // 查看历史 → 显示历史列表
+    fireEvent.click(historyButton)
+    expect(await screen.findByText('历史对话')).toBeInTheDocument()
+    expect(screen.getByText('测试对话')).toBeInTheDocument()
+
+    // 点击历史会话 → 加载到聊天区
+    fireEvent.click(screen.getByText('测试对话'))
+    expect(await screen.findByText('你好！')).toBeInTheDocument()
+
+    // 开始新对话 → 清空聊天区，回到欢迎页
+    fireEvent.click(screen.getByRole('button', { name: '开始新对话' }))
+    expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
   })
 })

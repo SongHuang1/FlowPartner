@@ -1,23 +1,37 @@
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 
 import grpc
-import agent_pb2
-import agent_pb2_grpc
-from core.react_agent import ReactAgent
-from tools.file_ops import list_directory, read_file, write_file
-from tools.registry import ToolRegistry
+
+from agent import agent_pb2, agent_pb2_grpc
+from agent.core.react_agent import ReactAgent
+from agent.tools.file_ops import list_directory, read_file, write_file
+from agent.tools.registry import ToolRegistry
+
+# 会话 ID 白名单：仅允许字母数字、下划线、连字符（与 Go 侧 storage.ValidSessionID 一致），
+# 防止被用作文件名时发生路径遍历
+_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+
+
+def _safe_session_id(session_id: str) -> str:
+    if not session_id or not _SESSION_ID_RE.fullmatch(session_id):
+        raise ValueError(f"Invalid session id: {session_id!r}")
+    return session_id
+
 
 class FlowPartnerClient:
     def __init__(self, workspace_path: str, server_address: str = "localhost:50051"):
         self.workspace_path = Path(workspace_path)
         self.history_dir = self.workspace_path / "history"
         self.server_address = server_address
-        self.channel = None
-        self.stub = None
+        self.channel: grpc.aio.Channel | None = None
+        self.stub: agent_pb2_grpc.FlowPartnerServiceStub | None = None
         self.history_dir.mkdir(parents=True, exist_ok=True)
+        # 串行化历史文件写入，避免同一会话并发追加时交错
+        self._history_lock = asyncio.Lock()
 
         # 初始化并注册所有工具
         self.tool_registry = ToolRegistry()
@@ -69,6 +83,8 @@ class FlowPartnerClient:
 
     async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None) -> dict:
         """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""
+        if self.stub is None:
+            return {"success": False, "error_message": "gRPC 连接未建立，请稍后重试", "error_guess": "", "json_response": ""}
         try:
             request = agent_pb2.LLMRequest(
                 session_id=session_id,
@@ -192,8 +208,17 @@ class FlowPartnerClient:
     async def handle_chat(self, command, queue):
         """处理一次完整的对话"""
         session_id = command.session_id
+        try:
+            session_id = _safe_session_id(session_id)
+        except ValueError:
+            logging.error(f"Rejecting chat with invalid session id: {session_id!r}")
+            return
+
         payload = json.loads(command.payload) if command.payload else {}
         user_message = payload.get("user_message", "")
+        history = payload.get("history", [])
+        if not isinstance(history, list):
+            history = []
 
         logging.info(f"[Chat started] Session: {session_id} | User: {user_message}")
 
@@ -204,15 +229,20 @@ class FlowPartnerClient:
             send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
             tool_registry=self.tool_registry
         )
-        # 执行 ReAct 循环
-        final_answer = await agent.run(user_message, send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue))
+        # 执行 ReAct 循环，携带同一会话的历史上下文
+        final_answer = await agent.run(
+            user_message,
+            history=history,
+            send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
+        )
 
-        # 保存历史记录
+        # 保存历史记录（JSONL 追加：每行一个 [user, assistant] 数组）
         history_file = self.history_dir / f"{session_id}.json"
-        with open(history_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps([
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": final_answer}
-            ], ensure_ascii=False) + "\n")
+        async with self._history_lock:
+            with open(history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps([
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": final_answer}
+                ], ensure_ascii=False) + "\n")
 
         logging.info(f"Chat completed | Session: {session_id}")

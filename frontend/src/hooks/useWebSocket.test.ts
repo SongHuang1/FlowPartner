@@ -234,7 +234,7 @@ describe('useWebSocket', () => {
 
       let sent: boolean
       act(() => {
-        sent = result.current.sendMessage('hello')
+        sent = result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(sent!).toBe(false)
     })
@@ -246,7 +246,7 @@ describe('useWebSocket', () => {
 
       let sent: boolean
       act(() => {
-        sent = result.current.sendMessage('   ')
+        sent = result.current.sendMessage('   ', 'sess_test_1', [])
       })
       expect(sent!).toBe(false)
     })
@@ -257,12 +257,12 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('first')
+        result.current.sendMessage('first', 'sess_test_1', [])
       })
 
       let sent: boolean
       act(() => {
-        sent = result.current.sendMessage('second')
+        sent = result.current.sendMessage('second', 'sess_test_1', [])
       })
       expect(sent!).toBe(false)
     })
@@ -274,7 +274,9 @@ describe('useWebSocket', () => {
 
       let sent: boolean
       act(() => {
-        sent = result.current.sendMessage('hello')
+        sent = result.current.sendMessage('hello', 'sess_test_1', [
+          { id: 'msg_1', role: 'user', content: 'previous', timestamp: 1 },
+        ])
       })
 
       expect(sent!).toBe(true)
@@ -284,6 +286,8 @@ describe('useWebSocket', () => {
       const parsed = JSON.parse(mockWebSocketInstance!.sentMessages[0])
       expect(parsed.action).toBe('start_chat')
       expect(parsed.content).toBe('hello')
+      expect(parsed.session_id).toBe('sess_test_1')
+      expect(parsed.history).toEqual([{ role: 'user', content: 'previous' }])
     })
 
     it('clears events on new sendMessage', async () => {
@@ -295,7 +299,7 @@ describe('useWebSocket', () => {
       expect(result.current.events).toHaveLength(1)
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       expect(result.current.events).toHaveLength(0)
@@ -309,7 +313,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -324,7 +328,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -346,7 +350,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -371,7 +375,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -395,7 +399,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -509,12 +513,12 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('first')
+        result.current.sendMessage('first', 'sess_test_1', [])
       })
       sendEvent({ event_type: 'final_answer', payload: '{"text":"done"}' })
 
       act(() => {
-        result.current.sendMessage('second')
+        result.current.sendMessage('second', 'sess_test_1', [])
       })
       sendEvent({ event_type: 'tool_call', payload: '{"tool":"read_file"}' })
 
@@ -553,7 +557,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       sendEvent({ event_type: 'final_answer', payload: '{"no_text": true}' })
@@ -567,7 +571,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       sendEvent({ event_type: 'error', payload: '{}' })
@@ -581,7 +585,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       sendEvent({ event_type: 'final_answer', payload: 'not json' })
@@ -623,7 +627,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
       expect(result.current.processing).toBe(true)
 
@@ -681,7 +685,7 @@ describe('useWebSocket', () => {
 
       // First session: send message and receive events
       act(() => {
-        result.current.sendMessage('first')
+        result.current.sendMessage('first', 'sess_test_1', [])
       })
       sendEvent({ event_type: 'status_update', payload: '{"status":"thinking","iteration":1}' })
       sendEvent({ event_type: 'tool_call', payload: '{"tool":"read_file","args":{"path":"/test.txt"}}' })
@@ -693,7 +697,7 @@ describe('useWebSocket', () => {
 
       // Second session: sendMessage should clear events
       act(() => {
-        result.current.sendMessage('second')
+        result.current.sendMessage('second', 'sess_test_1', [])
       })
       expect(result.current.events.length).toBe(0)
 
@@ -710,7 +714,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       // Should not throw, processing should reset
@@ -726,7 +730,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       expect(() => {
@@ -741,7 +745,7 @@ describe('useWebSocket', () => {
       openConnection()
 
       act(() => {
-        result.current.sendMessage('hello')
+        result.current.sendMessage('hello', 'sess_test_1', [])
       })
 
       expect(() => {

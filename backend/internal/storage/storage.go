@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -110,4 +111,131 @@ func WriteJSON(filename string, src interface{}) error {
 		return fmt.Errorf("failed to rename temp file for %s: %w", filename, err)
 	}
 	return nil
+}
+
+// HistoryMessage 历史会话中的单条消息（由 Python Agent 写入，仅含 role/content）
+type HistoryMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// HistoryEntry 历史会话列表条目
+type HistoryEntry struct {
+	SessionID    string `json:"session_id"`
+	Title        string `json:"title"`
+	UpdatedAt    int64  `json:"updated_at"`
+	MessageCount int    `json:"message_count"`
+}
+
+// ValidSessionID 校验会话 ID 是否安全（仅允许字母数字、下划线、连字符，防止路径遍历）
+func ValidSessionID(sessionID string) bool {
+	if len(sessionID) == 0 || len(sessionID) > 128 {
+		return false
+	}
+	for _, r := range sessionID {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '_' && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// HistoryDir 返回历史记录目录路径，若不存在则创建
+func HistoryDir() (string, error) {
+	dir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	historyDir := filepath.Join(dir, "history")
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create history dir: %w", err)
+	}
+	return historyDir, nil
+}
+
+// ListHistory 列出全部历史会话，按更新时间倒序排列
+func ListHistory() ([]HistoryEntry, error) {
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read history dir: %w", err)
+	}
+	result := make([]HistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		sessionID := strings.TrimSuffix(entry.Name(), ".json")
+		if !ValidSessionID(sessionID) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		msgs, err := ReadHistory(sessionID)
+		if err != nil {
+			continue
+		}
+		title := ""
+		for _, m := range msgs {
+			if m.Role == "user" {
+				title = truncateRunes(m.Content, 50)
+				break
+			}
+		}
+		result = append(result, HistoryEntry{
+			SessionID:    sessionID,
+			Title:        title,
+			UpdatedAt:    info.ModTime().UnixMilli(),
+			MessageCount: len(msgs),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].UpdatedAt > result[j].UpdatedAt })
+	return result, nil
+}
+
+// ReadHistory 读取历史会话的全部消息（JSONL：每行一个 [user, assistant] 数组）
+func ReadHistory(sessionID string) ([]HistoryMessage, error) {
+	if !ValidSessionID(sessionID) {
+		return nil, ErrInvalidFilename
+	}
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(historyDir, sessionID+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to read history %s: %w", sessionID, err)
+	}
+	result := make([]HistoryMessage, 0)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var pair []HistoryMessage
+		if err := json.Unmarshal([]byte(line), &pair); err != nil {
+			// 跳过损坏行，保证部分损坏不影响整体读取
+			continue
+		}
+		result = append(result, pair...)
+	}
+	return result, nil
+}
+
+// truncateRunes 按字符数截断字符串（避免按字节截断破坏 UTF-8）
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }

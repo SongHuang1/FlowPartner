@@ -81,7 +81,7 @@ func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 	select {
 	case cmd := <-mgr.CmdChan:
 		// Verify the payload is valid JSON
-		var payload map[string]string
+		var payload map[string]interface{}
 		if err := json.Unmarshal([]byte(cmd.Payload), &payload); err != nil {
 			t.Errorf("Payload should be valid JSON, got %q", cmd.Payload)
 		}
@@ -90,6 +90,88 @@ func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for CmdChan message")
+	}
+}
+
+// TestWebSocketHandler_HandleWS_SessionAndHistory 验证前端传入的 session_id 与 history 被透传到 Python
+func TestWebSocketHandler_HandleWS_SessionAndHistory(t *testing.T) {
+	mgr := bridge.NewManager()
+	wsHandler := NewWebSocketHandler(mgr)
+
+	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	sendMsg := map[string]interface{}{
+		"action":     "start_chat",
+		"content":    "第二个问题",
+		"session_id": "sess_test_123",
+		"history": []map[string]string{
+			{"role": "user", "content": "第一个问题"},
+			{"role": "assistant", "content": "第一个回答"},
+		},
+	}
+	if err := conn.WriteJSON(sendMsg); err != nil {
+		t.Fatalf("failed to write message: %v", err)
+	}
+
+	select {
+	case cmd := <-mgr.CmdChan:
+		if cmd.SessionId != "sess_test_123" {
+			t.Errorf("SessionId should be reused from frontend, got %q", cmd.SessionId)
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(cmd.Payload), &payload); err != nil {
+			t.Fatalf("Payload should be valid JSON, got %q", cmd.Payload)
+		}
+		history, ok := payload["history"].([]interface{})
+		if !ok || len(history) != 2 {
+			t.Fatalf("history should contain 2 entries, got %#v", payload["history"])
+		}
+		first := history[0].(map[string]interface{})
+		if first["role"] != "user" || first["content"] != "第一个问题" {
+			t.Errorf("history[0] mismatch: %#v", first)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for CmdChan message")
+	}
+}
+
+// TestWebSocketHandler_HandleWS_InvalidSessionID 验证非法 session_id 被拒绝（不进入 CmdChan）
+func TestWebSocketHandler_HandleWS_InvalidSessionID(t *testing.T) {
+	mgr := bridge.NewManager()
+	wsHandler := NewWebSocketHandler(mgr)
+
+	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	sendMsg := map[string]interface{}{
+		"action":     "start_chat",
+		"content":    "hello",
+		"session_id": "../../etc/passwd",
+	}
+	if err := conn.WriteJSON(sendMsg); err != nil {
+		t.Fatalf("failed to write message: %v", err)
+	}
+
+	select {
+	case cmd := <-mgr.CmdChan:
+		t.Fatalf("invalid session_id should be rejected, got command: %+v", cmd)
+	case <-time.After(500 * time.Millisecond):
+		// 期望：消息被丢弃，CmdChan 无消息
 	}
 }
 

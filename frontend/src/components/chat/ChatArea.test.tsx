@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChatArea } from './ChatArea'
+import type { UseConversationReturn } from '@/hooks/useConversation'
 
 const mockSendMessage = vi.fn()
 const mockUpdateSettings = vi.fn()
@@ -15,15 +16,17 @@ const mockLockStatus = {
   has_api_key: true,
 }
 
-vi.mock('@/hooks/useConversation', () => ({
-  useConversation: () => ({
+function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseConversationReturn {
+  return {
     messages: [],
-    loading: false,
-    error: null,
+    sessionId: 'sess_test_1',
     sendMessage: mockSendMessage,
     addAssistantMessage: vi.fn(),
-  }),
-}))
+    startNewConversation: vi.fn(),
+    loadConversation: vi.fn(),
+    ...overrides,
+  }
+}
 
 vi.mock('@/hooks/useSettings', () => ({
   useSettings: () => ({
@@ -72,50 +75,51 @@ describe('ChatArea empty state', () => {
     vi.clearAllMocks()
     mockLockStatus.locked = false
     mockWsSendMessage.mockReturnValue(true)
+    mockSendMessage.mockReturnValue([])
   })
 
   it('renders welcome message when no messages', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByText('你好！我是 FlowPartner')).toBeInTheDocument()
   })
 
   it('renders input in empty state', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByPlaceholderText('输入消息...')).toBeInTheDocument()
   })
 
   it('renders bottom info bar with settings', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
     expect(screen.getByText(/智能体: default/)).toBeInTheDocument()
     expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
   it('renders working directory when set', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByText(/路径: \/test\/path/)).toBeInTheDocument()
   })
 
   it('send button is disabled when input is empty', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     const button = screen.getByRole('button', { name: '发送' })
     expect(button).toBeDisabled()
   })
 
   it('sends message when clicking send button with input', () => {
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     const input = screen.getByPlaceholderText('输入消息...')
     fireEvent.change(input, { target: { value: 'hello' } })
     const button = screen.getByRole('button', { name: '发送' })
     expect(button).toBeEnabled()
     fireEvent.click(button)
     expect(mockSendMessage).toHaveBeenCalledWith('hello')
-    expect(mockWsSendMessage).toHaveBeenCalledWith('hello')
+    expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [])
   })
 
   it('disables input and send button when API key is locked', () => {
     mockLockStatus.locked = true
-    render(<ChatArea />)
+    render(<ChatArea conversation={makeConversation()} />)
     const input = screen.getByPlaceholderText('输入消息...') as HTMLInputElement
     expect(input.disabled).toBe(true)
     const button = screen.getByRole('button', { name: '发送' })

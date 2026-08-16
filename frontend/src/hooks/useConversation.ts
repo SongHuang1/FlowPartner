@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Message, Conversation } from '@/types'
-import { getConversation, saveConversation } from '@/lib/api'
+import { useState, useRef, useCallback } from 'react'
+import type { Message } from '@/types'
 
 function generateMessageId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -9,54 +8,45 @@ function generateMessageId(): string {
   return `msg_${Date.now()}_${Array.from(array, b => chars[b % chars.length]).join('')}`
 }
 
-interface UseConversationReturn {
+function generateSessionId(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const array = new Uint8Array(8)
+  crypto.getRandomValues(array)
+  return `sess_${Date.now()}_${Array.from(array, b => chars[b % chars.length]).join('')}`
+}
+
+export interface UseConversationReturn {
   messages: Message[]
-  loading: boolean
-  error: string | null
-  sendMessage: (content: string) => void
+  sessionId: string
+  sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
+  startNewConversation: () => void
+  loadConversation: (sessionId: string, messages: Message[]) => void
 }
 
 export function useConversation(): UseConversationReturn {
+  // 启动时始终为空对话（欢迎页），历史会话通过“查看历史”手动加载
   const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string>(() => generateSessionId())
   const messagesRef = useRef<Message[]>([])
-  const loadedRef = useRef(false)
 
-  useEffect(() => {
-    getConversation()
-      .then((conv: Conversation) => {
-        messagesRef.current = conv.messages
-        setMessages(conv.messages)
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => {
-        loadedRef.current = true
-        setLoading(false)
-      })
-  }, [])
-
-  useEffect(() => {
-    if (!loadedRef.current) return
-    saveConversation(messages).catch((e: Error) => setError(`保存对话失败：${e.message}`))
-  }, [messages])
-
-  const sendMessage = (content: string) => {
+  const sendMessage = useCallback((content: string): Message[] => {
     const trimmed = content.trim()
-    if (!trimmed) return
+    if (!trimmed) return []
 
+    // 返回当前消息之前的历史，供 WebSocket 一并发送给后端
+    const history = [...messagesRef.current]
     const newMessage: Message = {
       id: generateMessageId(),
       role: 'user',
       content: trimmed,
       timestamp: Date.now(),
     }
-
     const updated = [...messagesRef.current, newMessage]
     messagesRef.current = updated
     setMessages(updated)
-  }
+    return history
+  }, [])
 
   const addAssistantMessage = useCallback((content: string) => {
     const newMessage: Message = {
@@ -65,11 +55,22 @@ export function useConversation(): UseConversationReturn {
       content,
       timestamp: Date.now(),
     }
-
     const updated = [...messagesRef.current, newMessage]
     messagesRef.current = updated
     setMessages(updated)
   }, [])
 
-  return { messages, loading, error, sendMessage, addAssistantMessage }
+  const startNewConversation = useCallback(() => {
+    messagesRef.current = []
+    setMessages([])
+    setSessionId(generateSessionId())
+  }, [])
+
+  const loadConversation = useCallback((sid: string, msgs: Message[]) => {
+    messagesRef.current = msgs
+    setMessages(msgs)
+    setSessionId(sid)
+  }, [])
+
+  return { messages, sessionId, sendMessage, addAssistantMessage, startNewConversation, loadConversation }
 }

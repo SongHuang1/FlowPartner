@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort, updateApiBase } from '@/lib/api'
+import type { Message } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -31,7 +32,7 @@ export interface UseWebSocketReturn {
   reconnectAttempts: number
   isReconnectExhausted: boolean
   processing: boolean
-  sendMessage: (content: string) => boolean
+  sendMessage: (content: string, sessionId: string, history: Message[]) => boolean
   events: ChatEvent[]
   manualReconnect: () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
@@ -282,7 +283,7 @@ export function useWebSocket(): UseWebSocketReturn {
   }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
 
   const sendMessage = useCallback(
-    (content: string): boolean => {
+    (content: string, sessionId: string, history: Message[]): boolean => {
       const trimmed = content.trim()
       if (!trimmed) return false
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
@@ -304,7 +305,12 @@ export function useWebSocket(): UseWebSocketReturn {
         })
       }, PROCESSING_TIMEOUT_MS)
 
-      const msg = JSON.stringify({ action: 'start_chat', content: trimmed })
+      const msg = JSON.stringify({
+        action: 'start_chat',
+        content: trimmed,
+        session_id: sessionId,
+        history: history.map((m) => ({ role: m.role, content: m.content })),
+      })
       wsRef.current.send(msg)
       return true
     },

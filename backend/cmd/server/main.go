@@ -104,13 +104,14 @@ func main() {
 
 func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 	settingsHandler := &handler.SettingsHandler{}
-	conversationHandler := &handler.ConversationHandler{}
+	historyHandler := &handler.HistoryHandler{}
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
-	mux.HandleFunc("/api/conversation", conversationHandler.Handle)
+	mux.HandleFunc("/api/history", historyHandler.Handle)
+	mux.HandleFunc("/api/history/", historyHandler.Handle)
 	mux.HandleFunc("/api/unlock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock_status", unlockHandler.Handle)

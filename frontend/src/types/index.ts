@@ -5,9 +5,21 @@ export interface Message {
   timestamp: number
 }
 
-export interface Conversation {
-  messages: Message[]
+export interface HistoryEntry {
+  session_id: string
+  title: string
   updated_at: number
+  message_count: number
+}
+
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface HistorySession {
+  session_id: string
+  messages: HistoryMessage[]
 }
 
 export interface Settings {

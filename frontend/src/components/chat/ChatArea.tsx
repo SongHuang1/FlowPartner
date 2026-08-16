@@ -3,7 +3,7 @@ import { Send, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Message } from '@/types'
-import { useConversation } from '@/hooks/useConversation'
+import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -80,24 +80,6 @@ export function ChatInput({ value, onChange, onSend, disabled, loading }: ChatIn
   )
 }
 
-function LoadingSpinner() {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-sm text-neutral-400">加载中...</div>
-    </div>
-  )
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-sm text-red-500 bg-red-50 px-4 py-2 rounded-md">
-        {message}
-      </div>
-    </div>
-  )
-}
-
 interface ThinkingIndicatorProps {
   iteration?: number
   maxIterations?: number
@@ -128,8 +110,12 @@ function EventList({ events }: { events: import('@/hooks/useWebSocket').ChatEven
   )
 }
 
-export function ChatArea() {
-  const { messages, loading, error, sendMessage, addAssistantMessage } = useConversation()
+interface ChatAreaProps {
+  conversation: UseConversationReturn
+}
+
+export function ChatArea({ conversation }: ChatAreaProps) {
+  const { messages, sessionId, sendMessage, addAssistantMessage } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
   const {
@@ -172,9 +158,6 @@ export function ChatArea() {
     }
   }, [onFinalAnswer, onError, onSecurityEvent, addAssistantMessage])
 
-  if (loading) return <LoadingSpinner />
-  if (error) return <ErrorBanner message={error} />
-
   const handleSend = () => {
     const trimmed = inputValue.trim()
     if (!trimmed) return
@@ -186,9 +169,9 @@ export function ChatArea() {
 
     setInputValue('')
     setChatError(null)
-    sendMessage(trimmed)
+    const history = sendMessage(trimmed)
 
-    const sent = wsSendMessage(trimmed)
+    const sent = wsSendMessage(trimmed, sessionId, history)
     if (!sent) {
       if (!connected) {
         setChatError('网络连接中，请稍后重试')

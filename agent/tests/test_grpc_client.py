@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import agent_pb2
 import grpc
 import pytest
 
+from agent import agent_pb2
 from agent.grpc_client import FlowPartnerClient
 
 
@@ -85,7 +85,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_streams_content_across_chunks(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(chunk(delta={"content": "Hel"})),
             llm_response(chunk(delta={"content": "lo "})),
             llm_response(chunk(delta={"content": "world"}, finish_reason="stop")),
@@ -103,7 +103,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_reconstructs_tool_calls_from_deltas(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(chunk(delta={"tool_calls": [
                 {"index": 0, "id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": ""}}
             ]})),
@@ -130,7 +130,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_multiple_tool_call_indices(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(chunk(delta={"tool_calls": [
                 {"index": 0, "id": "a", "function": {"name": "read_file", "arguments": "{}"}},
                 {"index": 1, "id": "b", "function": {"name": "write_file", "arguments": '{"path": "x"}'}},
@@ -144,7 +144,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_usage_included_when_present(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(chunk(delta={"content": "hi"}, finish_reason="stop",
                                usage={"prompt_tokens": 5, "completion_tokens": 3})),
         ])
@@ -156,7 +156,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_skips_chunks_without_choices(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(json.dumps({"choices": []})),
             llm_response(json.dumps({"data": "not a chunk"})),
             llm_response(chunk(delta={"content": "ok"}, finish_reason="stop")),
@@ -169,7 +169,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_error_response_returns_failure(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(json.dumps({"message": "模型不存在", "guess": "检查模型名称"}), is_error=True),
         ])
 
@@ -185,7 +185,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_aio_rpc_error_returns_failure(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = RaisingCallLLMStub(
+        client.stub = RaisingCallLLMStub(  # type: ignore[assignment]
             grpc.aio.AioRpcError(code=grpc.StatusCode.UNAVAILABLE, details="connection refused")
         )
 
@@ -198,7 +198,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_malformed_json_chunk_returns_failure(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([llm_response("{not valid json")])
+        client.stub = FakeCallLLMStub([llm_response("{not valid json")])  # type: ignore[assignment]
 
         result = await client.call_llm_via_go("sess-1", "{}")
 
@@ -208,7 +208,7 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_send_event_func_receives_llm_chunks(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.stub = FakeCallLLMStub([
+        client.stub = FakeCallLLMStub([  # type: ignore[assignment]
             llm_response(chunk(delta={"content": "Hel"})),
             llm_response(chunk(delta={"content": "lo"}, finish_reason="stop")),
         ])
@@ -228,7 +228,7 @@ class TestHandleChat:
     @pytest.mark.asyncio
     async def test_writes_history_file(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.call_llm_via_go = AsyncMock(return_value={
+        client.call_llm_via_go = AsyncMock(return_value={  # type: ignore[method-assign]
             "success": True,
             "content": "final answer",
             "finish_reason": "stop",
@@ -253,7 +253,7 @@ class TestHandleChat:
     @pytest.mark.asyncio
     async def test_handles_empty_payload(self, tmp_path: Path):
         client = make_client(tmp_path)
-        client.call_llm_via_go = AsyncMock(return_value={
+        client.call_llm_via_go = AsyncMock(return_value={  # type: ignore[method-assign]
             "success": True,
             "content": "",
             "finish_reason": "stop",
@@ -270,3 +270,64 @@ class TestHandleChat:
         history_file = tmp_path / "history" / "sess-2.json"
         entries = json.loads(history_file.read_text(encoding="utf-8").strip())
         assert entries[0] == {"role": "user", "content": ""}
+
+    @pytest.mark.asyncio
+    async def test_history_from_payload_passed_to_agent(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.call_llm_via_go = AsyncMock(return_value={  # type: ignore[method-assign]
+            "success": True,
+            "content": "final answer",
+            "finish_reason": "stop",
+        })
+        command = agent_pb2.ServerCommand(
+            session_id="sess-3",
+            command_type="start_chat",
+            payload=json.dumps({
+                "user_message": "第二个问题",
+                "history": [
+                    {"role": "user", "content": "第一个问题"},
+                    {"role": "assistant", "content": "第一个回答"},
+                ],
+            }),
+        )
+        queue: asyncio.Queue = asyncio.Queue()
+
+        await client.handle_chat(command, queue)
+
+        # 验证 history 被传给 ReactAgent.run（通过 call_llm 收到的 payload 检查）
+        call_args = client.call_llm_via_go.await_args
+        assert call_args is not None
+        llm_payload = json.loads(call_args.args[1])
+        messages = llm_payload["messages"]
+        assert {"role": "user", "content": "第一个问题"} in messages
+        assert {"role": "assistant", "content": "第一个回答"} in messages
+        assert {"role": "user", "content": "第二个问题"} in messages
+
+        # 历史文件应追加同一会话
+        history_file = tmp_path / "history" / "sess-3.json"
+        entries = json.loads(history_file.read_text(encoding="utf-8").strip())
+        assert entries == [
+            {"role": "user", "content": "第二个问题"},
+            {"role": "assistant", "content": "final answer"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_invalid_session_id_rejected(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.call_llm_via_go = AsyncMock(return_value={  # type: ignore[method-assign]
+            "success": True,
+            "content": "should not run",
+            "finish_reason": "stop",
+        })
+        command = agent_pb2.ServerCommand(
+            session_id="../../etc/passwd",
+            command_type="start_chat",
+            payload=json.dumps({"user_message": "hi"}),
+        )
+        queue: asyncio.Queue = asyncio.Queue()
+
+        await client.handle_chat(command, queue)
+
+        client.call_llm_via_go.assert_not_awaited()
+        # 不应在 history 目录中创建任何文件
+        assert list((tmp_path / "history").iterdir()) == []

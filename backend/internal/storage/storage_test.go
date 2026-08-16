@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestDataDir_CreatesDirectory(t *testing.T) {
@@ -294,5 +296,143 @@ func TestReadJSON_WrongDestinationType(t *testing.T) {
 	err := ReadJSON("test_type.json", &dest)
 	if err == nil {
 		t.Error("expected error when reading string into struct, got nil")
+	}
+}
+
+func TestValidSessionID(t *testing.T) {
+	valid := []string{"sess_123_abc", "sess-1", "SESS_ABC", "a1_b2-c3"}
+	for _, id := range valid {
+		if !ValidSessionID(id) {
+			t.Errorf("expected %q to be valid", id)
+		}
+	}
+	invalid := []string{"", "../etc/passwd", "a/b", `a\b`, "a.b", "sess id", "sess_中文", strings.Repeat("a", 129)}
+	for _, id := range invalid {
+		if ValidSessionID(id) {
+			t.Errorf("expected %q to be invalid", id)
+		}
+	}
+}
+
+func TestHistoryDir_CreatesDirectory(t *testing.T) {
+	ResetDataDirCache()
+	dir, err := HistoryDir()
+	if err != nil {
+		t.Fatalf("HistoryDir error: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat history dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("history dir is not a directory")
+	}
+}
+
+func TestReadHistory_NotFound(t *testing.T) {
+	ResetDataDirCache()
+	_, err := ReadHistory("sess_nonexistent_1")
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestReadHistory_InvalidSessionID(t *testing.T) {
+	ResetDataDirCache()
+	_, err := ReadHistory("../etc/passwd")
+	if err != ErrInvalidFilename {
+		t.Errorf("expected ErrInvalidFilename, got %v", err)
+	}
+}
+
+func TestReadHistory_ParsesJSONL(t *testing.T) {
+	ResetDataDirCache()
+	historyDir, err := HistoryDir()
+	if err != nil {
+		t.Fatalf("HistoryDir error: %v", err)
+	}
+	content := `[{"role":"user","content":"q1"},{"role":"assistant","content":"a1"}]
+[{"role":"user","content":"q2"},{"role":"assistant","content":"a2"}]
+`
+	if err := os.WriteFile(filepath.Join(historyDir, "sess_jsonl_1.json"), []byte(content), 0600); err != nil {
+		t.Fatalf("write history file: %v", err)
+	}
+
+	msgs, err := ReadHistory("sess_jsonl_1")
+	if err != nil {
+		t.Fatalf("ReadHistory error: %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != "user" || msgs[0].Content != "q1" {
+		t.Errorf("msgs[0] mismatch: %+v", msgs[0])
+	}
+	if msgs[3].Role != "assistant" || msgs[3].Content != "a2" {
+		t.Errorf("msgs[3] mismatch: %+v", msgs[3])
+	}
+}
+
+func TestReadHistory_SkipsMalformedLines(t *testing.T) {
+	ResetDataDirCache()
+	historyDir, err := HistoryDir()
+	if err != nil {
+		t.Fatalf("HistoryDir error: %v", err)
+	}
+	content := `[{"role":"user","content":"ok"},{"role":"assistant","content":"fine"}]
+{broken json
+[{"role":"user","content":"after"}]
+`
+	if err := os.WriteFile(filepath.Join(historyDir, "sess_broken_1.json"), []byte(content), 0600); err != nil {
+		t.Fatalf("write history file: %v", err)
+	}
+
+	msgs, err := ReadHistory("sess_broken_1")
+	if err != nil {
+		t.Fatalf("ReadHistory error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages (malformed line skipped), got %d", len(msgs))
+	}
+}
+
+func TestListHistory_SortsByUpdatedAt(t *testing.T) {
+	ResetDataDirCache()
+	historyDir, err := HistoryDir()
+	if err != nil {
+		t.Fatalf("HistoryDir error: %v", err)
+	}
+	// 写入两个会话文件，并调整 mtime 保证排序可验证
+	old := `[{"role":"user","content":"old question"},{"role":"assistant","content":"old answer"}]` + "\n"
+	new := `[{"role":"user","content":"new question"},{"role":"assistant","content":"new answer"}]` + "\n"
+	oldPath := filepath.Join(historyDir, "sess_old_1.json")
+	newPath := filepath.Join(historyDir, "sess_new_1.json")
+	if err := os.WriteFile(oldPath, []byte(old), 0600); err != nil {
+		t.Fatalf("write old history: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(new), 0600); err != nil {
+		t.Fatalf("write new history: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes old: %v", err)
+	}
+
+	entries, err := ListHistory()
+	if err != nil {
+		t.Fatalf("ListHistory error: %v", err)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("expected at least 2 entries, got %d", len(entries))
+	}
+	// 最新的应排在前面
+	if entries[0].SessionID != "sess_new_1" {
+		t.Errorf("expected newest session first, got %q", entries[0].SessionID)
+	}
+	if entries[0].MessageCount != 2 {
+		t.Errorf("expected message count 2, got %d", entries[0].MessageCount)
+	}
+	if entries[0].Title != "new question" {
+		t.Errorf("expected title 'new question', got %q", entries[0].Title)
 	}
 }

@@ -1,4 +1,4 @@
-import type { Settings, Conversation, Message, LockStatus } from '@/types'
+import type { Settings, LockStatus, HistoryEntry, HistorySession } from '@/types'
 
 const FETCH_TIMEOUT_MS = 5000
 
@@ -100,20 +100,18 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
   return data.data
 }
 
-export async function getConversation(): Promise<Conversation> {
+export async function getHistoryList(): Promise<HistoryEntry[]> {
   await ensureReady()
-  const res = await fetchWithTimeout(`${BASE}/conversation`)
-  const data: ApiResponse<Conversation> = await res.json()
+  const res = await fetchWithTimeout(`${BASE}/history`)
+  const data: ApiResponse<HistoryEntry[]> = await res.json()
   return data.data
 }
 
-export async function saveConversation(messages: Message[]): Promise<void> {
+export async function getHistorySession(sessionId: string): Promise<HistorySession> {
   await ensureReady()
-  await fetchWithTimeout(`${BASE}/conversation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, updated_at: Date.now() }),
-  })
+  const res = await fetchWithTimeout(`${BASE}/history/${encodeURIComponent(sessionId)}`)
+  const data: ApiResponse<HistorySession> = await res.json()
+  return data.data
 }
 
 export async function unlock(password: string): Promise<void> {
