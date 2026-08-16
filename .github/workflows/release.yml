@@ -23,22 +23,18 @@ jobs:
       # architecture of the runner it is built on. Therefore each matrix row
       # must run on a runner whose native arch matches the target arch:
       #   - windows x64  -> windows-latest        (x64)
-      #   - windows arm64 -> windows-11-arm       (arm64)
       #   - macos x64    -> macos-15-intel        (Intel)
       #   - macos arm64  -> macos-latest          (Apple Silicon)
       #   - linux x64    -> ubuntu-latest         (x64)
       #   - linux arm64  -> ubuntu-24.04-arm      (arm64)
+      # 无 Windows arm64：grpcio 未发布 win_arm64 wheel（源码编译脆弱），
+      # Windows 11 ARM 设备可安装 x64 版经系统模拟运行。
       matrix:
         include:
           - platform: windows-latest
             go_os: windows
             go_arch: amd64
             arch: x64
-            ext: .exe
-          - platform: windows-11-arm
-            go_os: windows
-            go_arch: arm64
-            arch: arm64
             ext: .exe
           - platform: macos-15-intel
             go_os: darwin
@@ -103,8 +99,9 @@ jobs:
         working-directory: agent
         shell: bash
         run: |
-          uv sync --frozen
-          uv run pyinstaller flowpartner-agent.spec
+          # 跳过 dev 组：grpcio-tools 无 win_arm64 预编译 wheel，仅 protoc 需要
+          uv sync --frozen --no-default-groups --group build
+          uv run --no-sync pyinstaller flowpartner-agent.spec
           cp dist/flowpartner-agent${{ matrix.ext }} ../frontend/bin/flowpartner-agent${{ matrix.ext }}
           echo "Built: ../frontend/bin/flowpartner-agent${{ matrix.ext }}"
           ls -la ../frontend/bin/flowpartner-agent${{ matrix.ext }}

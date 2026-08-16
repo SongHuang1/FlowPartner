@@ -206,8 +206,8 @@ go build -o flowpartner-backend ./cmd/server/
 
 # 2. Python Agent → 独立可执行文件
 cd agent
-uv sync --frozen
-uv run pyinstaller --onefile --name flowpartner-agent src/agent/main.py
+uv sync --frozen --no-default-groups --group build
+uv run --no-sync pyinstaller flowpartner-agent.spec
 
 # 3. 前端
 cd frontend

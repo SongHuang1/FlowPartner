@@ -52,8 +52,8 @@ test-agent:
 	cd $(AGENT_DIR) && uv run pytest -v --cov=.
 
 build-agent:
-	cd $(AGENT_DIR) && uv sync --frozen
-	cd $(AGENT_DIR) && uv run pyinstaller flowpartner-agent.spec
+	cd $(AGENT_DIR) && uv sync --frozen --no-default-groups --group build
+	cd $(AGENT_DIR) && uv run --no-sync pyinstaller flowpartner-agent.spec
 	cp $(AGENT_DIR)/dist/flowpartner-agent$(EXE) $(FRONTEND_DIR)/bin/flowpartner-agent$(EXE)
 
 gen-proto:

@@ -2,15 +2,18 @@
 name = "agent"
 version = "0.0.1"
 requires-python = ">=3.12"
+# 仅运行时依赖。grpcio-tools 无 win_arm64 预编译 wheel（源码编译在 MSVC ARM64 上失败），
+# 且只用于 protoc 代码生成，因此放在 dev 组；pyinstaller 仅构建期需要，放在 build 组。
 dependencies = [
     "grpcio>=1.83.0",
-    "grpcio-tools>=1.83.0",
+    # 生成的 agent_pb2.py 直接 import google.protobuf，必须显式声明（勿依赖 grpcio-tools 传递）
+    "protobuf>=7.35.1",
 ]
 
 [dependency-groups]
 dev = [
+    "grpcio-tools>=1.83.0",
     "mypy>=2.3.0",
-    "pyinstaller>=6.21.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
@@ -18,9 +21,15 @@ dev = [
     "types-grpcio>=1.60.0",
     "types-protobuf>=5.28.0",
 ]
+build = [
+    "pyinstaller>=6.21.0",
+]
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+# 本地 `uv sync` 默认安装 dev + build 组；CI 打包用
+# `uv sync --frozen --no-default-groups --group build` 跳过 dev 组
+default-groups = ["dev", "build"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

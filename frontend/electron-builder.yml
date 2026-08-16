@@ -15,43 +15,27 @@ extraResources:
     to: dist/
     filter:
       - '**/*'
+# 注意：目标不在此处指定 arch —— 架构由 release 流程的 CLI 参数（--x64 / --arm64）
+# 决定。若在配置里列出 arch（含 universal），会覆盖 CLI 参数导致每个矩阵任务
+# 构建所有架构，且 universal 合并会因 extraResources 中的单架构二进制失败。
 win:
   icon: build/icon.ico
   target:
-    - target: nsis
-      arch:
-        - x64
-        - arm64
-    - target: portable
-      arch:
-        - x64
-        - arm64
+    - nsis
+    - portable
   artifactName: FlowPartner-Windows-${version}-${arch}.${ext}
 mac:
   icon: build/icon.icns
   target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-        - universal
+    - dmg
   category: public.app-category.productivity
   artifactName: FlowPartner-macOS-${version}-${arch}.${ext}
 linux:
   icon: build/icon.png
   target:
-    - target: AppImage
-      arch:
-        - x64
-        - arm64
-    - target: deb
-      arch:
-        - x64
-        - arm64
-    - target: rpm
-      arch:
-        - x64
-        - arm64
+    - AppImage
+    - deb
+    - rpm
   category: Utility
   artifactName: FlowPartner-Linux-${version}-${arch}.${ext}
 nsis:
