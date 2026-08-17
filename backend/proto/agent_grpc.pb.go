@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.36.0--rc2
-// source: agent.proto
+// source: proto/agent.proto
 
 package proto
 
@@ -21,18 +21,21 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	FlowPartnerService_SyncChannel_FullMethodName = "/flowpartner.FlowPartnerService/SyncChannel"
 	FlowPartnerService_CallLLM_FullMethodName     = "/flowpartner.FlowPartnerService/CallLLM"
+	FlowPartnerService_ExecuteTool_FullMethodName = "/flowpartner.FlowPartnerService/ExecuteTool"
 )
 
 // FlowPartnerServiceClient is the client API for FlowPartnerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// --- 4. 核心服务定义 ---
+// --- 5. 核心服务定义 ---
 type FlowPartnerServiceClient interface {
 	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
 	SyncChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentEvent, ServerCommand], error)
 	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
 	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LLMResponse], error)
+	// 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+	ExecuteTool(ctx context.Context, in *ToolRequest, opts ...grpc.CallOption) (*ToolResponse, error)
 }
 
 type flowPartnerServiceClient struct {
@@ -75,16 +78,28 @@ func (c *flowPartnerServiceClient) CallLLM(ctx context.Context, in *LLMRequest, 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FlowPartnerService_CallLLMClient = grpc.ServerStreamingClient[LLMResponse]
 
+func (c *flowPartnerServiceClient) ExecuteTool(ctx context.Context, in *ToolRequest, opts ...grpc.CallOption) (*ToolResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ToolResponse)
+	err := c.cc.Invoke(ctx, FlowPartnerService_ExecuteTool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FlowPartnerServiceServer is the server API for FlowPartnerService service.
 // All implementations must embed UnimplementedFlowPartnerServiceServer
 // for forward compatibility.
 //
-// --- 4. 核心服务定义 ---
+// --- 5. 核心服务定义 ---
 type FlowPartnerServiceServer interface {
 	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
 	SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error
 	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
 	CallLLM(*LLMRequest, grpc.ServerStreamingServer[LLMResponse]) error
+	// 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+	ExecuteTool(context.Context, *ToolRequest) (*ToolResponse, error)
 	mustEmbedUnimplementedFlowPartnerServiceServer()
 }
 
@@ -100,6 +115,9 @@ func (UnimplementedFlowPartnerServiceServer) SyncChannel(grpc.BidiStreamingServe
 }
 func (UnimplementedFlowPartnerServiceServer) CallLLM(*LLMRequest, grpc.ServerStreamingServer[LLMResponse]) error {
 	return status.Error(codes.Unimplemented, "method CallLLM not implemented")
+}
+func (UnimplementedFlowPartnerServiceServer) ExecuteTool(context.Context, *ToolRequest) (*ToolResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExecuteTool not implemented")
 }
 func (UnimplementedFlowPartnerServiceServer) mustEmbedUnimplementedFlowPartnerServiceServer() {}
 func (UnimplementedFlowPartnerServiceServer) testEmbeddedByValue()                            {}
@@ -140,13 +158,36 @@ func _FlowPartnerService_CallLLM_Handler(srv interface{}, stream grpc.ServerStre
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type FlowPartnerService_CallLLMServer = grpc.ServerStreamingServer[LLMResponse]
 
+func _FlowPartnerService_ExecuteTool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ToolRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FlowPartnerServiceServer).ExecuteTool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FlowPartnerService_ExecuteTool_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FlowPartnerServiceServer).ExecuteTool(ctx, req.(*ToolRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FlowPartnerService_ServiceDesc is the grpc.ServiceDesc for FlowPartnerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "flowpartner.FlowPartnerService",
 	HandlerType: (*FlowPartnerServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ExecuteTool",
+			Handler:    _FlowPartnerService_ExecuteTool_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "SyncChannel",
@@ -160,5 +201,5 @@ var FlowPartnerService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "agent.proto",
+	Metadata: "proto/agent.proto",
 }

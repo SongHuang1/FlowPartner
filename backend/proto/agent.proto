@@ -28,11 +28,27 @@ message LLMResponse {
     string message_id = 3;     // 消息唯一标识，用于前端追踪
 }
 
-// --- 4. 核心服务定义 ---
+// --- 4. 工具执行代理 ---
+message ToolRequest {
+    string session_id = 1;
+    string tool_name = 2;    // 工具名称：read, write, bash, edit
+    string arguments = 3;    // JSON 格式的工具参数
+}
+
+message ToolResponse {
+    bool success = 1;        // 是否执行成功
+    string result = 2;       // 成功时的结果文本 / 失败时的中文错误文案
+    string error_code = 3;   // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
+}
+
+// --- 5. 核心服务定义 ---
 service FlowPartnerService {
     // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
     rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
 
     // 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
     rpc CallLLM (LLMRequest) returns (stream LLMResponse);
+
+    // 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+    rpc ExecuteTool (ToolRequest) returns (ToolResponse);
 }
