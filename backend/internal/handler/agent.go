@@ -1,15 +1,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -178,4 +181,45 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 		JsonResponse: string(data),
 		MessageId:   messageID,
 	})
+}
+
+// ExecuteTool 一元 RPC：Python 调用 Go 执行工具，返回执行结果。
+func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
+	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
+
+	settings := LoadSettings()
+	workingDir := settings.WorkingDirectory
+
+	// 工作目录为空时回退到用户主目录
+	if workingDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("[ExecuteTool] 无法获取用户主目录: %v", err)
+			return &proto.ToolResponse{
+				Success:   false,
+				Result:    "无法获取工作目录：未设置工作目录且无法解析用户主目录",
+				ErrorCode: tools.ErrToolError,
+			}, nil
+		}
+		workingDir = homeDir
+		log.Printf("[ExecuteTool] 未设置工作目录，已回退到用户主目录: %s", workingDir)
+	}
+
+	executor, err := tools.NewToolExecutor(workingDir)
+	if err != nil {
+		log.Printf("[ExecuteTool] 创建工具执行器失败: %v", err)
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    "无法创建工具执行器: " + err.Error(),
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
+	result := executor.Execute(ctx, req.SessionId, req.ToolName, req.Arguments)
+
+	return &proto.ToolResponse{
+		Success:   result.Success,
+		Result:    result.Result,
+		ErrorCode: result.ErrorCode,
+	}, nil
 }
