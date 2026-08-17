@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"E\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nevent_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"J\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0c\x63ommand_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"J\n\x0bLLMResponse\x12\x10\n\x08is_error\x18\x01 \x01(\x08\x12\x15\n\rjson_response\x18\x02 \x01(\t\x12\x12\n\nmessage_id\x18\x03 \x01(\t\"G\n\x0bToolRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x11\n\targuments\x18\x03 \x01(\t\"C\n\x0cToolResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0e\n\x06result\x18\x02 \x01(\t\x12\x12\n\nerror_code\x18\x03 \x01(\t2\xe0\x01\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12>\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x12\x42\n\x0b\x45xecuteTool\x12\x18.flowpartner.ToolRequest\x1a\x19.flowpartner.ToolResponseB6Z4github.com/songhuang/flowpartner/backend/proto;protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\"E\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nevent_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"J\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0c\x63ommand_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"J\n\x0bLLMResponse\x12\x10\n\x08is_error\x18\x01 \x01(\x08\x12\x15\n\rjson_response\x18\x02 \x01(\t\x12\x12\n\nmessage_id\x18\x03 \x01(\t\"\\\n\x0bToolRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x11\n\targuments\x18\x03 \x01(\t\x12\x13\n\x0b\x61pproval_id\x18\x04 \x01(\t\"q\n\x0cToolResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0e\n\x06result\x18\x02 \x01(\t\x12\x12\n\nerror_code\x18\x03 \x01(\t\x12\x18\n\x10needs_permission\x18\x04 \x01(\x08\x12\x12\n\nrequest_id\x18\x05 \x01(\t2\xe0\x01\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12>\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x12\x42\n\x0b\x45xecuteTool\x12\x18.flowpartner.ToolRequest\x1a\x19.flowpartner.ToolResponseB6Z4github.com/songhuang/flowpartner/backend/proto;protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -41,9 +41,9 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LLMRESPONSE']._serialized_start=231
   _globals['_LLMRESPONSE']._serialized_end=305
   _globals['_TOOLREQUEST']._serialized_start=307
-  _globals['_TOOLREQUEST']._serialized_end=378
-  _globals['_TOOLRESPONSE']._serialized_start=380
-  _globals['_TOOLRESPONSE']._serialized_end=447
-  _globals['_FLOWPARTNERSERVICE']._serialized_start=450
-  _globals['_FLOWPARTNERSERVICE']._serialized_end=674
+  _globals['_TOOLREQUEST']._serialized_end=399
+  _globals['_TOOLRESPONSE']._serialized_start=401
+  _globals['_TOOLRESPONSE']._serialized_end=514
+  _globals['_FLOWPARTNERSERVICE']._serialized_start=517
+  _globals['_FLOWPARTNERSERVICE']._serialized_end=741
 # @@protoc_insertion_point(module_scope)

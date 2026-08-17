@@ -260,8 +260,9 @@ func (x *LLMResponse) GetMessageId() string {
 type ToolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"` // 工具名称：read, write, bash, edit
-	Arguments     string                 `protobuf:"bytes,3,opt,name=arguments,proto3" json:"arguments,omitempty"`               // JSON 格式的工具参数
+	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`       // 工具名称：read, write, bash, edit
+	Arguments     string                 `protobuf:"bytes,3,opt,name=arguments,proto3" json:"arguments,omitempty"`                     // JSON 格式的工具参数
+	ApprovalId    string                 `protobuf:"bytes,4,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"` // 越权审批通过后携带的审批 ID（一次性）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -317,13 +318,22 @@ func (x *ToolRequest) GetArguments() string {
 	return ""
 }
 
+func (x *ToolRequest) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
 type ToolResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`                     // 是否执行成功
-	Result        string                 `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`                        // 成功时的结果文本 / 失败时的中文错误文案
-	ErrorCode     string                 `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"` // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Success         bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`                                        // 是否执行成功
+	Result          string                 `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`                                           // 成功时的结果文本 / 失败时的中文错误文案
+	ErrorCode       string                 `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`                    // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
+	NeedsPermission bool                   `protobuf:"varint,4,opt,name=needs_permission,json=needsPermission,proto3" json:"needs_permission,omitempty"` // true = 路径越权，需用户审批
+	RequestId       string                 `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`                    // 越权申请的唯一 ID（needs_permission=true 时返回）
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ToolResponse) Reset() {
@@ -377,6 +387,20 @@ func (x *ToolResponse) GetErrorCode() string {
 	return ""
 }
 
+func (x *ToolResponse) GetNeedsPermission() bool {
+	if x != nil {
+		return x.NeedsPermission
+	}
+	return false
+}
+
+func (x *ToolResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 var File_proto_agent_proto protoreflect.FileDescriptor
 
 const file_proto_agent_proto_rawDesc = "" +
@@ -403,17 +427,22 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\bis_error\x18\x01 \x01(\bR\aisError\x12#\n" +
 	"\rjson_response\x18\x02 \x01(\tR\fjsonResponse\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x03 \x01(\tR\tmessageId\"g\n" +
+	"message_id\x18\x03 \x01(\tR\tmessageId\"\x88\x01\n" +
 	"\vToolRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\ttool_name\x18\x02 \x01(\tR\btoolName\x12\x1c\n" +
-	"\targuments\x18\x03 \x01(\tR\targuments\"_\n" +
+	"\targuments\x18\x03 \x01(\tR\targuments\x12\x1f\n" +
+	"\vapproval_id\x18\x04 \x01(\tR\n" +
+	"approvalId\"\xa9\x01\n" +
 	"\fToolResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x16\n" +
 	"\x06result\x18\x02 \x01(\tR\x06result\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x03 \x01(\tR\terrorCode2\xe0\x01\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\x12)\n" +
+	"\x10needs_permission\x18\x04 \x01(\bR\x0fneedsPermission\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x05 \x01(\tR\trequestId2\xe0\x01\n" +
 	"\x12FlowPartnerService\x12F\n" +
 	"\vSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x010\x01\x12>\n" +
 	"\aCallLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x12B\n" +
