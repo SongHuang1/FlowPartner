@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -408,6 +410,150 @@ func TestAgentHandler_SyncChannel_ForwardsCommands(t *testing.T) {
 	close(stream.stop)
 	if err := <-done; err != nil {
 		t.Fatalf("SyncChannel should return nil after stream stop, got %v", err)
+	}
+}
+
+func TestExecuteTool_UnknownTool(t *testing.T) {
+	setupTestStorage(t)
+
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "nonexistent",
+		Arguments: "{}",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool should not return gRPC error, got %v", err)
+	}
+	if resp.Success {
+		t.Fatal("expected failure for unknown tool")
+	}
+	if resp.ErrorCode != "TOOL_NOT_FOUND" {
+		t.Errorf("expected error code TOOL_NOT_FOUND, got %s", resp.ErrorCode)
+	}
+	if !strings.Contains(resp.Result, "未找到工具") {
+		t.Errorf("expected Chinese error, got %q", resp.Result)
+	}
+}
+
+func TestExecuteTool_InvalidJSON(t *testing.T) {
+	setupTestStorage(t)
+
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "read",
+		Arguments: `{not json`,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool should not return gRPC error, got %v", err)
+	}
+	if resp.Success {
+		t.Fatal("expected failure for invalid JSON")
+	}
+	if resp.ErrorCode != "TOOL_ERROR" {
+		t.Errorf("expected error code TOOL_ERROR, got %s", resp.ErrorCode)
+	}
+}
+
+func TestExecuteTool_ReadFile(t *testing.T) {
+	setupTestStorage(t)
+	// 设置工作目录为 temp dir
+	tmpDir := newPersistentTestDir(t)
+	writeSettingsJSON(t, fmt.Sprintf(`{"working_directory":%q}`, tmpDir))
+
+	// 创建测试文件
+	testFile := filepath.Join(tmpDir, "test.txt")
+	os.WriteFile(testFile, []byte("hello world"), 0644)
+
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "read",
+		Arguments: fmt.Sprintf(`{"path":%q}`, testFile),
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool failed: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success, got: %s", resp.Result)
+	}
+	if resp.Result != "hello world" {
+		t.Errorf("got %q, want %q", resp.Result, "hello world")
+	}
+}
+
+func TestExecuteTool_PathOutsideWorkspace(t *testing.T) {
+	setupTestStorage(t)
+	tmpDir := newPersistentTestDir(t)
+	writeSettingsJSON(t, fmt.Sprintf(`{"working_directory":%q}`, tmpDir))
+
+	// 尝试读取工作目录外的文件
+	outsideFile := filepath.Join(filepath.Dir(tmpDir), "outside.txt")
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "read",
+		Arguments: fmt.Sprintf(`{"path":%q}`, outsideFile),
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool failed: %v", err)
+	}
+	if resp.Success {
+		t.Fatal("expected failure for outside workspace")
+	}
+	if resp.ErrorCode != "PATH_OUTSIDE_WORKSPACE" {
+		t.Errorf("expected error code PATH_OUTSIDE_WORKSPACE, got %s", resp.ErrorCode)
+	}
+}
+
+func TestExecuteTool_WorkingDirFallback(t *testing.T) {
+	setupTestStorage(t)
+	// 不设置 working_directory（空字符串）
+	writeSettingsJSON(t, `{}`)
+
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "bash",
+		Arguments: `{"command":"echo fallback_test"}`,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool failed: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success with fallback, got: %s", resp.Result)
+	}
+	if !strings.Contains(resp.Result, "fallback_test") {
+		t.Errorf("expected output to contain 'fallback_test', got %q", resp.Result)
+	}
+}
+
+func TestExecuteTool_EditMatchCountError(t *testing.T) {
+	setupTestStorage(t)
+	tmpDir := newPersistentTestDir(t)
+	writeSettingsJSON(t, fmt.Sprintf(`{"working_directory":%q}`, tmpDir))
+
+	testFile := filepath.Join(tmpDir, "edit_test.txt")
+	os.WriteFile(testFile, []byte("abc abc abc"), 0644)
+
+	h := NewAgentHandler(bridge.NewManager())
+	resp, err := h.ExecuteTool(context.Background(), &proto.ToolRequest{
+		SessionId: "s1",
+		ToolName:  "edit",
+		Arguments: fmt.Sprintf(`{"path":%q,"old_string":"abc","new_string":"xyz"}`, testFile),
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool failed: %v", err)
+	}
+	if resp.Success {
+		t.Fatal("expected failure for multiple matches")
+	}
+	if resp.ErrorCode != "EDIT_MATCH_COUNT_ERROR" {
+		t.Errorf("expected error code EDIT_MATCH_COUNT_ERROR, got %s", resp.ErrorCode)
+	}
+	if !strings.Contains(resp.Result, "匹配数 3 大于 1") {
+		t.Errorf("expected match count error, got %q", resp.Result)
 	}
 }
 
