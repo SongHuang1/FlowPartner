@@ -1,7 +1,7 @@
 import asyncio
-from pathlib import Path
+from unittest.mock import AsyncMock
 
-from agent.tools.file_ops import list_directory, read_file, write_file
+from agent.tools.file_ops import make_bash_handler, make_edit_handler, make_read_handler, make_write_handler
 from agent.tools.registry import ToolRegistry
 
 
@@ -63,100 +63,125 @@ class TestToolRegistry:
         assert registry.get_openai_tools_definition() == []
 
 
-class TestReadFile:
-    def test_read_existing_file(self, tmp_path: Path):
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("hello world", encoding="utf-8")
+class TestReadBridge:
+    def test_read_success(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "file content here",
+            "error_code": "",
+        })
+        handler = make_read_handler(mock_client)
 
-        result = asyncio.run(read_file(str(test_file)))
-        assert result == "hello world"
+        result = asyncio.run(handler(path="test.txt"))
+        assert result == "file content here"
+        mock_client.execute_tool.assert_called_once_with("", "read", {"path": "test.txt"})
 
-    def test_read_nonexistent_file(self, tmp_path: Path):
-        result = asyncio.run(read_file(str(tmp_path / "missing.txt")))
-        assert "找不到" in result
+    def test_read_failure(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "文件不存在: test.txt",
+            "error_code": "TOOL_ERROR",
+        })
+        handler = make_read_handler(mock_client)
 
-    def test_read_directory_returns_error(self, tmp_path: Path):
-        result = asyncio.run(read_file(str(tmp_path)))
-        assert "不是文件" in result
-
-    def test_read_large_file_truncated(self, tmp_path: Path):
-        test_file = tmp_path / "large.txt"
-        test_file.write_text("x" * 15000, encoding="utf-8")
-
-        result = asyncio.run(read_file(str(test_file)))
-        assert "截断" in result
-        assert len(result) <= 10100
-
-    def test_read_unicode_content(self, tmp_path: Path):
-        test_file = tmp_path / "unicode.txt"
-        test_file.write_text("中文测试 日本語 🎉", encoding="utf-8")
-
-        result = asyncio.run(read_file(str(test_file)))
-        assert result == "中文测试 日本語 🎉"
+        result = asyncio.run(handler(path="test.txt"))
+        assert "文件不存在" in result
 
 
-class TestWriteFile:
-    def test_write_new_file(self, tmp_path: Path):
-        test_file = tmp_path / "output.txt"
-        result = asyncio.run(write_file(str(test_file), "hello"))
+class TestWriteBridge:
+    def test_write_success(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "成功写入 5 个字符",
+            "error_code": "",
+        })
+        handler = make_write_handler(mock_client)
 
-        assert "成功" in result
-        assert test_file.read_text(encoding="utf-8") == "hello"
+        result = asyncio.run(handler(path="output.txt", content="hello"))
+        assert "成功写入" in result
+        mock_client.execute_tool.assert_called_once_with("", "write", {"path": "output.txt", "content": "hello"})
 
-    def test_write_creates_parent_dirs(self, tmp_path: Path):
-        test_file = tmp_path / "sub" / "dir" / "file.txt"
-        result = asyncio.run(write_file(str(test_file), "content"))
+    def test_write_outside_workspace(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "操作被拒绝：目标路径超出工作目录范围",
+            "error_code": "PATH_OUTSIDE_WORKSPACE",
+        })
+        handler = make_write_handler(mock_client)
 
-        assert "成功" in result
-        assert test_file.exists()
-
-    def test_write_overwrites_existing(self, tmp_path: Path):
-        test_file = tmp_path / "existing.txt"
-        test_file.write_text("old", encoding="utf-8")
-
-        asyncio.run(write_file(str(test_file), "new"))
-        assert test_file.read_text(encoding="utf-8") == "new"
-
-    def test_write_unicode_content(self, tmp_path: Path):
-        test_file = tmp_path / "unicode.txt"
-        asyncio.run(write_file(str(test_file), "中文 🎉"))
-        assert test_file.read_text(encoding="utf-8") == "中文 🎉"
-
-    def test_write_empty_content(self, tmp_path: Path):
-        test_file = tmp_path / "empty.txt"
-        result = asyncio.run(write_file(str(test_file), ""))
-        assert "成功" in result
-        assert test_file.read_text(encoding="utf-8") == ""
+        result = asyncio.run(handler(path="/etc/passwd", content="nope"))
+        assert "超出工作目录范围" in result
 
 
-class TestListDirectory:
-    def test_list_directory_with_files(self, tmp_path: Path):
-        (tmp_path / "a.txt").write_text("a")
-        (tmp_path / "b.txt").write_text("b")
+class TestBashBridge:
+    def test_bash_success(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "hello world\n",
+            "error_code": "",
+        })
+        handler = make_bash_handler(mock_client)
 
-        result = asyncio.run(list_directory(str(tmp_path)))
-        assert "a.txt" in result
-        assert "b.txt" in result
+        result = asyncio.run(handler(command="echo hello world"))
+        assert "hello world" in result
+        mock_client.execute_tool.assert_called_once_with("", "bash", {"command": "echo hello world"})
 
-    def test_list_empty_directory(self, tmp_path: Path):
-        result = asyncio.run(list_directory(str(tmp_path)))
-        assert "空目录" in result
+    def test_bash_failure(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "命令执行失败: exit status 1",
+            "error_code": "TOOL_ERROR",
+        })
+        handler = make_bash_handler(mock_client)
 
-    def test_list_nonexistent_directory(self):
-        result = asyncio.run(list_directory("/nonexistent/path/12345"))
-        assert "找不到" in result
+        result = asyncio.run(handler(command="exit 1"))
+        assert "命令执行失败" in result
 
-    def test_list_file_returns_error(self, tmp_path: Path):
-        test_file = tmp_path / "file.txt"
-        test_file.write_text("content")
 
-        result = asyncio.run(list_directory(str(test_file)))
-        assert "不是目录" in result
+class TestEditBridge:
+    def test_edit_success(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "成功替换 1 处",
+            "error_code": "",
+        })
+        handler = make_edit_handler(mock_client)
 
-    def test_list_includes_subdirectories(self, tmp_path: Path):
-        (tmp_path / "subdir").mkdir()
-        (tmp_path / "file.txt").write_text("content")
+        result = asyncio.run(handler(path="file.txt", old_string="old", new_string="new"))
+        assert result == "成功替换 1 处"
+        mock_client.execute_tool.assert_called_once_with("", "edit", {
+            "path": "file.txt",
+            "old_string": "old",
+            "new_string": "new",
+        })
 
-        result = asyncio.run(list_directory(str(tmp_path)))
-        assert "subdir" in result
-        assert "file.txt" in result
+    def test_edit_no_match(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "未找到匹配内容",
+            "error_code": "TOOL_ERROR",
+        })
+        handler = make_edit_handler(mock_client)
+
+        result = asyncio.run(handler(path="file.txt", old_string="nonexistent", new_string="new"))
+        assert "未找到匹配内容" in result
+
+    def test_edit_multiple_matches(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "匹配数 3 大于 1，请提供更精确的匹配内容",
+            "error_code": "EDIT_MATCH_COUNT_ERROR",
+        })
+        handler = make_edit_handler(mock_client)
+
+        result = asyncio.run(handler(path="file.txt", old_string="abc", new_string="xyz"))
+        assert "匹配数 3 大于 1" in result

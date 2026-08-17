@@ -8,7 +8,7 @@ import grpc
 
 from agent import agent_pb2, agent_pb2_grpc
 from agent.core.react_agent import ReactAgent
-from agent.tools.file_ops import list_directory, read_file, write_file
+from agent.tools.file_ops import make_bash_handler, make_edit_handler, make_read_handler, make_write_handler
 from agent.tools.registry import ToolRegistry
 
 # 会话 ID 白名单：仅允许字母数字、下划线、连字符（与 Go 侧 storage.ValidSessionID 一致），
@@ -33,44 +33,58 @@ class FlowPartnerClient:
         # 串行化历史文件写入，避免同一会话并发追加时交错
         self._history_lock = asyncio.Lock()
 
-        # 初始化并注册所有工具
+        # 初始化并注册所有工具（通过 Go 代理执行）
         self.tool_registry = ToolRegistry()
         self.tool_registry.register(
-            name="read_file",
+            name="read",
             description="Read the content of a local file at the specified path",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute path to the file"}
+                    "path": {"type": "string", "description": "File path (absolute or relative to working directory)"}
                 },
                 "required": ["path"]
             },
-            handler=read_file
+            handler=make_read_handler(self)
         )
         self.tool_registry.register(
-            name="write_file",
-            description="Write content to a local file at the specified path",
+            name="write",
+            description="Write content to a local file at the specified path. Creates parent directories automatically.",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute path to the file"},
+                    "path": {"type": "string", "description": "File path (absolute or relative to working directory)"},
                     "content": {"type": "string", "description": "Content to write"}
                 },
                 "required": ["path", "content"]
             },
-            handler=write_file
+            handler=make_write_handler(self)
         )
         self.tool_registry.register(
-            name="list_directory",
-            description="List all files and subdirectories in the specified directory",
+            name="bash",
+            description="Execute a shell command in the working directory. Timeout: 30 seconds.",
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute path to the directory"}
+                    "command": {"type": "string", "description": "Shell command to execute"}
                 },
-                "required": ["path"]
+                "required": ["command"]
             },
-            handler=list_directory
+            handler=make_bash_handler(self)
+        )
+        self.tool_registry.register(
+            name="edit",
+            description="Search for old_string in a file and replace with new_string. Must match exactly once.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path (absolute or relative to working directory)"},
+                    "old_string": {"type": "string", "description": "String to search for (must match exactly once)"},
+                    "new_string": {"type": "string", "description": "Replacement string"}
+                },
+                "required": ["path", "old_string", "new_string"]
+            },
+            handler=make_edit_handler(self)
         )
 
     async def send_event(self, session_id: str, event_type: str, payload: dict, queue: asyncio.Queue):
@@ -80,6 +94,27 @@ class FlowPartnerClient:
             payload=json.dumps(payload, ensure_ascii=False)
         )
         await queue.put(event)
+
+    async def execute_tool(self, session_id: str, tool_name: str, arguments: dict) -> dict:
+        """通过 gRPC 调用 Go 执行工具（一元 RPC）。"""
+        if self.stub is None:
+            return {"success": False, "result": "gRPC 连接未建立，请稍后重试", "error_code": "TOOL_ERROR"}
+        try:
+            request = agent_pb2.ToolRequest(
+                session_id=session_id,
+                tool_name=tool_name,
+                arguments=json.dumps(arguments, ensure_ascii=False)
+            )
+            response = await self.stub.ExecuteTool(request)
+            return {
+                "success": response.success,
+                "result": response.result,
+                "error_code": response.error_code,
+            }
+        except grpc.aio.AioRpcError as e:
+            return {"success": False, "result": f"gRPC 通信失败: {e.details()}", "error_code": "TOOL_ERROR"}
+        except Exception as e:
+            return {"success": False, "result": f"工具调用异常: {e}", "error_code": "TOOL_ERROR"}
 
     async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None) -> dict:
         """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""

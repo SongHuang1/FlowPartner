@@ -18,6 +18,10 @@ def llm_response(json_response: str, *, is_error: bool = False) -> agent_pb2.LLM
     return agent_pb2.LLMResponse(is_error=is_error, json_response=json_response)
 
 
+def tool_response(success: bool, result: str, error_code: str = "") -> agent_pb2.ToolResponse:
+    return agent_pb2.ToolResponse(success=success, result=result, error_code=error_code)
+
+
 def chunk(*, delta: dict | None = None, finish_reason: str = "", usage: dict | None = None) -> str:
     choice: dict = {"delta": delta or {}}
     if finish_reason:
@@ -60,7 +64,7 @@ class TestFlowPartnerClientInit:
             tool["function"]["name"]
             for tool in client.tool_registry.get_openai_tools_definition()
         }
-        assert names == {"read_file", "write_file", "list_directory"}
+        assert names == {"read", "write", "bash", "edit"}
 
     def test_default_grpc_address(self, tmp_path: Path):
         client = make_client(tmp_path)
@@ -331,3 +335,71 @@ class TestHandleChat:
         client.call_llm_via_go.assert_not_awaited()
         # 不应在 history 目录中创建任何文件
         assert list((tmp_path / "history").iterdir()) == []
+
+
+class FakeExecuteToolStub:
+    """Fake gRPC stub that returns pre-built ToolResponse from ExecuteTool."""
+
+    def __init__(self, response: agent_pb2.ToolResponse) -> None:
+        self.response = response
+
+    async def ExecuteTool(self, request: agent_pb2.ToolRequest):  # noqa: N802
+        return self.response
+
+
+class RaisingExecuteToolStub:
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+    async def ExecuteTool(self, request: agent_pb2.ToolRequest):  # noqa: N802
+        raise self.exc
+
+
+class TestExecuteTool:
+    @pytest.mark.asyncio
+    async def test_success(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.stub = FakeExecuteToolStub(tool_response(True, "hello world"))  # type: ignore[assignment]
+
+        result = await client.execute_tool("sess-1", "read", {"path": "test.txt"})
+
+        assert result == {"success": True, "result": "hello world", "error_code": ""}
+
+    @pytest.mark.asyncio
+    async def test_failure(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.stub = FakeExecuteToolStub(  # type: ignore[assignment]
+            tool_response(False, "文件不存在: test.txt", "TOOL_ERROR")
+        )
+
+        result = await client.execute_tool("sess-1", "read", {"path": "test.txt"})
+
+        assert result == {
+            "success": False,
+            "result": "文件不存在: test.txt",
+            "error_code": "TOOL_ERROR",
+        }
+
+    @pytest.mark.asyncio
+    async def test_rpc_error(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.stub = RaisingExecuteToolStub(  # type: ignore[assignment]
+            grpc.aio.AioRpcError(code=grpc.StatusCode.UNAVAILABLE, details="connection refused")
+        )
+
+        result = await client.execute_tool("sess-1", "read", {"path": "test.txt"})
+
+        assert result["success"] is False
+        assert "gRPC 通信失败" in result["result"]
+        assert result["error_code"] == "TOOL_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_stub_not_connected(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        # stub is None by default
+
+        result = await client.execute_tool("sess-1", "read", {"path": "test.txt"})
+
+        assert result["success"] is False
+        assert "gRPC 连接未建立" in result["result"]
+        assert result["error_code"] == "TOOL_ERROR"
