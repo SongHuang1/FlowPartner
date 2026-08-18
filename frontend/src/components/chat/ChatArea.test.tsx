@@ -6,9 +6,12 @@ import type { UseConversationReturn } from '@/hooks/useConversation'
 const mockSendMessage = vi.fn()
 const mockUpdateSettings = vi.fn()
 const mockWsSendMessage = vi.fn()
+const mockSendCancel = vi.fn()
+const mockSendPermissionResponse = vi.fn()
 const mockOnFinalAnswer = vi.fn(() => () => {})
 const mockOnError = vi.fn(() => () => {})
 const mockOnSecurityEvent = vi.fn(() => () => {})
+const mockOnPermissionRequest = vi.fn(() => () => {})
 
 const mockLockStatus = {
   locked: false,
@@ -62,11 +65,14 @@ vi.mock('@/hooks/useWebSocket', () => ({
     isReconnectExhausted: false,
     processing: false,
     sendMessage: mockWsSendMessage,
+    sendCancel: mockSendCancel,
+    sendPermissionResponse: mockSendPermissionResponse,
     events: [],
     manualReconnect: vi.fn(),
     onFinalAnswer: mockOnFinalAnswer,
     onError: mockOnError,
     onSecurityEvent: mockOnSecurityEvent,
+    onPermissionRequest: mockOnPermissionRequest,
   }),
 }))
 

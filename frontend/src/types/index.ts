@@ -62,3 +62,11 @@ export interface WindowState {
   sidebar_visible: boolean
   sidebar_view: string
 }
+
+export interface PermissionRequestPayload {
+  request_id: string
+  tool: string
+  path: string
+  operation: string
+  detail: string
+}

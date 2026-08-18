@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort, updateApiBase } from '@/lib/api'
-import type { Message } from '@/types'
+import type { Message, PermissionRequestPayload } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -22,8 +22,8 @@ const MAX_PORT = 65535
 
 function isKnownEventType(
   type: string,
-): type is 'status_update' | 'tool_call' | 'tool_result' | 'final_answer' | 'error' {
-  return ['status_update', 'tool_call', 'tool_result', 'final_answer', 'error'].includes(type)
+): type is 'status_update' | 'tool_call' | 'tool_result' | 'final_answer' | 'error' | 'permission_request' {
+  return ['status_update', 'tool_call', 'tool_result', 'final_answer', 'error', 'permission_request'].includes(type)
 }
 
 export interface UseWebSocketReturn {
@@ -33,11 +33,14 @@ export interface UseWebSocketReturn {
   isReconnectExhausted: boolean
   processing: boolean
   sendMessage: (content: string, sessionId: string, history: Message[]) => boolean
+  sendCancel: (sessionId: string) => void
+  sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny') => void
   events: ChatEvent[]
   manualReconnect: () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
+  onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
 }
 
 
@@ -57,7 +60,9 @@ export function useWebSocket(): UseWebSocketReturn {
   const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
+  const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
   const connectRef = useRef<(port: number) => void>(() => {})
+  const sessionIdRef = useRef<string>('')
 
   const connected = connectionState === 'connected'
   const reconnecting = connectionState === 'reconnecting'
@@ -146,6 +151,23 @@ export function useWebSocket(): UseWebSocketReturn {
 
         if (raw.event_type === 'status_update' || raw.event_type === 'tool_call' || raw.event_type === 'tool_result') {
           setEvents((prev) => [...prev, raw])
+          return
+        }
+
+        if (raw.event_type === 'permission_request') {
+          setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload) as PermissionRequestPayload
+            permissionRequestCallbacksRef.current.forEach((cb) => {
+              try {
+                cb(parsed)
+              } catch (e) {
+                console.error('onPermissionRequest callback error:', e)
+              }
+            })
+          } catch {
+            console.error('Failed to parse permission_request payload:', raw.payload)
+          }
           return
         }
 
@@ -265,6 +287,7 @@ export function useWebSocket(): UseWebSocketReturn {
     const finalAnswerCbs = finalAnswerCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
+    const permissionCbs = permissionRequestCallbacksRef.current
 
     return () => {
       mountedRef.current = false
@@ -278,6 +301,7 @@ export function useWebSocket(): UseWebSocketReturn {
       finalAnswerCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
+      permissionCbs.clear()
       setEvents([])
     }
   }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
@@ -289,6 +313,7 @@ export function useWebSocket(): UseWebSocketReturn {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
       if (processing) return false
 
+      sessionIdRef.current = sessionId
       setEvents([])
       sessionEndedRef.current = false
       setProcessing(true)
@@ -316,6 +341,24 @@ export function useWebSocket(): UseWebSocketReturn {
     },
     [processing, clearProcessingTimer, resetProcessing],
   )
+
+  const sendCancel = useCallback((sessionId: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'cancel_task',
+      session_id: sessionId,
+    }))
+  }, [])
+
+  const sendPermissionResponse = useCallback((sessionId: string, requestId: string, decision: 'allow' | 'deny') => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'permission_response',
+      session_id: sessionId,
+      request_id: requestId,
+      decision,
+    }))
+  }, [])
 
   const manualReconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
@@ -345,6 +388,13 @@ export function useWebSocket(): UseWebSocketReturn {
     }
   }, [])
 
+  const onPermissionRequest = useCallback((cb: (payload: PermissionRequestPayload) => void) => {
+    permissionRequestCallbacksRef.current.add(cb)
+    return () => {
+      permissionRequestCallbacksRef.current.delete(cb)
+    }
+  }, [])
+
   return {
     connected,
     reconnecting,
@@ -352,10 +402,13 @@ export function useWebSocket(): UseWebSocketReturn {
     isReconnectExhausted,
     processing,
     sendMessage,
+    sendCancel,
+    sendPermissionResponse,
     events,
     manualReconnect,
     onFinalAnswer,
     onError,
     onSecurityEvent,
+    onPermissionRequest,
   }
 }

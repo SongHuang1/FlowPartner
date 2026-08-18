@@ -1,8 +1,8 @@
 import { useState, useRef, useLayoutEffect, useEffect } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { Message } from '@/types'
+import type { Message, PermissionRequestPayload } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
@@ -11,6 +11,7 @@ import { MessageBubble } from './MessageBubble'
 import { WelcomeView } from './WelcomeView'
 import { EventDetail } from './EventDetail'
 import { ConnectionStatus } from './ConnectionStatus'
+import { PermissionDialog } from './PermissionDialog'
 
 export function MessageList({ messages }: { messages: Message[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -35,18 +36,26 @@ interface ChatInputProps {
   value: string
   onChange: (v: string) => void
   onSend: () => void
+  onStop?: () => void
   disabled?: boolean
   loading?: boolean
 }
 
-export function ChatInput({ value, onChange, onSend, disabled, loading }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, onStop, disabled, loading }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [cancelClicked, setCancelClicked] = useState(false)
 
   const handleSend = () => {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
+    setCancelClicked(false)
     onSend()
     inputRef.current?.focus()
+  }
+
+  const handleStop = () => {
+    setCancelClicked(true)
+    onStop?.()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -68,14 +77,26 @@ export function ChatInput({ value, onChange, onSend, disabled, loading }: ChatIn
         maxLength={10000}
         disabled={disabled}
       />
-      <Button
-        size="icon"
-        disabled={!value.trim() || disabled}
-        onClick={handleSend}
-        aria-label="发送"
-      >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-      </Button>
+      {loading ? (
+        <Button
+          size="icon"
+          variant="destructive"
+          onClick={handleStop}
+          disabled={cancelClicked}
+          aria-label="停止"
+        >
+          <Square className="w-4 h-4" />
+        </Button>
+      ) : (
+        <Button
+          size="icon"
+          disabled={!value.trim() || disabled}
+          onClick={handleSend}
+          aria-label="发送"
+        >
+          <Send className="w-4 h-4" />
+        </Button>
+      )}
     </div>
   )
 }
@@ -125,20 +146,25 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     isReconnectExhausted,
     processing,
     sendMessage: wsSendMessage,
+    sendCancel,
+    sendPermissionResponse,
     events,
     manualReconnect,
     onFinalAnswer,
     onError,
     onSecurityEvent,
+    onPermissionRequest,
   } = useWebSocket()
 
   const [inputValue, setInputValue] = useState('')
   const [chatError, setChatError] = useState<string | null>(null)
   const [securityWarning, setSecurityWarning] = useState<string | null>(null)
+  const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null)
 
   const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
   const unregisterErrorRef = useRef<(() => void) | null>(null)
   const unregisterSecurityRef = useRef<(() => void) | null>(null)
+  const unregisterPermissionRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
@@ -150,13 +176,17 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     unregisterSecurityRef.current = onSecurityEvent((message) => {
       setSecurityWarning(message)
     })
+    unregisterPermissionRef.current = onPermissionRequest((payload) => {
+      setPendingPermission(payload)
+    })
 
     return () => {
       unregisterFinalAnswerRef.current?.()
       unregisterErrorRef.current?.()
       unregisterSecurityRef.current?.()
+      unregisterPermissionRef.current?.()
     }
-  }, [onFinalAnswer, onError, onSecurityEvent, addAssistantMessage])
+  }, [onFinalAnswer, onError, onSecurityEvent, onPermissionRequest, addAssistantMessage])
 
   const handleSend = () => {
     const trimmed = inputValue.trim()
@@ -181,6 +211,17 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     }
   }
 
+  const handleStop = () => {
+    sendCancel(sessionId)
+  }
+
+  const handlePermissionDecision = (decision: 'allow' | 'deny') => {
+    if (pendingPermission) {
+      sendPermissionResponse(sessionId, pendingPermission.request_id, decision)
+      setPendingPermission(null)
+    }
+  }
+
   const latestStatusUpdate = [...events]
     .reverse()
     .find((e) => e.event_type === 'status_update')
@@ -196,6 +237,12 @@ export function ChatArea({ conversation }: ChatAreaProps) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {pendingPermission && (
+        <PermissionDialog
+          request={pendingPermission}
+          onDecision={handlePermissionDecision}
+        />
+      )}
       {messages.length === 0 ? (
         <WelcomeView
           settings={settings}
@@ -232,6 +279,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             value={inputValue}
             onChange={setInputValue}
             onSend={handleSend}
+            onStop={handleStop}
             disabled={lockStatus.locked}
             loading={processing}
           />
