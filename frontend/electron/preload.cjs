@@ -21,4 +21,5 @@ contextBridge.exposeInMainWorld('flowPartner', {
     updateCloseBehavior: (behavior, remembered) => {
         ipcRenderer.send('update-close-behavior', behavior, remembered)
     },
+    openExternal: (url) => ipcRenderer.invoke('open-external', url),
 })

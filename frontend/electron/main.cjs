@@ -535,6 +535,14 @@ ipcMain.handle('get-backend-port', () => {
   return backendPort
 })
 
+ipcMain.handle('open-external', (_, url) => {
+  if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+    const { shell } = require('electron')
+    return shell.openExternal(url)
+  }
+  return Promise.reject(new Error('Invalid URL: only http/https allowed'))
+})
+
 app.whenReady().then(async () => {
   try {
     createTray()
