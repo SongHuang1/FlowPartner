@@ -233,8 +233,7 @@ function getDataPath() {
 }
 
 function getWindowState() {
-  const configPath = path.join(getDataPath(), 'config')
-  const settingsPath = path.join(configPath, 'settings.json')
+  const settingsPath = path.join(getDataPath(), 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -251,8 +250,7 @@ function getWindowState() {
 
 function saveWindowState(state) {
   try {
-    const configPath = path.join(getDataPath(), 'config')
-    const settingsPath = path.join(configPath, 'settings.json')
+    const settingsPath = path.join(getDataPath(), 'settings.json')
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
     if (state.window_x !== undefined) settings.window_x = state.window_x
@@ -270,8 +268,7 @@ function saveWindowState(state) {
 }
 
 function getCloseBehavior() {
-  const configPath = path.join(getDataPath(), 'config')
-  const settingsPath = path.join(configPath, 'settings.json')
+  const settingsPath = path.join(getDataPath(), 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -305,8 +302,7 @@ async function quitAppWithCleanup() {
     const [width, height] = mainWindow.getSize()
 
     try {
-      const configPath = path.join(getDataPath(), 'config')
-      const settingsPath = path.join(configPath, 'settings.json')
+      const settingsPath = path.join(getDataPath(), 'settings.json')
       const data = fs.readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(data)
       settings.window_x = x
@@ -386,6 +382,12 @@ function createWindow(port) {
     if (!isQuiting) {
       event.preventDefault()
 
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const [x, y] = mainWindow.getPosition()
+        const [width, height] = mainWindow.getSize()
+        saveWindowState({ window_x: x, window_y: y, window_width: width, window_height: height })
+      }
+
       const { behavior, remembered } = closeBehaviorCache || getCloseBehavior()
 
       if (behavior === 'minimize' && remembered) {
@@ -413,8 +415,7 @@ function createWindow(port) {
   ipcMain.on('update-close-behavior', (_, behavior, remembered) => {
     closeBehaviorCache = { behavior, remembered }
     try {
-      const configPath = path.join(getDataPath(), 'config')
-      const settingsPath = path.join(configPath, 'settings.json')
+      const settingsPath = path.join(getDataPath(), 'settings.json')
       const data = fs.readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(data)
       settings.close_behavior = behavior
