@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -13,7 +14,7 @@ class ReactAgent:
         self.max_iterations = 10
 
     async def run(self, user_message: str, history: list | None = None, send_event_func=None) -> str:
-        """执行完整的 ReAct 循环"""
+
         if history is None:
             history = []
 
@@ -25,82 +26,95 @@ class ReactAgent:
 
         tools_def = self.tools.get_openai_tools_definition()
 
-        for iteration in range(self.max_iterations):
-            logging.info(f"[ReAct] Thinking round {iteration + 1}")
-            await self.send_event(self.session_id, "status_update", {
-                "status": "thinking", "iteration": iteration + 1
-            })
-
-            payload = json.dumps({
-                "model": "auto",
-                "messages": messages,
-                "tools": tools_def if tools_def else None,
-            }, ensure_ascii=False)
-
-            llm_resp = await self.call_llm(self.session_id, payload, send_event_func=send_event_func)
-
-            if not llm_resp.get("success"):
-                error_msg = llm_resp.get("error_message", "未知错误")
-                error_guess = llm_resp.get("error_guess", "")
-                event_payload = {"message": error_msg}
-                if error_guess:
-                    event_payload["guess"] = error_guess
-                await self.send_event(self.session_id, "error", event_payload)
-                return error_msg
-
-            finish_reason = llm_resp.get("finish_reason", "")
-
-            if finish_reason == "tool_calls" and llm_resp.get("tool_calls"):
-                assistant_msg = {
-                    "role": "assistant",
-                    "content": llm_resp.get("content", ""),
-                    "tool_calls": llm_resp["tool_calls"]
-                }
-                messages.append(assistant_msg)
-
-                for tool_call in llm_resp["tool_calls"]:
-                    func_name = tool_call["function"]["name"]
-                    try:
-                        func_args = json.loads(tool_call["function"]["arguments"])
-                    except json.JSONDecodeError:
-                        logging.warning(f"[ReAct] Tool {func_name} called with malformed JSON arguments, using empty args")
-                        func_args = {}
-                    call_id = tool_call.get("id", "")
-
-                    logging.info(f"[ReAct] Calling tool: {func_name}({func_args})")
-                    await self.send_event(self.session_id, "tool_call", {
-                        "tool": func_name, "args": func_args
-                    })
-
-                    result = await self.tools.execute(func_name, func_args)
-
-                    await self.send_event(self.session_id, "tool_result", {
-                        "tool": func_name, "result": result[:500]
-                    })
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": result
-                    })
-
-                continue
-
-            final_answer = llm_resp.get("content", "")
-            if finish_reason == "stop" or final_answer:
-                logging.info(f"[ReAct] Final answer: {final_answer[:100]}...")
-                await self.send_event(self.session_id, "final_answer", {
-                    "text": final_answer
+        try:
+            for iteration in range(self.max_iterations):
+                logging.info(f"[ReAct] Thinking round {iteration + 1}")
+                await self.send_event(self.session_id, "status_update", {
+                    "status": "thinking", "iteration": iteration + 1
                 })
-                return final_answer
 
-            if not finish_reason:
+                payload = json.dumps({
+                    "model": "auto",
+                    "messages": messages,
+                    "tools": tools_def if tools_def else None,
+                }, ensure_ascii=False)
+
+                llm_resp = await self.call_llm(self.session_id, payload, send_event_func=send_event_func)
+
+                if not llm_resp.get("success"):
+                    error_msg = llm_resp.get("error_message", "未知错误")
+                    error_guess = llm_resp.get("error_guess", "")
+                    event_payload = {"message": error_msg}
+                    if error_guess:
+                        event_payload["guess"] = error_guess
+                    await self.send_event(self.session_id, "error", event_payload)
+                    return error_msg
+
+                finish_reason = llm_resp.get("finish_reason", "")
+
+                if finish_reason == "tool_calls" and llm_resp.get("tool_calls"):
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": llm_resp.get("content", ""),
+                        "tool_calls": llm_resp["tool_calls"]
+                    }
+                    messages.append(assistant_msg)
+
+                    for tool_call in llm_resp["tool_calls"]:
+                        func_name = tool_call["function"]["name"]
+                        try:
+                            func_args = json.loads(tool_call["function"]["arguments"])
+                        except json.JSONDecodeError:
+                            logging.warning(f"[ReAct] Tool {func_name} called with malformed JSON arguments, using empty args")
+                            func_args = {}
+                        call_id = tool_call.get("id", "")
+
+                        logging.info(f"[ReAct] Calling tool: {func_name}({func_args})")
+                        await self.send_event(self.session_id, "tool_call", {
+                            "tool": func_name, "args": func_args
+                        })
+
+                        result = await self.tools.execute(func_name, func_args)
+
+                        await self.send_event(self.session_id, "tool_result", {
+                            "tool": func_name, "result": result[:500]
+                        })
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": result
+                        })
+
+                    continue
+
+                final_answer = llm_resp.get("content", "")
+                if finish_reason == "stop" or final_answer:
+                    logging.info(f"[ReAct] Final answer: {final_answer[:100]}...")
+                    await self.send_event(self.session_id, "final_answer", {
+                        "text": final_answer
+                    })
+                    return final_answer
+
+                if not finish_reason:
+                    await self.send_event(self.session_id, "final_answer", {
+                        "text": final_answer,
+                        "incomplete": True
+                    })
+                    return final_answer
+
+            fallback = "抱歉，经过多轮尝试后未能得出结论。请尝试简化你的问题。"
+            await self.send_event(self.session_id, "error", {"message": fallback})
+            return fallback
+
+        except asyncio.CancelledError:
+            # 任务被取消（cancel_task）：发送 cancelled final_answer 后重新抛出
+            logging.info(f"[ReAct] Cancelled during execution: session={self.session_id}")
+            try:
                 await self.send_event(self.session_id, "final_answer", {
-                    "text": final_answer,
-                    "incomplete": True
+                    "text": "已停止生成",
+                    "cancelled": True,
                 })
-                return final_answer
-
-        fallback = "抱歉，经过多轮尝试后未能得出结论。请尝试简化你的问题。"
-        await self.send_event(self.session_id, "error", {"message": fallback})
-        return fallback
+            except Exception:
+                logging.warning(f"[ReAct] Failed to send cancelled event: session={self.session_id}")
+            raise

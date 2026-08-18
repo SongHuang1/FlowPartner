@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import grpc
 import pytest
@@ -403,3 +403,214 @@ class TestExecuteTool:
         assert result["success"] is False
         assert "gRPC 连接未建立" in result["result"]
         assert result["error_code"] == "TOOL_ERROR"
+
+
+# --- 权限审批流程测试 ---
+
+class FakePermissionStub:
+    """Fake gRPC stub that returns needs_permission first, then success on retry."""
+
+    def __init__(self, *, needs_perm_response: agent_pb2.ToolResponse, success_response: agent_pb2.ToolResponse):
+        self.needs_perm_response = needs_perm_response
+        self.success_response = success_response
+        self.call_count = 0
+
+    async def ExecuteTool(self, request: agent_pb2.ToolRequest):  # noqa: N802
+        self.call_count += 1
+        if request.approval_id:
+            return self.success_response
+        return self.needs_perm_response
+
+
+class FakeDenyStub:
+    """Fake stub that returns needs_permission, then failure when retried with approval_id."""
+
+    def __init__(self, *, needs_perm_response: agent_pb2.ToolResponse, deny_response: agent_pb2.ToolResponse):
+        self.needs_perm_response = needs_perm_response
+        self.deny_response = deny_response
+        self.call_count = 0
+
+    async def ExecuteTool(self, request: agent_pb2.ToolRequest):  # noqa: N802
+        self.call_count += 1
+        if request.approval_id:
+            return self.deny_response
+        return self.needs_perm_response
+
+
+class TestExecuteToolPermissionFlow:
+    @pytest.mark.asyncio
+    async def test_suspend_and_resume_with_allow(self, tmp_path: Path):
+        """ExecuteTool 返回 needs_permission=True → 前端发 permission_response allow → 重试成功"""
+        client = make_client(tmp_path)
+        perm_resp = agent_pb2.ToolResponse(
+            needs_permission=True, request_id="req-123",
+            success=False, result=""
+        )
+        success_resp = agent_pb2.ToolResponse(
+            success=True, result="file content here"
+        )
+        client.stub = FakePermissionStub(  # type: ignore[assignment]
+            needs_perm_response=perm_resp, success_response=success_resp
+        )
+        # 注册活跃队列（send_event 需要）
+        queue: asyncio.Queue = asyncio.Queue()
+        client._active_queues["sess-perm"] = queue
+
+        # 启动 execute_tool（会挂起等待 approval）
+        async def run_tool():
+            return await client.execute_tool("sess-perm", "read", {"path": "/tmp/secret.txt"})
+
+        task = asyncio.create_task(run_tool())
+
+        # 等待 permission_request 事件被发送到 queue
+        event = await asyncio.wait_for(queue.get(), timeout=2.0)
+        assert event.event_type == "permission_request"
+        payload = json.loads(event.payload)
+        assert payload["request_id"] == "req-123"
+        assert payload["tool"] == "read"
+
+        # 模拟前端发回 permission_response allow
+        async with client._approval_lock:
+            future = client._pending_approvals.get("req-123")
+        assert future is not None
+        future.set_result("allow")
+
+        # 等待 execute_tool 完成
+        result = await asyncio.wait_for(task, timeout=2.0)
+        assert result == {"success": True, "result": "file content here", "error_code": ""}
+        assert client.stub.call_count == 2  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_suspend_and_deny_by_user(self, tmp_path: Path):
+        """ExecuteTool 返回 needs_permission=True → 用户拒绝 → 返回 PERMISSION_DENIED"""
+        client = make_client(tmp_path)
+        perm_resp = agent_pb2.ToolResponse(
+            needs_permission=True, request_id="req-456",
+            success=False, result=""
+        )
+        client.stub = FakeDenyStub(  # type: ignore[assignment]
+            needs_perm_response=perm_resp,
+            deny_response=agent_pb2.ToolResponse(success=False, result="审批无效", error_code="APPROVAL_INVALID")
+        )
+        queue: asyncio.Queue = asyncio.Queue()
+        client._active_queues["sess-deny"] = queue
+
+        async def run_tool():
+            return await client.execute_tool("sess-deny", "write", {"path": "/tmp/secret.txt", "content": "data"})
+
+        task = asyncio.create_task(run_tool())
+
+        # 等待 permission_request 事件
+        await asyncio.wait_for(queue.get(), timeout=2.0)
+
+        # 模拟用户拒绝
+        async with client._approval_lock:
+            future = client._pending_approvals.get("req-456")
+        future.set_result("deny")
+
+        result = await asyncio.wait_for(task, timeout=2.0)
+        assert result["success"] is False
+        assert result["error_code"] == "PERMISSION_DENIED"
+        assert "拒绝" in result["result"]
+
+    @pytest.mark.asyncio
+    async def test_drain_pending_approvals_on_disconnect(self, tmp_path: Path):
+        """断连时 _drain_pending_approvals 应将所有悬挂 Future 以 deny 完成"""
+        client = make_client(tmp_path)
+        # 手动创建悬挂 Future
+        future1: asyncio.Future = asyncio.get_event_loop().create_future()
+        future2: asyncio.Future = asyncio.get_event_loop().create_future()
+        client._pending_approvals["req-drain-1"] = future1
+        client._pending_approvals["req-drain-2"] = future2
+
+        client._drain_pending_approvals()
+
+        assert future1.done()
+        assert future1.result() == "deny"
+        assert future2.done()
+        assert future2.result() == "deny"
+        assert len(client._pending_approvals) == 0
+
+
+# --- cancel_task 测试 ---
+
+class TestHandleCommandCancelTask:
+    @pytest.mark.asyncio
+    async def test_cancel_task_cancels_active_task(self, tmp_path: Path):
+        """cancel_task 命令应取消对应 session 的活跃任务"""
+        client = make_client(tmp_path)
+        cancel_called = asyncio.Event()
+
+        async def slow_task():
+            try:
+                await asyncio.sleep(100)
+            except asyncio.CancelledError:
+                cancel_called.set()
+                raise
+
+        # 注册一个模拟任务
+        task = asyncio.create_task(slow_task())
+        client._tasks["sess-cancel"] = task
+
+        # 让出事件循环，使 slow_task 进入 await asyncio.sleep(100)
+        await asyncio.sleep(0)
+
+        # 模拟 cancel_task 命令的处理逻辑
+        session_id = "sess-cancel"
+        task_ref = client._tasks.get(session_id)
+        if task_ref is not None and not task_ref.done():
+            task_ref.cancel()
+
+        # 等待任务被取消
+        await asyncio.wait_for(cancel_called.wait(), timeout=2.0)
+        assert task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_cancel_task_no_active_task(self, tmp_path: Path):
+        """cancel_task 无活跃任务时应静默忽略"""
+        client = make_client(tmp_path)
+        # 不注册任何任务
+        session_id = "sess-no-task"
+        task = client._tasks.get(session_id)
+        # 应不报错
+        if task is not None and not task.done():
+            task.cancel()
+
+
+# --- react_agent CancelledError 事件序列测试 ---
+
+class TestReactAgentCancelledError:
+    @pytest.mark.asyncio
+    async def test_cancelled_error_sends_final_answer(self, tmp_path: Path):
+        """react_agent 抛 CancelledError 时应已发送 final_answer 事件"""
+        from agent.core.react_agent import ReactAgent
+
+        sent_events = []
+
+        async def fake_call_llm(session_id, json_payload, send_event_func=None):
+            raise asyncio.CancelledError()
+
+        async def fake_send_event(session_id, event_type, payload):
+            sent_events.append((event_type, payload))
+
+        # 创建 tool_registry mock，get_openai_tools_definition 返回空列表
+        mock_registry = MagicMock()
+        mock_registry.get_openai_tools_definition.return_value = []
+
+        # 创建一个会抛出 CancelledError 的 agent
+        agent = ReactAgent(
+            session_id="sess-cancel-test",
+            call_llm_func=fake_call_llm,
+            send_event_func=fake_send_event,
+            tool_registry=mock_registry,
+        )
+        # 注入 cancelled 标记
+        agent._cancelled = True
+
+        with pytest.raises(asyncio.CancelledError):
+            await agent.run("test message")
+
+        # 验证 final_answer 已发送（带"已停止生成"文案）
+        final_answer_events = [e for e in sent_events if e[0] == "final_answer"]
+        assert len(final_answer_events) >= 1
+        assert "已停止" in final_answer_events[0][1].get("text", "")

@@ -15,6 +15,9 @@ from agent.tools.registry import ToolRegistry
 # 防止被用作文件名时发生路径遍历
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
+# 取消后不保存历史的标记文案
+_CANCELLED_ANSWER = "已停止生成"
+
 
 def _safe_session_id(session_id: str) -> str:
     if not session_id or not _SESSION_ID_RE.fullmatch(session_id):
@@ -32,6 +35,16 @@ class FlowPartnerClient:
         self.history_dir.mkdir(parents=True, exist_ok=True)
         # 串行化历史文件写入，避免同一会话并发追加时交错
         self._history_lock = asyncio.Lock()
+
+        # 权限审批：request_id → Future（等待用户决定）
+        self._pending_approvals: dict[str, asyncio.Future] = {}
+        self._approval_lock = asyncio.Lock()
+
+        # 任务追踪：session_id → 进行中的 run task（用于 cancel_task）
+        self._tasks: dict[str, asyncio.Task] = {}
+
+        # 活跃队列映射：session_id → outgoing_queue（用于 permission_request 事件发送）
+        self._active_queues: dict[str, asyncio.Queue] = {}
 
         # 初始化并注册所有工具（通过 Go 代理执行）
         self.tool_registry = ToolRegistry()
@@ -96,7 +109,10 @@ class FlowPartnerClient:
         await queue.put(event)
 
     async def execute_tool(self, session_id: str, tool_name: str, arguments: dict) -> dict:
-        """通过 gRPC 调用 Go 执行工具（一元 RPC）。"""
+        """通过 gRPC 调用 Go 执行工具（一元 RPC）。
+        内部处理权限审批流程：若 Go 返回 needs_permission=true，
+        向前端发送 permission_request 事件并挂起等待用户决定。
+        """
         if self.stub is None:
             return {"success": False, "result": "gRPC 连接未建立，请稍后重试", "error_code": "TOOL_ERROR"}
         try:
@@ -106,6 +122,54 @@ class FlowPartnerClient:
                 arguments=json.dumps(arguments, ensure_ascii=False)
             )
             response = await self.stub.ExecuteTool(request)
+
+            # 路径越权，需用户审批
+            if response.needs_permission:
+                request_id = response.request_id
+                logging.info(f"[Permission] Tool {tool_name} needs approval: request_id={request_id}")
+
+                # 向前端发送审批请求事件
+                path = arguments.get("path", "")
+                operation_map = {"read": "读取", "write": "写入", "edit": "编辑", "list": "列出", "search": "搜索", "info": "查询"}
+                operation = operation_map.get(tool_name, tool_name)
+
+                event_payload = {
+                    "request_id": request_id,
+                    "tool": tool_name,
+                    "path": path,
+                    "operation": operation,
+                    "detail": f"Agent 想要{operation}路径 {path}",
+                }
+
+                await self._send_permission_request(session_id, event_payload)
+
+                # 创建 Future 挂起等待用户决定
+                future: asyncio.Future = asyncio.get_running_loop().create_future()
+                async with self._approval_lock:
+                    self._pending_approvals[request_id] = future
+
+                # 等待用户决定（allow/deny）
+                decision = await future
+
+                if decision == "allow":
+                    # 重试：携带 approval_id
+                    retry_request = agent_pb2.ToolRequest(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        arguments=json.dumps(arguments, ensure_ascii=False),
+                        approval_id=request_id,
+                    )
+                    retry_response = await self.stub.ExecuteTool(retry_request)
+                    return {
+                        "success": retry_response.success,
+                        "result": retry_response.result,
+                        "error_code": retry_response.error_code,
+                    }
+                else:
+                    # 用户拒绝
+                    path = arguments.get("path", "")
+                    return {"success": False, "result": f"用户拒绝了此操作：{path}", "error_code": "PERMISSION_DENIED"}
+
             return {
                 "success": response.success,
                 "result": response.result,
@@ -115,6 +179,24 @@ class FlowPartnerClient:
             return {"success": False, "result": f"gRPC 通信失败: {e.details()}", "error_code": "TOOL_ERROR"}
         except Exception as e:
             return {"success": False, "result": f"工具调用异常: {e}", "error_code": "TOOL_ERROR"}
+
+    async def _send_permission_request(self, session_id: str, payload: dict) -> None:
+        """向当前活跃的 outgoing queue 发送 permission_request 事件。
+        使用 _active_queues 映射（session_id → queue）来定位正确的队列。
+        """
+        queue = self._active_queues.get(session_id)
+        if queue is None:
+            logging.warning(f"[Permission] No active queue for session {session_id}, cannot send permission_request")
+            return
+        await self.send_event(session_id, "permission_request", payload, queue)
+
+    def _drain_pending_approvals(self) -> None:
+        """断连时将所有未完成 Future 以拒绝结果完成，防止悬挂。"""
+        for request_id, future in list(self._pending_approvals.items()):
+            if not future.done():
+                future.set_result("deny")
+                logging.info(f"[Permission] Drained pending approval on disconnect: request_id={request_id}")
+        self._pending_approvals.clear()
 
     async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None) -> dict:
         """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""
@@ -224,11 +306,44 @@ class FlowPartnerClient:
                             self.handle_chat(command, outgoing_queue)
                         )
 
+                    elif command.command_type == "permission_response":
+                        # 处理审批响应
+                        try:
+                            payload = json.loads(command.payload) if command.payload else {}
+                            request_id = payload.get("request_id", "")
+                            decision = payload.get("decision", "deny")
+
+                            async with self._approval_lock:
+                                future = self._pending_approvals.pop(request_id, None)
+
+                            if future is not None and not future.done():
+                                future.set_result(decision)
+                                logging.info(f"[Permission] Resolved: request_id={request_id} decision={decision}")
+                            elif future is None:
+                                logging.warning(f"[Permission] Unknown request_id: {request_id}")
+                        except Exception as e:
+                            logging.error(f"[Permission] Failed to process response: {e}")
+
+                    elif command.command_type == "cancel_task":
+                        # 处理取消任务
+                        session_id = command.session_id
+                        task = self._tasks.get(session_id)
+                        if task is not None and not task.done():
+                            task.cancel()
+                            logging.info(f"[Cancel] Task cancelled: session={session_id}")
+                        else:
+                            logging.info(f"[Cancel] No active task for session={session_id}, ignoring")
+
             except grpc.aio.AioRpcError as e:
                 logging.warning(f"Connection lost (attempt {attempt}/{max_retries}): {e.code()}, {e.details()}")
             except Exception as e:
                 logging.error(f"Unexpected error (attempt {attempt}/{max_retries}): {e}")
             finally:
+                # 断连时清理所有待审批 Future
+                self._drain_pending_approvals()
+                # 清理活跃队列映射
+                self._active_queues.clear()
+
                 if self.channel:
                     await self.channel.close()
                     self.channel = None
@@ -249,35 +364,50 @@ class FlowPartnerClient:
             logging.error(f"Rejecting chat with invalid session id: {session_id!r}")
             return
 
-        payload = json.loads(command.payload) if command.payload else {}
-        user_message = payload.get("user_message", "")
-        history = payload.get("history", [])
-        if not isinstance(history, list):
-            history = []
+        # 注册活跃队列（用于 permission_request 事件发送）
+        self._active_queues[session_id] = queue
 
-        logging.info(f"[Chat started] Session: {session_id} | User: {user_message}")
+        # 登记任务引用（用于 cancel_task）
+        task = asyncio.current_task()
+        self._tasks[session_id] = task
 
-        # 创建 ReAct Agent 实例
-        agent = ReactAgent(
-            session_id=session_id,
-            call_llm_func=self.call_llm_via_go,
-            send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
-            tool_registry=self.tool_registry
-        )
-        # 执行 ReAct 循环，携带同一会话的历史上下文
-        final_answer = await agent.run(
-            user_message,
-            history=history,
-            send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
-        )
+        try:
+            payload = json.loads(command.payload) if command.payload else {}
+            user_message = payload.get("user_message", "")
+            history = payload.get("history", [])
+            if not isinstance(history, list):
+                history = []
 
-        # 保存历史记录（JSONL 追加：每行一个 [user, assistant] 数组）
-        history_file = self.history_dir / f"{session_id}.json"
-        async with self._history_lock:
-            with open(history_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps([
-                    {"role": "user", "content": user_message},
-                    {"role": "assistant", "content": final_answer}
-                ], ensure_ascii=False) + "\n")
+            logging.info(f"[Chat started] Session: {session_id} | User: {user_message}")
 
-        logging.info(f"Chat completed | Session: {session_id}")
+            # 创建 ReAct Agent 实例
+            agent = ReactAgent(
+                session_id=session_id,
+                call_llm_func=self.call_llm_via_go,
+                send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
+                tool_registry=self.tool_registry
+            )
+            # 执行 ReAct 循环，携带同一会话的历史上下文
+            final_answer = await agent.run(
+                user_message,
+                history=history,
+                send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
+            )
+
+            # 保存历史记录（cancelled 会话由 CancelledError 分支处理，不会到达此处）
+            history_file = self.history_dir / f"{session_id}.json"
+            async with self._history_lock:
+                with open(history_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps([
+                        {"role": "user", "content": user_message},
+                        {"role": "assistant", "content": final_answer}
+                    ], ensure_ascii=False) + "\n")
+
+            logging.info(f"Chat completed | Session: {session_id}")
+
+        except asyncio.CancelledError:
+            logging.info(f"[Cancel] Chat task cancelled: session={session_id}")
+            raise  # 重新抛出，由 caller 处理清理
+        finally:
+            self._tasks.pop(session_id, None)
+            self._active_queues.pop(session_id, None)
