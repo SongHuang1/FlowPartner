@@ -75,6 +75,14 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('system-lock', handleSystemLock)
   }, [lock])
 
+  useEffect(() => {
+    if (window.flowPartner?.onSystemFocus) {
+      window.flowPartner.onSystemFocus(() => {
+        refreshStatus().catch(() => {})
+      })
+    }
+  }, [refreshStatus])
+
   return (
     <LockContext.Provider value={{ lockStatus, loading, error, unlock, lock, refreshStatus }}>
       {children}

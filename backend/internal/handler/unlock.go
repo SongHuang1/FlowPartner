@@ -57,9 +57,9 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	ks := keystore.Instance()
 	status := ks.GetLockStatus()
 	if status.Locked && time.Now().Before(status.LockedUntil) {
+		remaining := int(time.Until(status.LockedUntil).Seconds() + 0.5)
 		response.WriteJSON(w, http.StatusTooManyRequests,
-			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %v 后重试",
-				time.Until(status.LockedUntil))))
+			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %d 秒后重试", remaining)))
 		return
 	}
 

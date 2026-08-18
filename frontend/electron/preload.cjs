@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('flowPartner', {
     onSystemLock: (callback) => {
         ipcRenderer.on('system-lock', () => callback())
     },
+    onSystemFocus: (callback) => {
+        ipcRenderer.on('system-focus', () => callback())
+    },
     fetchBackendPort: () => ipcRenderer.invoke('get-backend-port'),
     onBackendPortChanged: (callback) => {
         const listener = (_, port) => callback(port)

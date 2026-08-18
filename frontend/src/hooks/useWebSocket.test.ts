@@ -56,6 +56,7 @@ describe('useWebSocket', () => {
       platform: 'win32',
       getVersion: vi.fn().mockResolvedValue('1.0.0'),
       onSystemLock: vi.fn(),
+      onSystemFocus: vi.fn(),
       fetchBackendPort: mockFetchBackendPort,
       onBackendPortChanged: mockOnBackendPortChanged,
       onCloseAction: vi.fn(),

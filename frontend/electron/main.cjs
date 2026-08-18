@@ -372,6 +372,10 @@ function createWindow(port) {
     }, 500)
   })
 
+  mainWindow.on('focus', () => {
+    mainWindow.webContents.send('system-focus')
+  })
+
   mainWindow.on('closed', () => {
     if (moveSaveTimer) clearTimeout(moveSaveTimer)
     if (resizeSaveTimer) clearTimeout(resizeSaveTimer)
@@ -514,14 +518,35 @@ function createApplicationMenu() {
   Menu.setApplicationMenu(menu)
 }
 
+function lockAPIKey() {
+  if (!backendPort) return
+  const req = http.request({
+    hostname: 'localhost',
+    port: backendPort,
+    path: '/api/lock',
+    method: 'POST',
+  }, (res) => {
+    res.resume()
+    console.log(`[lockAPIKey] status=${res.statusCode}`)
+  })
+  req.on('error', (err) => {
+    console.error('[lockAPIKey] error:', err.message)
+  })
+  req.end()
+}
+
 function setupPowerMonitor() {
   powerMonitor.on('suspend', () => {
+    console.log('[powerMonitor] suspend')
+    lockAPIKey()
     if (mainWindow) {
       mainWindow.webContents.send('system-lock')
     }
   })
 
   powerMonitor.on('lock-screen', () => {
+    console.log('[powerMonitor] lock-screen')
+    lockAPIKey()
     if (mainWindow) {
       mainWindow.webContents.send('system-lock')
     }
