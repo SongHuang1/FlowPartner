@@ -21,14 +21,17 @@ import (
 
 type AgentHandler struct {
 	proto.UnimplementedFlowPartnerServiceServer
-	manager  *bridge.Manager
-	llmClient *llm.LLMClient
+	manager         *bridge.Manager
+	llmClient       *llm.LLMClient
+	approvalManager *tools.ApprovalManager
 }
 
-func NewAgentHandler(m *bridge.Manager) *AgentHandler {
+// NewAgentHandler 创建 AgentHandler。approvalManager 用于越权审批流程。
+func NewAgentHandler(m *bridge.Manager, am *tools.ApprovalManager) *AgentHandler {
 	return &AgentHandler{
-		manager:   m,
-		llmClient: llm.NewClient(),
+		manager:         m,
+		llmClient:       llm.NewClient(),
+		approvalManager: am,
 	}
 }
 
@@ -184,6 +187,8 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 }
 
 // ExecuteTool 一元 RPC：Python 调用 Go 执行工具，返回执行结果。
+// 越权路径：路径校验失败时，若未携带 approval_id 则返回 needs_permission=true，
+// 携带 approval_id 时校验审批有效性后执行。
 func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
 	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
 
@@ -215,7 +220,46 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 		}, nil
 	}
 
-	result := executor.Execute(ctx, req.SessionId, req.ToolName, req.Arguments)
+	// 审批流程：检查路径是否越权
+	needsPermission, rawPath, resolvedPath, checkErr := executor.CheckPath(req.ToolName, req.Arguments)
+	if checkErr != nil {
+		log.Printf("[ExecuteTool] 路径检查异常: %v", checkErr)
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    checkErr.Error(),
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
+	if needsPermission {
+		if req.ApprovalId == "" {
+			// 首次调用：路径越权，创建审批记录
+			requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
+			log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
+			return &proto.ToolResponse{
+				NeedsPermission: true,
+				RequestId:       requestID,
+			}, nil
+		}
+
+		// 带 approval_id 的重试：校验审批有效性
+		if !h.approvalManager.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
+			return &proto.ToolResponse{
+				Success:   false,
+				Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
+				ErrorCode: tools.ErrPathOutside,
+			}, nil
+		}
+		log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
+	}
+
+	// 正常执行（审批通过或路径在工作目录内）
+	// 审批通过时携带 WithApproval 标记，跳过工具内的二次路径校验
+	execCtx := ctx
+	if needsPermission {
+		execCtx = tools.WithApproval(ctx)
+	}
+	result := executor.Execute(execCtx, req.SessionId, req.ToolName, req.Arguments)
 
 	return &proto.ToolResponse{
 		Success:   result.Success,

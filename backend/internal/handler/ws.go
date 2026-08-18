@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 )
 
@@ -25,14 +26,16 @@ var upgrader = websocket.Upgrader{
 const maxHistoryMessages = 100
 
 type WebSocketHandler struct {
-	manager *bridge.Manager
-	done    chan struct{}
+	manager         *bridge.Manager
+	approvalManager *tools.ApprovalManager
+	done            chan struct{}
 }
 
-func NewWebSocketHandler(m *bridge.Manager) *WebSocketHandler {
+func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager) *WebSocketHandler {
 	return &WebSocketHandler{
-		manager: m,
-		done:    make(chan struct{}),
+		manager:         m,
+		approvalManager: am,
+		done:            make(chan struct{}),
 	}
 }
 
@@ -64,12 +67,17 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		Content   string             `json:"content"`
 		SessionID string             `json:"session_id"`
 		History   []wsHistoryMessage `json:"history"`
+		// permission_response fields
+		RequestID string `json:"request_id"`
+		Decision  string `json:"decision"`
 	}
 
 	// 记录本连接注册的 session，退出时逐一注销，防止 sessions map 无限增长
 	var sessionIDs []string
 	defer func() {
 		for _, id := range sessionIDs {
+			// 断连时取消该 session 的所有待审批申请
+			h.approvalManager.CancelSession(id)
 			h.manager.UnregisterSession(id)
 		}
 	}()
@@ -105,7 +113,8 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		case msg := <-readChan:
-			if msg.Action == "start_chat" {
+			switch msg.Action {
+			case "start_chat":
 				// 会话 ID：前端在同一会话内复用；缺失时由后端生成（兼容旧客户端）
 				sessionId := msg.SessionID
 				if sessionId == "" {
@@ -170,6 +179,66 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 						Payload:   `{"message": "消息发送失败：系统繁忙，请稍后重试"}`,
 					})
 				}
+
+			case "permission_response":
+				// 处理前端的权限审批响应
+				sessionId := msg.SessionID
+				requestID := msg.RequestID
+				decision := msg.Decision
+
+				if !storage.ValidSessionID(sessionId) || requestID == "" {
+					log.Printf("Rejecting permission_response with invalid params: session=%q request_id=%q", sessionId, requestID)
+					continue
+				}
+				if decision != "allow" && decision != "deny" {
+					log.Printf("Rejecting permission_response with invalid decision: %q", decision)
+					continue
+				}
+
+				if !h.approvalManager.Resolve(sessionId, requestID, decision) {
+					log.Printf("permission_response resolve failed: session=%s request_id=%s", sessionId, requestID)
+					continue
+				}
+
+				// 通知 Python 审批结果
+				payloadBytes, _ := json.Marshal(map[string]string{
+					"request_id": requestID,
+					"decision":   decision,
+				})
+				cmd := &proto.ServerCommand{
+					SessionId:   sessionId,
+					CommandType: "permission_response",
+					Payload:     string(payloadBytes),
+				}
+				select {
+				case h.manager.CmdChan <- cmd:
+					log.Printf("[Permission] %s request_id=%s session=%s", decision, requestID, sessionId)
+				default:
+					log.Printf("CmdChan full, dropping permission_response: session=%s request_id=%s", sessionId, requestID)
+				}
+
+			case "cancel_task":
+				// 转发取消任务命令到 Python
+				sessionId := msg.SessionID
+				if !storage.ValidSessionID(sessionId) {
+					log.Printf("Rejecting cancel_task with invalid session ID: %q", sessionId)
+					continue
+				}
+
+				cmd := &proto.ServerCommand{
+					SessionId:   sessionId,
+					CommandType: "cancel_task",
+					Payload:     "{}",
+				}
+				select {
+				case h.manager.CmdChan <- cmd:
+					log.Printf("[Cancel] Task cancelled: session=%s", sessionId)
+				default:
+					log.Printf("CmdChan full, dropping cancel_task: session=%s", sessionId)
+				}
+
+			default:
+				log.Printf("Unknown action: %q, dropping", msg.Action)
 			}
 		}
 	}

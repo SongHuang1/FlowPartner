@@ -17,6 +17,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/server"
 	"github.com/songhuang/flowpartner/backend/internal/static"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 )
@@ -30,7 +31,8 @@ func main() {
 
  	// 3. 创建 bridge.Manager 和 WebSocketHandler（共享桥接层）
  	mgr := bridge.NewManager()
- 	wsHandler := handler.NewWebSocketHandler(mgr)
+	approvalManager := tools.NewApprovalManager()
+ 	wsHandler := handler.NewWebSocketHandler(mgr, approvalManager)
 
 	// 3. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
@@ -57,7 +59,7 @@ func main() {
 
 	// 5. 创建 gRPC Server
 	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr))
+	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, approvalManager))
 
 	// 6. 启动 HTTP Server (goroutine)
 	httpErrChan := make(chan error, 1)

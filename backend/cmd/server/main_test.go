@@ -16,6 +16,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -48,7 +49,7 @@ func TestHTTPRoutes(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler)
 
@@ -98,7 +99,7 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler)
 
@@ -145,7 +146,7 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 // TestShutdown_ClosesAllServers 验证 shutdown 按顺序关闭 gRPC → WebSocket → HTTP
 func TestShutdown_ClosesAllServers(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
 
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler)
@@ -164,7 +165,7 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	}
 	defer grpcLis.Close()
 	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr))
+	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, tools.NewApprovalManager()))
 	go grpcServer.Serve(grpcLis)
 
 	// 建立 WebSocket 连接并注册 session（带重试等待 server 就绪）
@@ -208,7 +209,7 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 // TestShutdown_ForceStopsStuckGRPC 验证 GracefulStop 超时 2 秒后强制停止（§5.5）
 func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
 
 	httpServer := &http.Server{Handler: http.NewServeMux()}
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -223,7 +224,7 @@ func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	}
 	defer grpcLis.Close()
 	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr))
+	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, tools.NewApprovalManager()))
 	go grpcServer.Serve(grpcLis)
 
 	// 建立 gRPC 双向流并保持打开，模拟 Python Agent 卡死
