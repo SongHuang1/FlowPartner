@@ -7,7 +7,8 @@ import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { MessageBubble } from './MessageBubble'
+import { UserMessage } from './UserMessage'
+import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
 import { EventDetail } from './EventDetail'
 import { ConnectionStatus } from './ConnectionStatus'
@@ -25,9 +26,13 @@ export function MessageList({ messages }: { messages: Message[] }) {
 
   return (
     <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
-      ))}
+      {messages.map((msg) =>
+        msg.role === 'user' ? (
+          <UserMessage key={msg.id} message={msg} />
+        ) : (
+          <AssistantMessage key={msg.id} message={msg} />
+        )
+      )}
     </div>
   )
 }

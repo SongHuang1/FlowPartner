@@ -54,6 +54,7 @@ export function useConversation(): UseConversationReturn {
       role: 'assistant',
       content,
       timestamp: Date.now(),
+      status: 'completed',
     }
     const updated = [...messagesRef.current, newMessage]
     messagesRef.current = updated
