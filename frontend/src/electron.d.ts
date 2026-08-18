@@ -7,6 +7,7 @@ interface FlowPartnerAPI {
   onCloseAction: (callback: () => void) => void
   sendCloseAction: (action: 'minimize' | 'quit') => void
   updateCloseBehavior: (behavior: string, remembered: boolean) => void
+  openExternal: (url: string) => Promise<void>
 }
 
 interface Window {

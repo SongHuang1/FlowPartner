@@ -3,6 +3,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  status?: 'streaming' | 'completed'
 }
 
 export interface HistoryEntry {
