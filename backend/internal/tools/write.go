@@ -8,7 +8,7 @@ import (
 )
 
 // executeWrite 写入文件，自动创建父目录。
-func (e *ToolExecutor) executeWrite(_ context.Context, args map[string]interface{}) ToolResult {
+func (e *ToolExecutor) executeWrite(ctx context.Context, args map[string]interface{}) ToolResult {
 	path, ok := getStringArg(args, "path")
 	if !ok {
 		return ToolResult{Success: false, Result: "缺少参数: path", ErrorCode: ErrToolError}
@@ -18,9 +18,11 @@ func (e *ToolExecutor) executeWrite(_ context.Context, args map[string]interface
 		return ToolResult{Success: false, Result: "缺少参数: content", ErrorCode: ErrToolError}
 	}
 
-	// 路径校验
-	if err := e.guard.Validate(path); err != nil {
-		return ToolResult{Success: false, Result: err.Error(), ErrorCode: ErrPathOutside}
+	// 路径校验（已通过越权审批时跳过）
+	if !IsApproved(ctx) {
+		if err := e.guard.Validate(path); err != nil {
+			return ToolResult{Success: false, Result: err.Error(), ErrorCode: ErrPathOutside}
+		}
 	}
 
 	resolved, err := e.guard.Resolve(path)

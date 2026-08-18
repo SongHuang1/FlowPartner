@@ -9,7 +9,7 @@ import (
 
 // executeEdit 在文件中搜索 old_string 并替换为 new_string。
 // 精确匹配要求：old_string 必须恰好出现 1 次。
-func (e *ToolExecutor) executeEdit(_ context.Context, args map[string]interface{}) ToolResult {
+func (e *ToolExecutor) executeEdit(ctx context.Context, args map[string]interface{}) ToolResult {
 	path, ok := getStringArg(args, "path")
 	if !ok {
 		return ToolResult{Success: false, Result: "缺少参数: path", ErrorCode: ErrToolError}
@@ -28,9 +28,11 @@ func (e *ToolExecutor) executeEdit(_ context.Context, args map[string]interface{
 		return ToolResult{Success: false, Result: "old_string 不能为空", ErrorCode: ErrToolError}
 	}
 
-	// 路径校验
-	if err := e.guard.Validate(path); err != nil {
-		return ToolResult{Success: false, Result: err.Error(), ErrorCode: ErrPathOutside}
+	// 路径校验（已通过越权审批时跳过）
+	if !IsApproved(ctx) {
+		if err := e.guard.Validate(path); err != nil {
+			return ToolResult{Success: false, Result: err.Error(), ErrorCode: ErrPathOutside}
+		}
 	}
 
 	resolved, err := e.guard.Resolve(path)
