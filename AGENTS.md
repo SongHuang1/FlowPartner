@@ -49,6 +49,12 @@ Backend (Go)
     │       ├── TryActivate: 解密 + 解锁（带速率限制）
     │       ├── SwitchKey: 原子切换密钥
     │       └── GetKey: 供 LLM Client 使用
+    │
+    ├── Tools Executor (internal/tools/)
+    │       ├── executor.go: 工具调度（read/write/bash/edit）
+    │       ├── approval.go: 权限审批管理（一次性令牌）
+    │       ├── path_guard.go: 双层路径验证（词法 + 符号链接解析）
+    │       └── 执行结果通过 gRPC ExecuteTool 返回
     ▼
 Python Agent (agent/src/agent/)
     ├── FlowPartnerClient (grpc_client.py): gRPC 客户端
@@ -56,9 +62,10 @@ Python Agent (agent/src/agent/)
     │       │       ├── 逐 chunk 接收 SSE JSON
     │       │       ├── 重建 tool_calls delta
     │       │       └── 发送 llm_chunk 事件到前端
+    │       ├── execute_tool: 通过 gRPC 代理执行工具
     │       └── connect_and_listen: 双向流事件循环
     ├── core/react_agent.py: ReAct 循环（思考→行动→观察）
-    └── tools/: read_file, write_file, list_directory
+    └── tools/: read_file, write_file, bash, edit（全部通过 Go 代理执行）
 ```
 
 ### 前端启动流程
@@ -71,6 +78,7 @@ Electron main.cjs
 preload.cjs
     │ 暴露 window.flowPartner.fetchBackendPort() → backendPort
     │ 暴露 window.flowPartner.onBackendPortChanged(cb) → 端口变化通知
+    │ 暴露 window.flowPartner.onSystemLock(cb) → 系统锁屏监听
     ↓
 main.tsx bootstrap
     │ await window.flowPartner.fetchBackendPort()
@@ -86,31 +94,53 @@ useWebSocket hook
 ### 当前代码状态
 
 **main.go 已正常工作**：
-- `backend/cmd/server/main.go` 注入 `bridge.Manager`，同时启动 HTTP server 和 gRPC server
-- HTTP server 注册了 REST 路由（settings、conversation、unlock、model_configs）和 WebSocket 端点（`/ws`）
+- `backend/cmd/server/main.go` 注入 `bridge.Manager` + `ApprovalManager`，同时启动 HTTP server 和 gRPC server
+- HTTP server 注册了 REST 路由（settings、history、unlock、model_configs）和 WebSocket 端点（`/ws`）
 - gRPC server 注册了 `AgentHandler`，与 Python Agent 通过双向流通信
-- 端口通过 `server.FindAvailablePort` 动态发现，就绪信号格式：`__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
+- 端口通过 `server.FindAvailablePort` 动态发现（绑定 127.0.0.1），就绪信号格式：`__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
+- 优雅关闭：2s 超时，停止 gRPC + HTTP server
 
 **HTTP handlers 已接入**：
-- `internal/handler/settings.go` — settings CRUD（`/api/settings`），支持 ModelConfigs 迁移
-- `internal/handler/conversation.go` — 对话存储（`/api/conversation`）
-- `internal/handler/unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`）
-- `internal/handler/model_config.go` — 模型配置 CRUD（`/api/model_configs`）
+- `internal/handler/settings.go` — settings CRUD（`/api/settings`），支持 ModelConfigs 迁移 + SSRF 防护
+- `internal/handler/history.go` — 历史 API（`/api/history`、`/api/history/{session_id}`）
+- `internal/handler/unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`），带速率限制
+- `internal/handler/model_config.go` — 模型配置 CRUD（`/api/model_configs`），加密存储 + 唯一名称生成
+- `internal/handler/ws.go` — WebSocket handler（`/ws`），处理 `start_chat`、`permission_response`、`cancel_task`
 - 这些 handlers 通过 `registerRoutes` 注册到 HTTP server，已可正常使用
 
 **LLM 集成已完成**：
-- `internal/llm/client.go` — HTTP 流式客户端，支持 SSE 解析、自动重试、超时控制
-- `internal/llm/error.go` — 错误分类（401/403/404/429/500/502/503），中文错误信息 + 猜测原因
-- `internal/llm/sse.go` — SSE 事件解析器
+- `internal/llm/client.go` — HTTP 流式客户端，支持 SSE 解析、自动重试（仅首 chunk 前）、空闲超时
+- `internal/llm/error.go` — 错误分类（401/403/404/429/500/502/503 + 网络/超时），中文错误信息 + 猜测原因
+- `internal/llm/sse.go` — SSE 事件解析器（1MB 最大 token）
 - `internal/llm/url.go` — BaseURL 规范化（拼接 `/chat/completions`）
-- `internal/handler/agent.go` — `CallLLM` 现在是服务端流式 RPC，从 keystore 获取 API Key，调用 LLM Client
+- `internal/handler/agent.go` — `CallLLM` 是服务端流式 RPC，从 keystore 获取 API Key，调用 LLM Client
+
+**工具执行层已完成**：
+- `internal/tools/executor.go` — 工具调度（read/write/bash/edit），审批上下文传播
+- `internal/tools/approval.go` — 内存中审批管理（Create/Resolve/Consume/CancelSession），一次性令牌
+- `internal/tools/path_guard.go` — 双层路径验证（词法 + 符号链接解析），Windows 大小写不敏感
+- `internal/tools/read.go` — 文件读取（10MB 限制，10K 字符截断，UTF-8 验证）
+- `internal/tools/write.go` — 文件写入（自动创建父目录）
+- `internal/tools/bash.go` — Shell 执行（30s 超时，路径转义验证，Windows `cmd /c` 支持）
+- `internal/tools/edit.go` — 搜索替换（要求恰好 1 个匹配）
+- `internal/tools/errors.go` — 工具错误码定义
 
 **Keystore 已增强**：
-- `internal/keystore/keystore.go` — 新增 `TryActivate`（带速率限制 5 次/30s）、`SwitchKey`、`LockedUntil`
+- `internal/keystore/keystore.go` — `TryActivate`（原子操作：速率限制检查 + 解密 + 切换密钥）、`SwitchKey`、`Unlock`、`Lock`、`GetKey`、`VerifyPassword`、`GetLockStatus`
+- 速率限制：5 次失败 → 30s 锁定
+- API Key 在锁/切换时清零
 
 **Proto 已更新**：
 - `LLMResponse` 改为 `is_error` + `json_response` + `message_id`
 - `CallLLM` 改为 `returns (stream LLMResponse)`（服务端流式）
+- `ToolRequest` 改为 `session_id` + `tool_name` + `arguments` + `approval_id`
+- `ToolResponse` 改为 `success` + `result` + `error_code` + `needs_permission` + `request_id`
+
+**前端启动流程已完成**：
+- Electron main.cjs 启动 Go 后端 + Python Agent 子进程
+- 解析就绪信号提取端口，保存到内存
+- preload.cjs 暴露 `window.flowPartner` API（fetchBackendPort、onBackendPortChanged、系统锁屏监听）
+- React 应用通过 `useWebSocket` hook 连接 WebSocket，支持自动重连（5 次，3s 间隔）
 
 
 
@@ -120,7 +150,7 @@ useWebSocket hook
 
 ```
 FlowPartner/
-├── .github/workflows/    # CI: ci.yml (Go + TS), release.yml (Electron 构建)
+├── .github/workflows/    # CI: ci.yml (Go + TS + Python), release.yml (Electron 构建)
 ├── agent/                # Python Agent 层 (uv 管理)
 │   ├── proto/            # proto 文件副本（与 backend/proto/ 重复，见下方说明）
 │   ├── src/agent/        # 源码 (main.py, grpc_client.py, core/, tools/)
@@ -131,32 +161,48 @@ FlowPartner/
 │   ├── internal/
 │   │   ├── bridge/manager.go # WebSocket ↔ gRPC 桥接（核心）
 │   │   ├── handler/          # HTTP handlers + WebSocket/gRPC handlers
-│   │   ├── config/           # 配置加载（环境变量：FP_HTTP_PORT, FP_DEV_MODE）
-│   │   ├── crypto/           # API Key 加密/零化
-│   │   ├── keystore/         # API Key 内存管理
+│   │   │   ├── agent.go      #   gRPC handler (SyncChannel, CallLLM, ExecuteTool)
+│   │   │   ├── ws.go         #   WebSocket handler (/ws)
+│   │   │   ├── settings.go   #   Settings CRUD (/api/settings)
+│   │   │   ├── history.go    #   History API (/api/history)
+│   │   │   ├── unlock.go     #   API Key 解锁/锁定 (/api/unlock, /api/lock, /api/lock_status)
+│   │   │   └── model_config.go # 模型配置 CRUD (/api/model_configs)
+│   │   ├── tools/            # 工具执行层（通过 gRPC 代理）
+│   │   │   ├── executor.go   #   工具调度（read/write/bash/edit）
+│   │   │   ├── approval.go   #   权限审批管理（内存中）
+│   │   │   ├── path_guard.go #   路径验证（双层：词法 + 符号链接解析）
+│   │   │   ├── read.go       #   文件读取（10MB 限制，UTF-8 验证）
+│   │   │   ├── write.go      #   文件写入（自动创建父目录）
+│   │   │   ├── bash.go       #   Shell 执行（30s 超时，路径转义验证）
+│   │   │   ├── edit.go       #   搜索替换（要求恰好 1 个匹配）
+│   │   │   └── errors.go     #   工具错误码定义
+│   │   ├── config/           # 配置加载（环境变量：FP_HTTP_PORT, FP_DEV_MODE, FP_FRONTEND_DIR）
+│   │   ├── crypto/           # API Key 加密/零化（AES-256-GCM + Argon2id）
+│   │   ├── keystore/         # API Key 内存管理（带速率限制）
 │   │   ├── llm/              # LLM HTTP 流式客户端
-│   │   │   ├── client.go     #   HTTP 流式调用 + 重试
-│   │   │   ├── error.go      #   错误分类 + 中文信息
-│   │   │   ├── sse.go        #   SSE 事件解析器
-│   │   │   └── url.go        #   URL 规范化
-│   │   ├── response/         # 标准响应格式
-│   │   ├── sanitize/         # 错误信息净化（防止凭证泄露）
-│   │   ├── server/           # 端口发现
-│   │   └── storage/          # JSON 文件原子写入 (~/.flowpartner/config/)
+│   │   │   ├── client.go     #   HTTP 流式调用 + 重试（仅在首 chunk 前）
+│   │   │   ├── error.go      #   错误分类（401/403/404/429/500/502/503 + 网络/超时）
+│   │   │   ├── sse.go        #   SSE 事件解析器（1MB 最大 token）
+│   │   │   └── url.go        #   URL 规范化（拼接 /chat/completions）
+│   │   ├── response/         # 标准响应格式（自动 request_id + 时间戳，错误码范围）
+│   │   ├── sanitize/         # 错误信息净化（7 个正则模式，防止凭证泄露）
+│   │   ├── server/           # 端口发现（绑定 127.0.0.1，Windows WSAEADDRINUSE 处理）
+│   │   ├── static/           # 前端静态文件服务（SPA 回退）
+│   │   └── storage/          # JSON 文件原子写入 + 历史 JSONL 格式
 │   └── proto/                # proto 定义 + 生成的 .pb.go 文件
-├── docs/                   # 辅助文档
+├── docs/                   # 辅助文档（编译验证检查清单、specifications）
 ├── frontend/               # Electron + React + TypeScript + Tailwind
 │   ├── electron/
-│   │   ├── main.cjs          # Electron 主进程（启动 Go + Python）
-│   │   └── preload.cjs       # preload（暴露 fetchBackendPort、onBackendPortChanged）
+│   │   ├── main.cjs          # Electron 主进程（启动 Go + Python，系统托盘，窗口状态持久化）
+│   │   └── preload.cjs       # preload（暴露 fetchBackendPort、onBackendPortChanged、系统锁屏监听）
 │   ├── src/
 │   │   ├── components/       # chat, layout, settings, ui
 │   │   ├── hooks/            # useConversation, useLock, useSettings, useWindowState, useWebSocket
 │   │   ├── lib/              # api.ts, utils.ts, validation.ts
-│   │   └── types/
+│   │   └── types/            # TypeScript 类型定义
 │   ├── electron-builder.yml  # 打包配置（extraResources 包含 bin/）
 │   └── package.json
-├── Makefile               # build/test/clean 目标
+├── Makefile               # build/test/clean 目标（20+ 目标，包含跨平台编译）
 ├── CONTRIBUTING.md
 └── SECURITY.md
 ```
@@ -279,7 +325,7 @@ make test-all                                # 构建+测试所有层
 
 ### CI 注意事项
 
-- `agent` 的 CI job 在 `.github/workflows/ci.yml` 中被完全注释掉了
+- `agent` 的 CI job 在 `.github/workflows/ci.yml` 中已启用（Python 3.12 + uv）
 - 前端 CI 使用 Node 26，Go CI 使用 Go 1.26
 - Release workflow 通过 `v*` 标签触发，构建 Electron 安装包
 
@@ -336,6 +382,23 @@ make test-all                                # 构建+测试所有层
 - 异步操作必须用 try-catch 包裹
 - 组件用函数式 + Hooks，禁止 class 组件
 
+### 工具执行层规范
+
+**路径验证**：
+- 所有文件操作必须通过 `path_guard.go` 验证
+- 双层验证：词法检查 + 符号链接解析
+- Windows 大小写不敏感处理
+
+**权限审批**：
+- 工作区外操作需要用户审批
+- 一次性令牌（`approval.go`），用后即焚
+- 审批超时或会话取消时清理待处理请求
+
+**工具执行**：
+- 所有工具通过 Go 代理执行（`executor.go`）
+- Python Agent 不直接操作文件系统
+- 工具错误码定义在 `errors.go`
+
 ---
 
 ## Git 提交
@@ -383,7 +446,7 @@ make test-all                                # 构建+测试所有层
 - 没有运行验证就声称代码可工作 — 用 `make test-all` 自证
 - 在等待用户确认前先破坏性操作 — 删除/覆盖后再问来不及
 - 修改 proto 后手动编辑生成的 `.pb.go` / `_pb2.py` 文件 — 用 `protoc` 重新生成
-- 基于 chat.go 开发聊天功能 — 旧 HTTP chat 端点已废弃，新架构用 WebSocket（ws.go）
+- 基于旧 HTTP chat 端点开发聊天功能 — 新架构用 WebSocket（ws.go）
 - 使用旧 `sendMessage` HTTP 函数 — 该函数已从 api.ts 移除，聊天通信全部走 WebSocket（useWebSocket hook）
 
 

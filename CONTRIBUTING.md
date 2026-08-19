@@ -108,7 +108,7 @@ We use the following format:
 
 **Types:** `feat`, `fix`, `refactor`, `security`, `docs`, `test`, `chore`
 
-**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, `crypto`, `keystore`
+**Scopes:** `ts`, `py`, `go`, `proto`, `ui`, `agent`, `rag`, `crypto`, `keystore`, `llm`
 
 Example: `feat(go): add health check endpoint`
 

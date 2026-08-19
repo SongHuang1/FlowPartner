@@ -41,11 +41,13 @@ FlowPartner/
 │   ├── internal/
 │   │   ├── bridge/       # WebSocket ↔ gRPC bridge
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
+│   │   ├── tools/        # Tool execution layer (read/write/bash/edit)
 │   │   ├── crypto/       # API Key encryption/zeroing
 │   │   ├── keystore/     # API Key memory management
 │   │   ├── llm/          # LLM HTTP streaming client (SSE)
 │   │   ├── sanitize/     # Error sanitization
 │   │   ├── server/       # Port discovery
+│   │   ├── static/       # Frontend static file server
 │   │   └── storage/      # Atomic JSON writes
 │   └── proto/            # proto definitions + generated .pb.go
 ├── frontend/             # Electron + React + TypeScript + Tailwind

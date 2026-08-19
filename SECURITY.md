@@ -15,6 +15,11 @@ Early development. Some security mechanisms are already implemented; others are 
 - Atomic file writes (temp + rename) to prevent data corruption
 - Path traversal protection on file operations
 - Error message sanitization (prevents credential/token leaking in error responses)
+- Dual-layer path validation (lexical + symlink resolution)
+- Permission approval flow for out-of-workspace operations
+- Tool execution via Go proxy (read, write, bash, edit)
+- 30s timeout for shell execution
+- File size limits (10MB for read operations)
 
 **Planned:**
 - Dangerous operation blacklist (file deletion, system config changes, privilege escalation)

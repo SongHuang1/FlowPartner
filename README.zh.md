@@ -41,11 +41,13 @@ FlowPartner/
 │   ├── internal/
 │   │   ├── bridge/       # WebSocket ↔ gRPC 桥接
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
+│   │   ├── tools/        # 工具执行层（read/write/bash/edit）
 │   │   ├── crypto/       # API Key 加密/零化
 │   │   ├── keystore/     # API Key 内存管理
 │   │   ├── llm/          # LLM HTTP 流式客户端（SSE）
 │   │   ├── sanitize/     # 错误信息净化
 │   │   ├── server/       # 端口发现
+│   │   ├── static/       # 前端静态文件服务
 │   │   └── storage/      # 原子 JSON 写入
 │   └── proto/            # proto 定义 + 生成的 .pb.go
 ├── frontend/             # Electron + React + TypeScript + Tailwind
