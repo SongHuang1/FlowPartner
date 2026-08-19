@@ -22,7 +22,6 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// maxHistoryMessages 单次请求携带的历史消息上限，防止超大 payload 拖垮后端
 const maxHistoryMessages = 100
 
 type WebSocketHandler struct {
@@ -39,7 +38,6 @@ func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager) *WebSocke
 	}
 }
 
-// Close 通知所有 HandleWS 循环退出
 func (h *WebSocketHandler) Close() {
 	close(h.done)
 }
@@ -52,14 +50,27 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// 历史上下文可能较大，放宽默认 4096 字节的读限制
 	conn.SetReadLimit(4 << 20) // 4MB
 
 	log.Println("Frontend WebSocket connected")
 
+	type wsHistoryToolCallFunction struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}
+
+	type wsHistoryToolCall struct {
+		ID       string                   `json:"id"`
+		Type     string                   `json:"type"`
+		Function wsHistoryToolCallFunction `json:"function"`
+	}
+
 	type wsHistoryMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string              `json:"role"`
+		Content    string              `json:"content"`
+		ToolCalls  []wsHistoryToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string             `json:"tool_call_id,omitempty"`
+		Name       string             `json:"name,omitempty"`
 	}
 
 	type wsMessage struct {
@@ -67,16 +78,14 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		Content   string             `json:"content"`
 		SessionID string             `json:"session_id"`
 		History   []wsHistoryMessage `json:"history"`
-		// permission_response fields
-		RequestID string `json:"request_id"`
-		Decision  string `json:"decision"`
+		RequestID string             `json:"request_id"`
+		Decision  string             `json:"decision"`
+		Scope     string             `json:"scope"`
 	}
 
-	// 记录本连接注册的 session，退出时逐一注销，防止 sessions map 无限增长
 	var sessionIDs []string
 	defer func() {
 		for _, id := range sessionIDs {
-			// 断连时取消该 session 的所有待审批申请
 			h.approvalManager.CancelSession(id)
 			h.manager.UnregisterSession(id)
 		}
@@ -85,8 +94,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	readChan := make(chan wsMessage, 1)
 	errChan := make(chan error, 1)
 
-	// 读取 goroutine：将 ReadJSON 结果发送到 channel
-	// 发送端 select 监听 h.done，确保消息在途时 Close() 也能退出，避免 goroutine 泄漏
 	go func() {
 		for {
 			var msg wsMessage
@@ -115,7 +122,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		case msg := <-readChan:
 			switch msg.Action {
 			case "start_chat":
-				// 会话 ID：前端在同一会话内复用；缺失时由后端生成（兼容旧客户端）
 				sessionId := msg.SessionID
 				if sessionId == "" {
 					b := make([]byte, 16)
@@ -125,7 +131,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					}
 					sessionId = fmt.Sprintf("sess_%d_%s", time.Now().UnixNano(), hex.EncodeToString(b))
 				} else if !storage.ValidSessionID(sessionId) {
-					// 防御：非法 session_id 可能被 Python 用作文件名（路径遍历风险），直接丢弃
 					log.Printf("Rejecting start_chat with invalid session ID: %q", sessionId)
 					continue
 				}
@@ -133,25 +138,23 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 				h.manager.RegisterSession(sessionId, conn)
 
-				// 校验并过滤历史消息：仅保留合法 role 与非空内容，限制条数
 				history := make([]wsHistoryMessage, 0, len(msg.History))
 				for _, hm := range msg.History {
 					if len(history) >= maxHistoryMessages {
 						break
 					}
-					if hm.Role != "user" && hm.Role != "assistant" {
+					if hm.Role != "user" && hm.Role != "assistant" && hm.Role != "tool" {
 						continue
 					}
-					if strings.TrimSpace(hm.Content) == "" {
+					if hm.Role != "tool" && strings.TrimSpace(hm.Content) == "" {
 						continue
 					}
-					if utf8.RuneCountInString(hm.Content) > 10000 {
+					if hm.Role != "tool" && utf8.RuneCountInString(hm.Content) > 10000 {
 						continue
 					}
 					history = append(history, hm)
 				}
 
-				// 使用 json.Marshal 对用户输入进行正确的 JSON 转义，防止注入
 				payloadBytes, err := json.Marshal(map[string]interface{}{
 					"user_message": msg.Content,
 					"history":      history,
@@ -166,14 +169,11 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					CommandType: "start_chat",
 					Payload:     string(payloadBytes),
 				}
-				// 非阻塞发送：Python Agent 未连接（无消费者）时不阻塞 WebSocket handler
 				select {
 				case h.manager.CmdChan <- cmd:
-					// 日志不记录聊天明文内容，仅记录长度（用户可能在消息中粘贴敏感信息）
 					log.Printf("[Chat started] Session: %s | Content length: %d", sessionId, utf8.RuneCountInString(msg.Content))
 				default:
 					log.Printf("CmdChan full, dropping command: session=%s", sessionId)
-					// 丢弃时必须通知前端，避免用户误以为消息已发送
 					h.manager.SendToSession(sessionId, &proto.AgentEvent{
 						EventType: "error",
 						Payload:   `{"message": "消息发送失败：系统繁忙，请稍后重试"}`,
@@ -181,7 +181,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				}
 
 			case "permission_response":
-				// 处理前端的权限审批响应
 				sessionId := msg.SessionID
 				requestID := msg.RequestID
 				decision := msg.Decision
@@ -200,7 +199,14 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
-				// 通知 Python 审批结果
+				if decision == "allow" && msg.Scope == "session" {
+					if toolName, resolvedPath, ok := h.approvalManager.GetApproval(sessionId, requestID); ok {
+						h.approvalManager.AddTrust(sessionId, toolName, resolvedPath)
+					} else {
+						log.Printf("permission_response: cannot get approval details for trust, request_id=%s", requestID)
+					}
+				}
+
 				payloadBytes, _ := json.Marshal(map[string]string{
 					"request_id": requestID,
 					"decision":   decision,
@@ -212,13 +218,12 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				}
 				select {
 				case h.manager.CmdChan <- cmd:
-					log.Printf("[Permission] %s request_id=%s session=%s", decision, requestID, sessionId)
+					log.Printf("[Permission] %s request_id=%s session=%s scope=%s", decision, requestID, sessionId, msg.Scope)
 				default:
 					log.Printf("CmdChan full, dropping permission_response: session=%s request_id=%s", sessionId, requestID)
 				}
 
 			case "cancel_task":
-				// 转发取消任务命令到 Python
 				sessionId := msg.SessionID
 				if !storage.ValidSessionID(sessionId) {
 					log.Printf("Rejecting cancel_task with invalid session ID: %q", sessionId)

@@ -12,19 +12,13 @@ import (
 )
 
 var (
-	// ErrNotFound 表示文件不存在
-	ErrNotFound = errors.New("file not found")
-	// ErrInvalidFilename 表示文件名包含非法字符（路径遍历风险）
+	ErrNotFound       = errors.New("file not found")
 	ErrInvalidFilename = errors.New("invalid filename: must not contain path separators or '..'")
 )
 
-// dataDirCache 缓存 DataDir 结果，避免重复 syscall
 var dataDirCache string
-
-// testDataDir 测试期间指定的数据目录（仅测试使用），ResetDataDirCache 后仍生效
 var testDataDir string
 
-// DataDir 返回用户数据目录路径，若不存在则创建。结果缓存，首次调用后后续直接返回缓存值。
 func DataDir() (string, error) {
 	if dataDirCache != "" {
 		return dataDirCache, nil
@@ -41,18 +35,15 @@ func DataDir() (string, error) {
 	return dir, nil
 }
 
-// ResetDataDirCache 重置缓存（仅测试使用）。若已通过 SetDataDirForTest 指定目录，重置后回到该目录。
 func ResetDataDirCache() {
 	dataDirCache = testDataDir
 }
 
-// SetDataDirForTest 指定数据目录，避免测试污染真实用户目录（仅测试使用）
 func SetDataDirForTest(dir string) {
 	testDataDir = dir
 	dataDirCache = dir
 }
 
-// validateFilename 校验文件名安全性，防止路径遍历
 func validateFilename(filename string) error {
 	if filename == "" {
 		return ErrInvalidFilename
@@ -63,7 +54,6 @@ func validateFilename(filename string) error {
 	return nil
 }
 
-// ReadJSON 读取 JSON 文件并反序列化到 dest（dest 必须为指针）
 func ReadJSON(filename string, dest interface{}) error {
 	if err := validateFilename(filename); err != nil {
 		return err
@@ -86,7 +76,6 @@ func ReadJSON(filename string, dest interface{}) error {
 	return nil
 }
 
-// WriteJSON 将数据序列化为 JSON 并原子写入文件（temp file + rename），权限 0600
 func WriteJSON(filename string, src interface{}) error {
 	if err := validateFilename(filename); err != nil {
 		return err
@@ -113,10 +102,26 @@ func WriteJSON(filename string, src interface{}) error {
 	return nil
 }
 
-// HistoryMessage 历史会话中的单条消息（由 Python Agent 写入，仅含 role/content）
+// ToolCallParam LLM 返回的工具调用参数。
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolCall 单个工具调用。
+type ToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function ToolCallFunction   `json:"function"`
+}
+
+// HistoryMessage 历史会话中的单条消息，支持结构化工具上下文。
 type HistoryMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string     `json:"role"`
+	Content  string     `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string   `json:"tool_call_id,omitempty"`
+	Name      string     `json:"name,omitempty"`
 }
 
 // HistoryEntry 历史会话列表条目
@@ -127,7 +132,6 @@ type HistoryEntry struct {
 	MessageCount int    `json:"message_count"`
 }
 
-// ValidSessionID 校验会话 ID 是否安全（仅允许字母数字、下划线、连字符，防止路径遍历）
 func ValidSessionID(sessionID string) bool {
 	if len(sessionID) == 0 || len(sessionID) > 128 {
 		return false
@@ -140,7 +144,6 @@ func ValidSessionID(sessionID string) bool {
 	return true
 }
 
-// HistoryDir 返回历史记录目录路径，若不存在则创建
 func HistoryDir() (string, error) {
 	dir, err := DataDir()
 	if err != nil {
@@ -153,7 +156,6 @@ func HistoryDir() (string, error) {
 	return historyDir, nil
 }
 
-// ListHistory 列出全部历史会话，按更新时间倒序排列
 func ListHistory() ([]HistoryEntry, error) {
 	historyDir, err := HistoryDir()
 	if err != nil {
@@ -198,7 +200,8 @@ func ListHistory() ([]HistoryEntry, error) {
 	return result, nil
 }
 
-// ReadHistory 读取历史会话的全部消息（JSONL：每行一个 [user, assistant] 数组）
+// ReadHistory 读取历史会话的全部消息。
+// 兼容两种格式：旧"成对 [user,assistant] 数组"与新"单条消息对象"（JSONL）。
 func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 	if !ValidSessionID(sessionID) {
 		return nil, ErrInvalidFilename
@@ -215,23 +218,43 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 		}
 		return nil, fmt.Errorf("failed to read history %s: %w", sessionID, err)
 	}
+
 	result := make([]HistoryMessage, 0)
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
+		// 先尝试旧格式：成对 [user,assistant] 数组
 		var pair []HistoryMessage
-		if err := json.Unmarshal([]byte(line), &pair); err != nil {
-			// 跳过损坏行，保证部分损坏不影响整体读取
+		if err := json.Unmarshal([]byte(line), &pair); err == nil && len(pair) > 0 {
+			valid := true
+			for _, m := range pair {
+				if m.Role != "user" && m.Role != "assistant" {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				result = append(result, pair...)
+				continue
+			}
+		}
+
+		// 再尝试新格式：单条消息对象
+		var msg HistoryMessage
+		if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
+			result = append(result, msg)
 			continue
 		}
-		result = append(result, pair...)
+
+		// 两种格式都失败，跳过损坏行
+		log.Printf("[Storage] Skipping malformed history line in %s", sessionID)
 	}
 	return result, nil
 }
 
-// truncateRunes 按字符数截断字符串（避免按字节截断破坏 UTF-8）
 func truncateRunes(s string, max int) string {
 	runes := []rune(s)
 	if len(runes) <= max {

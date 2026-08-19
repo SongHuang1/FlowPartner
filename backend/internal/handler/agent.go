@@ -233,24 +233,26 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 
 	if needsPermission {
 		if req.ApprovalId == "" {
-			// 首次调用：路径越权，创建审批记录
-			requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
-			log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
-			return &proto.ToolResponse{
-				NeedsPermission: true,
-				RequestId:       requestID,
-			}, nil
+			if h.approvalManager.IsTrusted(req.SessionId, req.ToolName, resolvedPath) {
+				log.Printf("[ExecuteTool] Session trust hit, skipping approval: tool=%s path=%s", req.ToolName, resolvedPath)
+			} else {
+				requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
+				log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
+				return &proto.ToolResponse{
+					NeedsPermission: true,
+					RequestId:       requestID,
+				}, nil
+			}
+		} else {
+			if !h.approvalManager.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
+				return &proto.ToolResponse{
+					Success:   false,
+					Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
+					ErrorCode: tools.ErrPathOutside,
+				}, nil
+			}
+			log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
 		}
-
-		// 带 approval_id 的重试：校验审批有效性
-		if !h.approvalManager.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
-			return &proto.ToolResponse{
-				Success:   false,
-				Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
-				ErrorCode: tools.ErrPathOutside,
-			}, nil
-		}
-		log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
 	}
 
 	// 正常执行（审批通过或路径在工作目录内）

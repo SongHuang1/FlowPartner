@@ -27,16 +27,25 @@ type Approval struct {
 	Consumed    bool
 }
 
-// ApprovalManager 管理所有审批记录（内存态，不落盘）。
+// trustKey 会话级信任的复合键。
+type trustKey struct {
+	SessionID    string
+	ToolName     string
+	ResolvedPath string
+}
+
+// ApprovalManager 管理所有审批记录（内存态，不落盘）与会话级信任。
 type ApprovalManager struct {
 	mu      sync.RWMutex
-	records map[string]*Approval // request_id → Approval
+	records map[string]*Approval
+	trusts  map[trustKey]struct{}
 }
 
 // NewApprovalManager 创建审批管理器。
 func NewApprovalManager() *ApprovalManager {
 	return &ApprovalManager{
 		records: make(map[string]*Approval),
+		trusts:  make(map[trustKey]struct{}),
 	}
 }
 
@@ -60,7 +69,6 @@ func (m *ApprovalManager) Create(sessionID, toolName, rawPath, resolvedPath stri
 }
 
 // Resolve 更新审批记录状态（用户做出决定时调用）。
-// ok=false 表示 request_id 不存在或 session 不匹配。
 func (m *ApprovalManager) Resolve(sessionID, requestID, decision string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -87,7 +95,6 @@ func (m *ApprovalManager) Resolve(sessionID, requestID, decision string) bool {
 }
 
 // Consume 校验审批记录并标记为已消费（一次性：成功后删除记录）。
-// 校验条件：记录存在、状态为已批准、session_id 匹配、tool_name 匹配、resolvedPath 匹配、未被消费。
 func (m *ApprovalManager) Consume(sessionID, approvalID, toolName, resolvedPath string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -98,7 +105,7 @@ func (m *ApprovalManager) Consume(sessionID, approvalID, toolName, resolvedPath 
 		return false
 	}
 	if approval.SessionID != sessionID {
-		log.Printf("[Approval] Consume failed: session mismatch, approval_id=%s", approvalID)
+		log.Printf("[Approval] Consume failed: session mismatch, approval_id=%s expected=%s got=%s", approvalID, approval.SessionID, sessionID)
 		return false
 	}
 	if approval.ToolName != toolName {
@@ -124,6 +131,32 @@ func (m *ApprovalManager) Consume(sessionID, approvalID, toolName, resolvedPath 
 	return true
 }
 
+// AddTrust 直接添加会话级信任（由 ws.go 在 permission_response scope=session 时调用）。
+// 不消费审批记录，审批记录由 agent.go 的 Consume 处理。
+func (m *ApprovalManager) AddTrust(sessionID, toolName, resolvedPath string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := trustKey{SessionID: sessionID, ToolName: toolName, ResolvedPath: resolvedPath}
+	m.trusts[key] = struct{}{}
+	log.Printf("[Trust] Added session trust: session=%s tool=%s path=%s", sessionID, toolName, resolvedPath)
+}
+
+// GetApproval 查找审批记录（用于 ws.go 在 scope=session 时获取 toolName 和 resolvedPath）。
+func (m *ApprovalManager) GetApproval(sessionID, approvalID string) (toolName, resolvedPath string, ok bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	approval, exists := m.records[approvalID]
+	if !exists {
+		return "", "", false
+	}
+	if approval.SessionID != sessionID {
+		return "", "", false
+	}
+	return approval.ToolName, approval.ResolvedPath, true
+}
+
 // CancelSession 将指定 session 的所有待审批记录置为已拒绝（断连时调用）。
 func (m *ApprovalManager) CancelSession(sessionID string) {
 	m.mu.Lock()
@@ -135,9 +168,16 @@ func (m *ApprovalManager) CancelSession(sessionID string) {
 			log.Printf("[Approval] Cancelled by disconnect: request_id=%s session=%s", id, sessionID)
 		}
 	}
+
+	for key := range m.trusts {
+		if key.SessionID == sessionID {
+			delete(m.trusts, key)
+		}
+	}
+	log.Printf("[Trust] Cleared all trusts for session=%s", sessionID)
 }
 
-// GetPendingRequestID 获取指定 session 的待审批 request_id（同一 session 同时只能有一个）。
+// GetPendingRequestID 获取指定 session 的待审批 request_id。
 func (m *ApprovalManager) GetPendingRequestID(sessionID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -150,7 +190,20 @@ func (m *ApprovalManager) GetPendingRequestID(sessionID string) string {
 	return ""
 }
 
-// DeniedMessage 返回拒绝文案，供 Python 作为工具结果反馈给 LLM。
+// IsTrusted 检查指定 (session, tool, resolvedPath) 组合是否有会话级信任。
+func (m *ApprovalManager) IsTrusted(sessionID, toolName, resolvedPath string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	key := trustKey{SessionID: sessionID, ToolName: toolName, ResolvedPath: resolvedPath}
+	_, trusted := m.trusts[key]
+	if trusted {
+		log.Printf("[Trust] Hit: session=%s tool=%s path=%s", sessionID, toolName, resolvedPath)
+	}
+	return trusted
+}
+
+// DeniedMessage 返回拒绝文案。
 func DeniedMessage(path string) string {
 	return fmt.Sprintf("用户拒绝了此操作：%s", path)
 }

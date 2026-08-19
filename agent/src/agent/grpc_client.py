@@ -11,11 +11,8 @@ from agent.core.react_agent import ReactAgent
 from agent.tools.file_ops import make_bash_handler, make_edit_handler, make_read_handler, make_write_handler
 from agent.tools.registry import ToolRegistry
 
-# 会话 ID 白名单：仅允许字母数字、下划线、连字符（与 Go 侧 storage.ValidSessionID 一致），
-# 防止被用作文件名时发生路径遍历
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
-# 取消后不保存历史的标记文案
 _CANCELLED_ANSWER = "已停止生成"
 
 
@@ -33,20 +30,14 @@ class FlowPartnerClient:
         self.channel: grpc.aio.Channel | None = None
         self.stub: agent_pb2_grpc.FlowPartnerServiceStub | None = None
         self.history_dir.mkdir(parents=True, exist_ok=True)
-        # 串行化历史文件写入，避免同一会话并发追加时交错
         self._history_lock = asyncio.Lock()
 
-        # 权限审批：request_id → Future（等待用户决定）
         self._pending_approvals: dict[str, asyncio.Future] = {}
         self._approval_lock = asyncio.Lock()
 
-        # 任务追踪：session_id → 进行中的 run task（用于 cancel_task）
         self._tasks: dict[str, asyncio.Task] = {}
-
-        # 活跃队列映射：session_id → outgoing_queue（用于 permission_request 事件发送）
         self._active_queues: dict[str, asyncio.Queue] = {}
 
-        # 初始化并注册所有工具（通过 Go 代理执行）
         self.tool_registry = ToolRegistry()
         self.tool_registry.register(
             name="read",
@@ -109,10 +100,6 @@ class FlowPartnerClient:
         await queue.put(event)
 
     async def execute_tool(self, session_id: str, tool_name: str, arguments: dict) -> dict:
-        """通过 gRPC 调用 Go 执行工具（一元 RPC）。
-        内部处理权限审批流程：若 Go 返回 needs_permission=true，
-        向前端发送 permission_request 事件并挂起等待用户决定。
-        """
         if self.stub is None:
             return {"success": False, "result": "gRPC 连接未建立，请稍后重试", "error_code": "TOOL_ERROR"}
         try:
@@ -123,12 +110,10 @@ class FlowPartnerClient:
             )
             response = await self.stub.ExecuteTool(request)
 
-            # 路径越权，需用户审批
             if response.needs_permission:
                 request_id = response.request_id
                 logging.info(f"[Permission] Tool {tool_name} needs approval: request_id={request_id}")
 
-                # 向前端发送审批请求事件
                 path = arguments.get("path", "")
                 operation_map = {"read": "读取", "write": "写入", "edit": "编辑", "list": "列出", "search": "搜索", "info": "查询"}
                 operation = operation_map.get(tool_name, tool_name)
@@ -139,20 +124,18 @@ class FlowPartnerClient:
                     "path": path,
                     "operation": operation,
                     "detail": f"Agent 想要{operation}路径 {path}",
+                    "scope_options": ["once", "session"],
                 }
 
                 await self._send_permission_request(session_id, event_payload)
 
-                # 创建 Future 挂起等待用户决定
                 future: asyncio.Future = asyncio.get_running_loop().create_future()
                 async with self._approval_lock:
                     self._pending_approvals[request_id] = future
 
-                # 等待用户决定（allow/deny）
                 decision = await future
 
                 if decision == "allow":
-                    # 重试：携带 approval_id
                     retry_request = agent_pb2.ToolRequest(
                         session_id=session_id,
                         tool_name=tool_name,
@@ -166,7 +149,6 @@ class FlowPartnerClient:
                         "error_code": retry_response.error_code,
                     }
                 else:
-                    # 用户拒绝
                     path = arguments.get("path", "")
                     return {"success": False, "result": f"用户拒绝了此操作：{path}", "error_code": "PERMISSION_DENIED"}
 
@@ -181,9 +163,6 @@ class FlowPartnerClient:
             return {"success": False, "result": f"工具调用异常: {e}", "error_code": "TOOL_ERROR"}
 
     async def _send_permission_request(self, session_id: str, payload: dict) -> None:
-        """向当前活跃的 outgoing queue 发送 permission_request 事件。
-        使用 _active_queues 映射（session_id → queue）来定位正确的队列。
-        """
         queue = self._active_queues.get(session_id)
         if queue is None:
             logging.warning(f"[Permission] No active queue for session {session_id}, cannot send permission_request")
@@ -191,15 +170,23 @@ class FlowPartnerClient:
         await self.send_event(session_id, "permission_request", payload, queue)
 
     def _drain_pending_approvals(self) -> None:
-        """断连时将所有未完成 Future 以拒绝结果完成，防止悬挂。"""
         for request_id, future in list(self._pending_approvals.items()):
             if not future.done():
                 future.set_result("deny")
                 logging.info(f"[Permission] Drained pending approval on disconnect: request_id={request_id}")
         self._pending_approvals.clear()
 
-    async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None) -> dict:
-        """通过 gRPC 请求 Go 代为调用大模型（服务端流式）"""
+    async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None, iteration: int = 0) -> dict:
+        """通过 gRPC 请求 Go 代为调用大模型（服务端流式）。
+
+        返回结构:
+        - success: bool
+        - content: str (完整文本)
+        - finish_reason: str
+        - tool_calls: list[dict] (完整工具调用列表)
+        - usage: dict (token 用量)
+        - error_message: str (失败时)
+        """
         if self.stub is None:
             return {"success": False, "error_message": "gRPC 连接未建立，请稍后重试", "error_guess": "", "json_response": ""}
         try:
@@ -239,15 +226,23 @@ class FlowPartnerClient:
                     if idx not in tool_calls_map:
                         tool_calls_map[idx] = {
                             "id": tc.get("id", ""),
-                            "type": tc.get("type", "function"),
+                            "type": tc.get("type", ""),
                             "function": {
-                                "name": tc.get("function", {}).get("name", ""),
+                                "name": "",
                                 "arguments": ""
                             }
                         }
+                    entry = tool_calls_map[idx]
+                    if tc.get("id"):
+                        entry["id"] = tc["id"]
+                    if tc.get("type"):
+                        entry["type"] = tc["type"]
                     func = tc.get("function")
-                    if func and func.get("arguments"):
-                        tool_calls_map[idx]["function"]["arguments"] += func["arguments"]
+                    if func:
+                        if func.get("name"):
+                            entry["function"]["name"] = func["name"]
+                        if func.get("arguments"):
+                            entry["function"]["arguments"] += func["arguments"]
 
                 if choices[0].get("finish_reason"):
                     finish_reason = choices[0]["finish_reason"]
@@ -255,11 +250,33 @@ class FlowPartnerClient:
                 if chunk.get("usage"):
                     usage = chunk["usage"]
 
-                if send_event_func:
+                if send_event_func and delta.get("content"):
                     await send_event_func(session_id, "llm_chunk", {
-                        "content": delta.get("content", ""),
-                        "finish_reason": choices[0].get("finish_reason")
+                        "content": delta["content"],
+                        "iteration": iteration,
                     })
+
+            if tool_calls_map:
+                valid_calls = []
+                for i in sorted(tool_calls_map):
+                    tc = tool_calls_map[i]
+                    args_str = tc["function"]["arguments"]
+                    if args_str:
+                        try:
+                            json.loads(args_str)
+                        except json.JSONDecodeError:
+                            logging.warning(
+                                f"[LLM] Tool call {tc['function']['name']} has invalid JSON arguments "
+                                f"({args_str[:100]}...), dropping this tool call"
+                            )
+                            continue
+                    if not tc["function"]["name"]:
+                        logging.warning(f"[LLM] Tool call at index {i} has no function name, dropping")
+                        continue
+                    valid_calls.append(tc)
+                tool_calls_list = valid_calls
+            else:
+                tool_calls_list = []
 
             result: dict = {
                 "success": True,
@@ -267,8 +284,8 @@ class FlowPartnerClient:
                 "finish_reason": finish_reason,
                 "json_response": ""
             }
-            if tool_calls_map:
-                result["tool_calls"] = [tool_calls_map[i] for i in sorted(tool_calls_map)]
+            if tool_calls_list:
+                result["tool_calls"] = tool_calls_list
             if usage:
                 result["usage"] = usage
             return result
@@ -307,7 +324,6 @@ class FlowPartnerClient:
                         )
 
                     elif command.command_type == "permission_response":
-                        # 处理审批响应
                         try:
                             payload = json.loads(command.payload) if command.payload else {}
                             request_id = payload.get("request_id", "")
@@ -325,7 +341,6 @@ class FlowPartnerClient:
                             logging.error(f"[Permission] Failed to process response: {e}")
 
                     elif command.command_type == "cancel_task":
-                        # 处理取消任务
                         session_id = command.session_id
                         task = self._tasks.get(session_id)
                         if task is not None and not task.done():
@@ -339,9 +354,7 @@ class FlowPartnerClient:
             except Exception as e:
                 logging.error(f"Unexpected error (attempt {attempt}/{max_retries}): {e}")
             finally:
-                # 断连时清理所有待审批 Future
                 self._drain_pending_approvals()
-                # 清理活跃队列映射
                 self._active_queues.clear()
 
                 if self.channel:
@@ -356,7 +369,6 @@ class FlowPartnerClient:
                 logging.error("Max retries reached, giving up.")
 
     async def handle_chat(self, command, queue):
-        """处理一次完整的对话"""
         session_id = command.session_id
         try:
             session_id = _safe_session_id(session_id)
@@ -364,10 +376,7 @@ class FlowPartnerClient:
             logging.error(f"Rejecting chat with invalid session id: {session_id!r}")
             return
 
-        # 注册活跃队列（用于 permission_request 事件发送）
         self._active_queues[session_id] = queue
-
-        # 登记任务引用（用于 cancel_task）
         task = asyncio.current_task()
         self._tasks[session_id] = task
 
@@ -378,36 +387,31 @@ class FlowPartnerClient:
             if not isinstance(history, list):
                 history = []
 
-            logging.info(f"[Chat started] Session: {session_id} | User: {user_message}")
+            logging.info(f"[Chat started] Session: {session_id} | User length: {len(user_message)}")
 
-            # 创建 ReAct Agent 实例
             agent = ReactAgent(
                 session_id=session_id,
                 call_llm_func=self.call_llm_via_go,
                 send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
                 tool_registry=self.tool_registry
             )
-            # 执行 ReAct 循环，携带同一会话的历史上下文
-            final_answer = await agent.run(
+            final_answer, all_messages = await agent.run(
                 user_message,
                 history=history,
                 send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
             )
 
-            # 保存历史记录（cancelled 会话由 CancelledError 分支处理，不会到达此处）
             history_file = self.history_dir / f"{session_id}.json"
             async with self._history_lock:
                 with open(history_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps([
-                        {"role": "user", "content": user_message},
-                        {"role": "assistant", "content": final_answer}
-                    ], ensure_ascii=False) + "\n")
+                    for msg in all_messages:
+                        f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
             logging.info(f"Chat completed | Session: {session_id}")
 
         except asyncio.CancelledError:
             logging.info(f"[Cancel] Chat task cancelled: session={session_id}")
-            raise  # 重新抛出，由 caller 处理清理
+            raise
         finally:
             self._tasks.pop(session_id, None)
             self._active_queues.pop(session_id, None)
