@@ -38,7 +38,7 @@ export function AssistantMessage({ message }: { message: Message }) {
                 }
                 if (inline) {
                   return (
-                    <code className="bg-neutral-100 px-1 py-0.5 rounded text-sm font-mono">
+                    <code className="inline bg-neutral-100 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600">
                       {children}
                     </code>
                   )
@@ -46,14 +46,14 @@ export function AssistantMessage({ message }: { message: Message }) {
                 const match = /language-(\w+)/.exec(className || '')
                 const language = match?.[1]
                 return (
-                  <div className="relative">
+                  <div className="relative my-3">
                     {language && (
-                      <div className="absolute top-0 left-0 px-2 py-0.5 text-xs text-neutral-500 bg-neutral-200 rounded-tl rounded-br font-mono">
+                      <div className="absolute top-0 left-0 px-3 py-1 text-xs text-neutral-500 bg-neutral-200 rounded-tl rounded-br font-mono z-10">
                         {language}
                       </div>
                     )}
-                    <pre className="bg-neutral-100 pt-6 p-3 rounded overflow-y-auto max-h-[400px]">
-                      <code className="font-mono text-sm" {...rest}>
+                    <pre className="bg-neutral-900 text-neutral-100 pt-8 p-4 rounded-lg overflow-x-auto max-h-[400px]">
+                      <code className="font-mono text-sm leading-relaxed" {...rest}>
                         {children}
                       </code>
                     </pre>

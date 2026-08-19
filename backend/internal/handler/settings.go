@@ -125,6 +125,14 @@ func LoadSettings() Settings {
 
 	settings.deriveFlatFields()
 
+	// 自动修复：若 ActiveConfigID 无效或指向无密钥的配置，自动激活第一个有密钥的配置
+	if settings.ActiveConfigID == "" || settings.activeConfig() == nil {
+		if cfg := settings.firstConfigWithKey(); cfg != nil {
+			settings.ActiveConfigID = cfg.ID
+			settings.deriveFlatFields()
+		}
+	}
+
 	return settings
 }
 
@@ -157,23 +165,34 @@ func (s *Settings) migrateOldConfig() {
 func (s *Settings) deriveFlatFields() {
 	cfg := s.activeConfig()
 	if cfg == nil {
+		s.Model = ""
 		s.BaseURL = ""
 		s.ModelName = ""
 		s.EncryptedAPIKey = ""
 		return
 	}
+	s.Model = cfg.ModelName
 	s.BaseURL = cfg.BaseURL
 	s.ModelName = cfg.ModelName
 	s.EncryptedAPIKey = cfg.EncryptedAPIKey
 }
 
-// activeConfig 返回当前激活的配置
+// activeConfig 返回当前激活的配置（必须有加密密钥）
 func (s *Settings) activeConfig() *ModelConfig {
-	if s.ActiveConfigID == "" {
-		return nil
+	if s.ActiveConfigID != "" {
+		for i := range s.ModelConfigs {
+			if s.ModelConfigs[i].ID == s.ActiveConfigID && s.ModelConfigs[i].EncryptedAPIKey != "" {
+				return &s.ModelConfigs[i]
+			}
+		}
 	}
+	return nil
+}
+
+// firstConfigWithKey 返回第一个有加密密钥的配置
+func (s *Settings) firstConfigWithKey() *ModelConfig {
 	for i := range s.ModelConfigs {
-		if s.ModelConfigs[i].ID == s.ActiveConfigID {
+		if s.ModelConfigs[i].EncryptedAPIKey != "" {
 			return &s.ModelConfigs[i]
 		}
 	}
@@ -257,10 +276,12 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	// 保留已有的 encrypted_api_key（当 api_key 为空或未提供时）
 	// 使用类型安全的值检查：api_key: null 和 api_key: "" 都视为"未提供"
 	apiKeyVal, _ := rawReq["api_key"].(string)
+	existing := LoadSettings()
 	if apiKeyVal == "" {
-		existing := LoadSettings()
 		settings.EncryptedAPIKey = existing.EncryptedAPIKey
 	}
+	// 合并 model_configs：保留前端未传回的 encrypted_api_key
+	settings.ModelConfigs = mergeModelConfigs(existing.ModelConfigs, settings.ModelConfigs)
 
 	if settings.BaseURL != "" {
 		if err := ValidateBaseURL(settings.BaseURL); err != nil {

@@ -141,9 +141,16 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 // initializeKeystore 从已保存的 settings.json 恢复 keystore 的 hasAPIKey 状态
 func initializeKeystore() {
 	settings := handler.LoadSettings()
+	ks := keystore.Instance()
 	if settings.EncryptedAPIKey != "" {
-		ks := keystore.Instance()
 		ks.SetAPIKeyConfigured(true)
+		return
+	}
+	for _, cfg := range settings.ModelConfigs {
+		if cfg.EncryptedAPIKey != "" {
+			ks.SetAPIKeyConfigured(true)
+			return
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import type { LockStatus } from '@/types'
 import { getLockStatus, unlock as apiUnlock, lock as apiLock } from '@/lib/api'
+import { useSettings } from '@/hooks/useSettings'
 
 interface UseLockReturn {
   lockStatus: LockStatus
@@ -19,8 +20,9 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     failed_attempts: 0,
     has_api_key: false,
   })
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { refreshSettings } = useSettings()
 
   const refreshStatus = useCallback(async (clearError = true) => {
     try {
@@ -37,6 +39,7 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     try {
       await apiUnlock(password)
+      await refreshSettings()
       await refreshStatus()
     } catch (e) {
       const msg = e instanceof Error ? e.message : '解锁失败'
@@ -46,7 +49,7 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [refreshStatus])
+  }, [refreshStatus, refreshSettings])
 
   const lock = useCallback(async () => {
     setLoading(true)

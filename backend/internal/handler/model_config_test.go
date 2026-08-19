@@ -524,8 +524,8 @@ func TestEnsureUniqueName(t *testing.T) {
 		want      string
 	}{
 		{"unique name unchanged", "Unique", "", "Unique"},
-		{"duplicate gets suffix", "Test", "", "Test (3)"},
-		{"suffixed name gets own suffix", "Test (2)", "", "Test (2) (2)"},
+		{"duplicate gets suffix (1)", "Test", "", "Test (1)"},
+		{"suffixed name gets own suffix (1)", "Test (2)", "", "Test (2) (1)"},
 		{"excluded id ignores its own name", "Test", "a", "Test"},
 	}
 
