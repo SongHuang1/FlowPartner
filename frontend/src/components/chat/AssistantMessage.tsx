@@ -31,14 +31,16 @@ export function AssistantMessage({ message }: { message: Message }) {
                 />
               ),
               code: (props) => {
-                const { inline, className, children, ...rest } = props as {
+                const { inline, className, children, node, ...rest } = props as {
                   inline?: boolean
                   className?: string
                   children?: React.ReactNode
+                  node?: { properties?: { inline?: boolean } }
                 }
-                if (inline) {
+                const isInline = inline || node?.properties?.inline
+                if (isInline) {
                   return (
-                    <code className="inline bg-neutral-100 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600">
+                    <code style={{ display: 'inline', background: '#f3f4f6', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', fontSize: '0.875rem', fontFamily: 'monospace', color: '#db2777' }}>
                       {children}
                     </code>
                   )

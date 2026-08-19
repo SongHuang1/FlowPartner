@@ -569,6 +569,18 @@ ipcMain.handle('open-external', (_, url) => {
   return Promise.reject(new Error('Invalid URL: only http/https allowed'))
 })
 
+ipcMain.handle('select-folder', async () => {
+  const { dialog } = require('electron')
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    title: '选择工作文件夹',
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+  return result.filePaths[0]
+})
+
 app.whenReady().then(async () => {
   try {
     createTray()

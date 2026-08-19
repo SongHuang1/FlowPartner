@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSettings } from '@/hooks/useSettings'
 import type { InputHTMLAttributes } from 'react'
+import { FolderOpen } from 'lucide-react'
 
 const inputClass = 'flex w-full rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm shadow-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400'
 
@@ -43,6 +44,13 @@ function ContextField({ value, onChange }: { value: number; onChange: (v: number
 export function AgentSettings() {
   const { settings, updateSettings } = useSettings()
 
+  const handleSelectFolder = async () => {
+    const folder = await window.flowPartner.selectFolder()
+    if (folder) {
+      updateSettings({ working_directory: folder })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
@@ -55,6 +63,27 @@ export function AgentSettings() {
             onChange={(e) => updateSettings({ agent_id: e.target.value })}
             placeholder="default"
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="working-dir" className="text-xs font-medium text-neutral-600">工作文件夹</label>
+          <div className="flex gap-2">
+            <Field
+              id="working-dir"
+              value={settings.working_directory}
+              onChange={(e) => updateSettings({ working_directory: e.target.value })}
+              placeholder="选择 Agent 可访问的文件夹"
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleSelectFolder}
+              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-lg transition-colors"
+              title="浏览文件夹"
+            >
+              <FolderOpen className="w-4 h-4 text-neutral-600" />
+            </button>
+          </div>
+          <p className="text-xs text-neutral-400">限制 Agent 的文件操作范围于此文件夹内</p>
         </div>
       </div>
 

@@ -63,6 +63,7 @@ describe('useWebSocket', () => {
       sendCloseAction: vi.fn(),
       updateCloseBehavior: vi.fn(),
       openExternal: vi.fn(),
+      selectFolder: vi.fn(),
     }
 
     mockFetchBackendPort.mockResolvedValue(8080)

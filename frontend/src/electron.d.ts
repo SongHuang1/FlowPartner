@@ -9,6 +9,7 @@ interface FlowPartnerAPI {
   sendCloseAction: (action: 'minimize' | 'quit') => void
   updateCloseBehavior: (behavior: string, remembered: boolean) => void
   openExternal: (url: string) => Promise<void>
+  selectFolder: () => Promise<string | null>
 }
 
 interface Window {
