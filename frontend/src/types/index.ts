@@ -1,9 +1,21 @@
+export interface ToolCall {
+  id: string
+  type: string
+  function: {
+    name: string
+    arguments: string
+  }
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: number
   status?: 'streaming' | 'completed'
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+  name?: string
 }
 
 export interface HistoryEntry {
@@ -14,8 +26,11 @@ export interface HistoryEntry {
 }
 
 export interface HistoryMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+  name?: string
 }
 
 export interface HistorySession {
@@ -70,4 +85,20 @@ export interface PermissionRequestPayload {
   path: string
   operation: string
   detail: string
+  scope_options?: string[]
+}
+
+export interface IterationStepToolCall {
+  tool: string
+  args: Record<string, unknown>
+  call_id: string
+  result?: string
+  truncated?: boolean
+}
+
+export interface IterationStep {
+  iteration: number
+  thinking: string
+  toolCalls: IterationStepToolCall[]
+  loopTerminated?: { reason: string }
 }

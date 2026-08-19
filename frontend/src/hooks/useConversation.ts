@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message } from '@/types'
+import type { Message, ToolCall } from '@/types'
 
 function generateMessageId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -20,12 +20,13 @@ export interface UseConversationReturn {
   sessionId: string
   sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
+  addToolMessage: (toolCallId: string, name: string, content: string) => void
+  addAssistantToolCalls: (toolCalls: ToolCall[]) => void
   startNewConversation: () => void
   loadConversation: (sessionId: string, messages: Message[]) => void
 }
 
 export function useConversation(): UseConversationReturn {
-  // 启动时始终为空对话（欢迎页），历史会话通过“查看历史”手动加载
   const [messages, setMessages] = useState<Message[]>([])
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId())
   const messagesRef = useRef<Message[]>([])
@@ -34,7 +35,6 @@ export function useConversation(): UseConversationReturn {
     const trimmed = content.trim()
     if (!trimmed) return []
 
-    // 返回当前消息之前的历史，供 WebSocket 一并发送给后端
     const history = [...messagesRef.current]
     const newMessage: Message = {
       id: generateMessageId(),
@@ -61,6 +61,31 @@ export function useConversation(): UseConversationReturn {
     setMessages(updated)
   }, [])
 
+  const addAssistantToolCalls = useCallback((toolCalls: ToolCall[]) => {
+    const lastMsg = messagesRef.current[messagesRef.current.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status === 'streaming') {
+      const updated = [...messagesRef.current]
+      updated[updated.length - 1] = { ...lastMsg, tool_calls: toolCalls }
+      messagesRef.current = updated
+      setMessages(updated)
+    }
+  }, [])
+
+  const addToolMessage = useCallback((toolCallId: string, name: string, _content: string) => {
+    const newMessage: Message = {
+      id: generateMessageId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      tool_call_id: toolCallId,
+      name,
+      status: 'completed',
+    }
+    const updated = [...messagesRef.current, newMessage]
+    messagesRef.current = updated
+    setMessages(updated)
+  }, [])
+
   const startNewConversation = useCallback(() => {
     messagesRef.current = []
     setMessages([])
@@ -73,5 +98,5 @@ export function useConversation(): UseConversationReturn {
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, sendMessage, addAssistantMessage, startNewConversation, loadConversation }
+  return { messages, sessionId, sendMessage, addAssistantMessage, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
 }

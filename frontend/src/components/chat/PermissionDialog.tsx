@@ -3,9 +3,11 @@ import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { PermissionRequestPayload } from '@/types'
 
+type PermissionDecision = 'allow' | 'allow_session' | 'deny'
+
 interface PermissionDialogProps {
   request: PermissionRequestPayload
-  onDecision: (decision: 'allow' | 'deny') => void
+  onDecision: (decision: PermissionDecision) => void
 }
 
 export function PermissionDialog({ request, onDecision }: PermissionDialogProps) {
@@ -22,6 +24,8 @@ export function PermissionDialog({ request, onDecision }: PermissionDialogProps)
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
+
+  const hasSessionOption = request.scope_options?.includes('session')
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="permission-dialog-title">
@@ -55,23 +59,35 @@ export function PermissionDialog({ request, onDecision }: PermissionDialogProps)
               <span className="text-neutral-900 font-mono text-xs">{request.path}</span>
             </p>
           </div>
-          <p className="text-xs text-neutral-500">
-            此授权仅当次有效，下次访问同一路径需要重新授权。
-          </p>
         </div>
 
-        <div className="flex gap-3 justify-end">
-          <Button
-            variant="outline"
-            onClick={() => onDecision('deny')}
-          >
-            拒绝
-          </Button>
-          <Button
-            onClick={() => onDecision('allow')}
-          >
-            允许
-          </Button>
+        <div className="flex flex-col gap-2 justify-end">
+          {hasSessionOption && (
+            <p className="text-xs text-neutral-500 text-center mb-1">
+              "本次会话允许"将在同一会话内自动放行相同工具和路径，跨会话仍需授权。
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => onDecision('deny')}
+            >
+              拒绝
+            </Button>
+            {hasSessionOption && (
+              <Button
+                variant="outline"
+                onClick={() => onDecision('allow_session')}
+              >
+                本次会话允许
+              </Button>
+            )}
+            <Button
+              onClick={() => onDecision('allow')}
+            >
+              允许一次
+            </Button>
+          </div>
         </div>
       </div>
     </div>

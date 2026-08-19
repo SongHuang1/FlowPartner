@@ -10,9 +10,9 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
-import { EventDetail } from './EventDetail'
 import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
+import { IterationStepView } from './IterationStepView'
 
 export function MessageList({ messages }: { messages: Message[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -126,16 +126,6 @@ function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorPr
   )
 }
 
-function EventList({ events }: { events: import('@/hooks/useWebSocket').ChatEvent[] }) {
-  return (
-    <div className="px-4 py-2 space-y-2 border-t border-neutral-100">
-      {events.map((evt, i) => (
-        <EventDetail key={i} eventType={evt.event_type} payload={evt.payload} />
-      ))}
-    </div>
-  )
-}
-
 interface ChatAreaProps {
   conversation: UseConversationReturn
 }
@@ -153,7 +143,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendMessage: wsSendMessage,
     sendCancel,
     sendPermissionResponse,
-    events,
+    steps,
     manualReconnect,
     onFinalAnswer,
     onError,
@@ -220,23 +210,14 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendCancel(sessionId)
   }
 
-  const handlePermissionDecision = (decision: 'allow' | 'deny') => {
+  const handlePermissionDecision = (decision: 'allow' | 'allow_session' | 'deny') => {
     if (pendingPermission) {
-      sendPermissionResponse(sessionId, pendingPermission.request_id, decision)
+      if (decision === 'allow_session') {
+        sendPermissionResponse(sessionId, pendingPermission.request_id, 'allow', 'session')
+      } else {
+        sendPermissionResponse(sessionId, pendingPermission.request_id, decision)
+      }
       setPendingPermission(null)
-    }
-  }
-
-  const latestStatusUpdate = [...events]
-    .reverse()
-    .find((e) => e.event_type === 'status_update')
-  let iteration = 0
-  if (latestStatusUpdate) {
-    try {
-      const parsed = JSON.parse(latestStatusUpdate.payload) as { iteration?: number }
-      iteration = parsed.iteration ?? 0
-    } catch {
-      /* malformed payload, use default iteration = 0 */
     }
   }
 
@@ -268,8 +249,20 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             onManualReconnect={manualReconnect}
           />
           <MessageList messages={messages} />
-          {processing && <ThinkingIndicator iteration={iteration} />}
-          {events.length > 0 && <EventList events={events} />}
+          {steps.length > 0 && (
+            <div className="px-4 py-2 space-y-2 border-t border-neutral-100">
+              {steps.map((step, i) => (
+                <IterationStepView
+                  key={step.iteration}
+                  step={step}
+                  isLast={i === steps.length - 1}
+                />
+              ))}
+            </div>
+          )}
+          {processing && steps.length === 0 && (
+            <ThinkingIndicator />
+          )}
           {securityWarning && (
             <div className="px-4 py-2 text-sm text-amber-800 bg-amber-50 border-t border-amber-200">
               {securityWarning}

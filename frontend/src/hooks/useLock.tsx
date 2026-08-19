@@ -31,6 +31,8 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
       if (clearError) setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : '获取锁定状态失败')
+    } finally {
+      setLoading(false)
     }
   }, [])
 
