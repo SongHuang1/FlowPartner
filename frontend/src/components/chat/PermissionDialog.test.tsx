@@ -25,7 +25,7 @@ describe('PermissionDialog', () => {
     const onDecision = vi.fn()
     render(<PermissionDialog request={mockRequest} onDecision={onDecision} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '允许' }))
+    fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
     expect(onDecision).toHaveBeenCalledWith('allow')
   })
 
@@ -49,17 +49,39 @@ describe('PermissionDialog', () => {
     const onDecision = vi.fn()
     render(<PermissionDialog request={mockRequest} onDecision={onDecision} />)
 
-    // The backdrop is the fixed inset-0 bg-black/50 div
     const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50')
     expect(backdrop).toBeInTheDocument()
     fireEvent.click(backdrop!)
     expect(onDecision).toHaveBeenCalledWith('deny')
   })
 
-  it('shows the one-time authorization notice', () => {
+  it('shows session allow button when scope_options includes session', () => {
+    const requestWithScope: PermissionRequestPayload = {
+      ...mockRequest,
+      scope_options: ['once', 'session'],
+    }
+    render(<PermissionDialog request={requestWithScope} onDecision={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: '本次会话允许' })).toBeInTheDocument()
+    expect(screen.getByText('"本次会话允许"将在同一会话内自动放行相同工具和路径，跨会话仍需授权。')).toBeInTheDocument()
+  })
+
+  it('does not show session allow button without scope_options', () => {
     render(<PermissionDialog request={mockRequest} onDecision={vi.fn()} />)
 
-    expect(screen.getByText('此授权仅当次有效，下次访问同一路径需要重新授权。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '本次会话允许' })).not.toBeInTheDocument()
+  })
+
+  it('calls onDecision with allow_session when session allow button is clicked', () => {
+    const onDecision = vi.fn()
+    const requestWithScope: PermissionRequestPayload = {
+      ...mockRequest,
+      scope_options: ['once', 'session'],
+    }
+    render(<PermissionDialog request={requestWithScope} onDecision={onDecision} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '本次会话允许' }))
+    expect(onDecision).toHaveBeenCalledWith('allow_session')
   })
 
   it('renders without crashing with different operation types', () => {

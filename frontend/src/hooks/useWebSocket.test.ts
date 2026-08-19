@@ -358,7 +358,7 @@ describe('useWebSocket', () => {
       expect(result.current.processing).toBe(true)
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60000)
+        await vi.advanceTimersByTimeAsync(300000)
       })
 
       expect(result.current.processing).toBe(false)
@@ -383,7 +383,7 @@ describe('useWebSocket', () => {
       expect(result.current.processing).toBe(true)
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60000)
+        await vi.advanceTimersByTimeAsync(300000)
       })
 
       expect(result.current.processing).toBe(false)
@@ -550,7 +550,7 @@ describe('useWebSocket', () => {
 
       sendEvent({ event_type: 'llm_chunk', payload: '{}' })
 
-      expect(warnSpy).toHaveBeenCalledWith('Unknown event_type:', 'llm_chunk')
+      expect(warnSpy).not.toHaveBeenCalled()
       warnSpy.mockRestore()
     })
 

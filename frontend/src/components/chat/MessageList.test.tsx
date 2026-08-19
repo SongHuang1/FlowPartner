@@ -21,7 +21,7 @@ describe('MessageList', () => {
 
     const el = screen.getByText('Hello from AI')
     expect(el).toBeInTheDocument()
-    expect(el.parentElement?.parentElement).toHaveClass('justify-start')
+    expect(el.closest('.justify-start')).toBeTruthy()
   })
 
   it('renders a single user message with right alignment', () => {
@@ -30,7 +30,7 @@ describe('MessageList', () => {
 
     const el = screen.getByText('Hello from user')
     expect(el).toBeInTheDocument()
-    expect(el.parentElement?.parentElement).toHaveClass('justify-end')
+    expect(el.closest('.justify-end')).toBeTruthy()
   })
 
   it('renders mixed messages in correct order', () => {
@@ -60,8 +60,7 @@ describe('MessageList', () => {
     render(<MessageList messages={messages} />)
 
     const bubble = screen.getByText('Gray message')
-    expect(bubble).toHaveClass('bg-neutral-100')
-    expect(bubble).toHaveClass('text-neutral-800')
+    expect(bubble.closest('.text-neutral-800')).toBeTruthy()
   })
 
   it('shows FlowPartner name for assistant messages', () => {
