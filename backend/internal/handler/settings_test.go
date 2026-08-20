@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -342,5 +343,100 @@ func TestDefaultSettings(t *testing.T) {
 	}
 	if s.WorkingDirectory != "" {
 		t.Errorf("expected empty working_directory, got %q", s.WorkingDirectory)
+	}
+	if s.TrashDir != "" {
+		t.Errorf("expected empty trash_dir (not configured), got %q", s.TrashDir)
+	}
+}
+
+func TestValidateTrashDir(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	base := t.TempDir()
+	workDir := filepath.Join(base, "work")
+	os.MkdirAll(workDir, 0755)
+
+	valid := []string{
+		"",                               // 未配置 = 合法
+		filepath.Join(base, "trash"),     // 独立绝对目录
+		filepath.Join(workDir, ".trash"), // 工作目录后代（推荐用法）
+		filepath.Join(home, ".flowpartner_trash"), // 主目录后代（推荐用法）
+	}
+	for _, dir := range valid {
+		if err := validateTrashDir(dir, workDir); err != nil {
+			t.Errorf("expected valid trash_dir %q, got error: %v", dir, err)
+		}
+	}
+
+	invalid := []string{
+		"relative/path",
+		workDir,            // 等于工作目录
+		base,               // 工作目录祖先
+		home,               // 用户主目录
+		filepath.Dir(home), // 主目录祖先
+	}
+	for _, dir := range invalid {
+		if err := validateTrashDir(dir, workDir); err == nil {
+			t.Errorf("expected error for invalid trash_dir %q", dir)
+		}
+	}
+}
+
+// TestSettingsHandler_Put_TrashDir 验证 trash_dir 可保存与非法值被拒绝
+func TestSettingsHandler_Put_TrashDir(t *testing.T) {
+	storage.SetDataDirForTest(t.TempDir())
+	storage.ResetDataDirCache()
+	clearSettingsFile(t)
+	handler := &SettingsHandler{}
+
+	base := t.TempDir()
+	trashDir := filepath.Join(base, "trash")
+	os.MkdirAll(filepath.Dir(trashDir), 0755)
+
+	putSettings := func(t *testing.T, s map[string]interface{}) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(s)
+		if err != nil {
+			t.Fatalf("marshal body: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.Put(rec, req)
+		return rec
+	}
+
+	// 合法保存
+	rec := putSettings(t, map[string]interface{}{
+		"model": "gpt-4", "agent_id": "default", "context_window": 8192,
+		"working_directory": base, "trash_dir": trashDir,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for valid trash_dir, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 空字符串（未配置）合法
+	rec = putSettings(t, map[string]interface{}{
+		"model": "gpt-4", "agent_id": "default", "context_window": 8192,
+		"working_directory": base, "trash_dir": "",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty trash_dir, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 相对路径被拒绝
+	rec = putSettings(t, map[string]interface{}{
+		"model": "gpt-4", "agent_id": "default", "context_window": 8192,
+		"trash_dir": "relative/trash",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for relative trash_dir, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 工作目录本身被拒绝
+	rec = putSettings(t, map[string]interface{}{
+		"model": "gpt-4", "agent_id": "default", "context_window": 8192,
+		"working_directory": base, "trash_dir": base,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for working dir as trash_dir, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

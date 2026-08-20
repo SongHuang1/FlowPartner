@@ -8,6 +8,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
@@ -28,11 +31,11 @@ type ModelConfig struct {
 }
 
 type Settings struct {
-	Model            string  `json:"model"`
-	AgentID          string  `json:"agent_id"`
-	ContextWindow    int     `json:"context_window"`
-	WorkingDirectory string  `json:"working_directory"`
-	Language         string  `json:"language"`
+	Model            string `json:"model"`
+	AgentID          string `json:"agent_id"`
+	ContextWindow    int    `json:"context_window"`
+	WorkingDirectory string `json:"working_directory"`
+	Language         string `json:"language"`
 
 	BaseURL         string `json:"base_url"`
 	EncryptedAPIKey string `json:"encrypted_api_key"`
@@ -53,6 +56,8 @@ type Settings struct {
 	WindowHeight   int    `json:"window_height"`
 	SidebarVisible bool   `json:"sidebar_visible"`
 	SidebarView    string `json:"sidebar_view"`
+
+	TrashDir string `json:"trash_dir"`
 }
 
 func DefaultSettings() Settings {
@@ -76,6 +81,7 @@ func DefaultSettings() Settings {
 		WindowHeight:     800,
 		SidebarVisible:   true,
 		SidebarView:      "conversation",
+		TrashDir:         "",
 	}
 }
 
@@ -223,6 +229,85 @@ func ValidateBaseURL(rawURL string) error {
 	return nil
 }
 
+func validateTrashDir(trashDir, workingDir string) error {
+	if trashDir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(trashDir) {
+		return fmt.Errorf("回收站目录必须是绝对路径")
+	}
+	clean := filepath.Clean(trashDir)
+
+	target := filepath.Dir(clean)
+	if fi, err := os.Stat(clean); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("回收站目录已存在但不是文件夹: %s", clean)
+		}
+		target = clean
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("无法检查回收站目录: %v", err)
+	}
+	if err := dirWritable(target); err != nil {
+		return fmt.Errorf("回收站目录不可写: %v", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("无法获取用户主目录: %v", err)
+	}
+	homeClean := filepath.Clean(homeDir)
+
+	// 防呆：不得是用户主目录或其祖先目录
+	if pathEqualFold(clean, homeClean) || pathHasPrefix(homeClean, clean) {
+		return fmt.Errorf("回收站目录不能是用户主目录或其祖先目录，否则 purge 清空回收站将造成灾难性数据丢失")
+	}
+
+	if workingDir != "" {
+		wd, absErr := filepath.Abs(workingDir)
+		if absErr != nil {
+			wd = workingDir
+		}
+		wd = filepath.Clean(wd)
+		if pathEqualFold(clean, wd) || pathHasPrefix(wd, clean) {
+			return fmt.Errorf("回收站目录不能是工作目录或其祖先目录，否则 purge 清空回收站将清空工作目录")
+		}
+	}
+	return nil
+}
+
+func dirWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".fp_write_test_*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Remove(name)
+}
+
+// pathEqualFold 大小写不敏感（Windows）的路径相等比较。
+func pathEqualFold(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func pathHasPrefix(child, parent string) bool {
+	sep := string(filepath.Separator)
+	parentWithSep := parent
+	if !strings.HasSuffix(parent, sep) {
+		parentWithSep = parent + sep
+	}
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(child), strings.ToLower(parentWithSep))
+	}
+	return strings.HasPrefix(child, parentWithSep)
+}
+
 type SettingsHandler struct{}
 
 // Handle 根据 HTTP 方法分发到 Get/Put
@@ -302,6 +387,17 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 				response.Error(response.CodeInvalidParam, "close_behavior 必须是 minimize、quit 或 ask"))
 			return
 		}
+	}
+
+	// 回收站目录校验（仅非空时校验；空串表示未配置，属合法状态）
+	workDir := settings.WorkingDirectory
+	if workDir == "" {
+		workDir = existing.WorkingDirectory
+	}
+	if err := validateTrashDir(settings.TrashDir, workDir); err != nil {
+		response.WriteJSON(w, http.StatusBadRequest,
+			response.Error(response.CodeInvalidParam, err.Error()))
+		return
 	}
 	if strings.TrimSpace(settings.Model) == "" {
 		response.WriteJSON(w, http.StatusBadRequest,

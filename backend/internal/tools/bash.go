@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	bashTimeout       = 30 * time.Second
-	maxBashCharCount  = 10000
+	bashTimeout      = 30 * time.Second
+	maxBashCharCount = 10000
 )
 
 // executeBash 在工作目录内执行 bash 命令，超时 30 秒。
@@ -20,6 +20,14 @@ func (e *ToolExecutor) executeBash(ctx context.Context, args map[string]interfac
 	command, ok := getStringArg(args, "command")
 	if !ok {
 		return ToolResult{Success: false, Result: "缺少参数: command", ErrorCode: ErrToolError}
+	}
+
+	if analysis := AnalyzeDeletion(command); analysis.Blocked {
+		return ToolResult{
+			Success:   false,
+			Result:    deletionBlockedMessage(analysis),
+			ErrorCode: ErrDeletionBlocked,
+		}
 	}
 
 	// bash 工具的工作目录限制
@@ -166,4 +174,15 @@ func buildCommand(ctx context.Context, command string) *exec.Cmd {
 
 func isWindows() bool {
 	return exec.Command("cmd", "/c", "echo").Run() == nil
+}
+
+func deletionBlockedMessage(a deletionAnalysis) string {
+	msg := "删除操作已被策略拦截，文件未被删除。请改用 trash 工具将文件移入回收站。若尚未配置回收站目录，请先在设置中指定。"
+	if a.Tool != "" {
+		msg += " 识别到删除命令: " + a.Tool
+	}
+	if len(a.Paths) > 0 {
+		msg += "，涉及路径: " + strings.Join(a.Paths, ", ")
+	}
+	return msg
 }
