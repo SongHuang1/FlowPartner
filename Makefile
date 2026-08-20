@@ -57,7 +57,7 @@ build-agent:
 	cp $(AGENT_DIR)/dist/flowpartner-agent$(EXE) $(FRONTEND_DIR)/bin/flowpartner-agent$(EXE)
 
 gen-proto:
-	cd $(BACKEND_DIR) && protoc --go_out=. --go-grpc_out=. proto/agent.proto
+	cd $(BACKEND_DIR) && protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/agent.proto
 	cd $(AGENT_DIR) && uv run python -m grpc_tools.protoc -I ../backend/proto --python_out=src/agent --grpc_python_out=src/agent agent.proto
 
 clean:

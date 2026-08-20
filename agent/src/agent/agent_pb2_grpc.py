@@ -26,7 +26,7 @@ if _version_not_supported:
 
 
 class FlowPartnerServiceStub:
-    """--- 5. 核心服务定义 ---
+    """--- 6. 核心服务定义 ---
     """
 
     def __init__(self, channel):
@@ -50,10 +50,20 @@ class FlowPartnerServiceStub:
                 request_serializer=agent__pb2.ToolRequest.SerializeToString,
                 response_deserializer=agent__pb2.ToolResponse.FromString,
                 _registered_method=True)
+        self.ListAgents = channel.unary_unary(
+                '/flowpartner.FlowPartnerService/ListAgents',
+                request_serializer=agent__pb2.Empty.SerializeToString,
+                response_deserializer=agent__pb2.AgentDefList.FromString,
+                _registered_method=True)
+        self.GetAgent = channel.unary_unary(
+                '/flowpartner.FlowPartnerService/GetAgent',
+                request_serializer=agent__pb2.AgentId.SerializeToString,
+                response_deserializer=agent__pb2.AgentDef.FromString,
+                _registered_method=True)
 
 
 class FlowPartnerServiceServicer:
-    """--- 5. 核心服务定义 ---
+    """--- 6. 核心服务定义 ---
     """
 
     def SyncChannel(self, request_iterator, context):
@@ -77,6 +87,20 @@ class FlowPartnerServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListAgents(self, request, context):
+        """拉取全部智能体定义（含 system_prompt，Python 为可信后端）
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAgent(self, request, context):
+        """按 ID 获取单个智能体定义
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_FlowPartnerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -95,6 +119,16 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
                     request_deserializer=agent__pb2.ToolRequest.FromString,
                     response_serializer=agent__pb2.ToolResponse.SerializeToString,
             ),
+            'ListAgents': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListAgents,
+                    request_deserializer=agent__pb2.Empty.FromString,
+                    response_serializer=agent__pb2.AgentDefList.SerializeToString,
+            ),
+            'GetAgent': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAgent,
+                    request_deserializer=agent__pb2.AgentId.FromString,
+                    response_serializer=agent__pb2.AgentDef.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'flowpartner.FlowPartnerService', rpc_method_handlers)
@@ -104,7 +138,7 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class FlowPartnerService:
-    """--- 5. 核心服务定义 ---
+    """--- 6. 核心服务定义 ---
     """
 
     @staticmethod
@@ -178,6 +212,60 @@ class FlowPartnerService:
             '/flowpartner.FlowPartnerService/ExecuteTool',
             agent__pb2.ToolRequest.SerializeToString,
             agent__pb2.ToolResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListAgents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/flowpartner.FlowPartnerService/ListAgents',
+            agent__pb2.Empty.SerializeToString,
+            agent__pb2.AgentDefList.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAgent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/flowpartner.FlowPartnerService/GetAgent',
+            agent__pb2.AgentId.SerializeToString,
+            agent__pb2.AgentDef.FromString,
             options,
             channel_credentials,
             insecure,

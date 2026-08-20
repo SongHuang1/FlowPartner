@@ -44,7 +44,27 @@ message ToolResponse {
     string request_id = 5;   // 越权申请的唯一 ID（needs_permission=true 时返回）
 }
 
-// --- 5. 核心服务定义 ---
+// --- 5. 智能体定义（多 Agent） ---
+message Empty {}
+
+message AgentDef {
+    string id = 1;             // UUID v4；内置主智能体固定为 "main"
+    string name = 2;
+    string description = 3;    // 对外描述，暴露给其他 agent 判断是否调用
+    string system_prompt = 4;  // 私有，仅 Python（可信后端）与编辑界面可见
+    int64 created_at = 5;
+    int64 updated_at = 6;
+}
+
+message AgentId {
+    string id = 1;
+}
+
+message AgentDefList {
+    repeated AgentDef agents = 1;
+}
+
+// --- 6. 核心服务定义 ---
 service FlowPartnerService {
     // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
     rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
@@ -54,4 +74,10 @@ service FlowPartnerService {
 
     // 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
     rpc ExecuteTool (ToolRequest) returns (ToolResponse);
+
+    // 拉取全部智能体定义（含 system_prompt，Python 为可信后端）
+    rpc ListAgents (Empty) returns (AgentDefList);
+
+    // 按 ID 获取单个智能体定义
+    rpc GetAgent (AgentId) returns (AgentDef);
 }
