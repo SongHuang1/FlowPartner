@@ -200,8 +200,10 @@ func readySignal(httpPort, grpcPort int) string {
 }
 
 func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Manager, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
-	// 0. 停止快照管理器（不做退出快照，§2.4；15min 周期兜底 + 锁屏 flush 已覆盖）
-	snapshotMgr.Close()
+
+	if snapshotMgr != nil {
+		snapshotMgr.Close()
+	}
 
 	// 1. 先关闭 gRPC Server（等待当前 RPC 完成，超时 2 秒强制停止）
 	gracefulDone := make(chan struct{})
