@@ -144,6 +144,19 @@ func ValidSessionID(sessionID string) bool {
 	return true
 }
 
+// ValidSnapshotID 校验快照 id 格式（YYYYMMDD-HHMMSS，可带 -N 后缀）。
+func ValidSnapshotID(snapshotID string) bool {
+	if len(snapshotID) < 15 || len(snapshotID) > 20 {
+		return false
+	}
+	for _, r := range snapshotID {
+		if !(r >= '0' && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func HistoryDir() (string, error) {
 	dir, err := DataDir()
 	if err != nil {

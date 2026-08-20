@@ -8,11 +8,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
@@ -27,19 +29,103 @@ const maxHistoryMessages = 100
 type WebSocketHandler struct {
 	manager         *bridge.Manager
 	approvalManager *tools.ApprovalManager
+	snapshotMgr     *snapshot.Manager
 	done            chan struct{}
+
+	// 所有已连接前端的连接集合（用于全局事件广播，如 snapshot_status）。
+	connsMu   sync.Mutex
+	conns     map[*websocket.Conn]struct{}
+	connLocks map[*websocket.Conn]*sync.Mutex
 }
 
-func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager) *WebSocketHandler {
+func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager, snapshotMgr *snapshot.Manager) *WebSocketHandler {
 	return &WebSocketHandler{
 		manager:         m,
 		approvalManager: am,
+		snapshotMgr:     snapshotMgr,
 		done:            make(chan struct{}),
+		conns:           make(map[*websocket.Conn]struct{}),
+		connLocks:       make(map[*websocket.Conn]*sync.Mutex),
 	}
 }
 
+// registerConn 注册新连接用于广播。
+func (h *WebSocketHandler) registerConn(conn *websocket.Conn) {
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	h.conns[conn] = struct{}{}
+	h.connLocks[conn] = &sync.Mutex{}
+}
+
+// unregisterConn 注销连接。
+func (h *WebSocketHandler) unregisterConn(conn *websocket.Conn) {
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	delete(h.conns, conn)
+	delete(h.connLocks, conn)
+}
+
+// Close 关闭 handler：停止广播并断开所有连接。
 func (h *WebSocketHandler) Close() {
 	close(h.done)
+	h.connsMu.Lock()
+	conns := make([]*websocket.Conn, 0, len(h.conns))
+	for c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.conns = make(map[*websocket.Conn]struct{})
+	h.connLocks = make(map[*websocket.Conn]*sync.Mutex)
+	h.connsMu.Unlock()
+	for _, c := range conns {
+		c.Close()
+	}
+}
+
+// BroadcastEvent 向所有已连接前端广播一条 {event_type, payload} 事件。
+// 每个连接使用互斥写串行化，避免并发写同一连接。
+func (h *WebSocketHandler) BroadcastEvent(eventType, payload string) {
+	h.connsMu.Lock()
+	conns := make([]*websocket.Conn, 0, len(h.conns))
+	for c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.connsMu.Unlock()
+
+	msg := map[string]string{"event_type": eventType, "payload": payload}
+	for _, c := range conns {
+		h.connsMu.Lock()
+		mu := h.connLocks[c]
+		h.connsMu.Unlock()
+		if mu == nil {
+			continue
+		}
+		mu.Lock()
+		err := c.WriteJSON(msg)
+		mu.Unlock()
+		if err != nil {
+			log.Printf("WebSocket broadcast failed: %v", err)
+		}
+	}
+}
+
+// snapshotStatusSink 将快照状态事件转发给所有前端。
+func (h *WebSocketHandler) snapshotStatusSink(status snapshot.Status) {
+	data, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("序列化 snapshot_status 失败: %v", err)
+		return
+	}
+	h.BroadcastEvent("snapshot_status", string(data))
+}
+
+// snapshotMessageSink 将快照消息（还原结果等）转发给所有前端。
+func (h *WebSocketHandler) snapshotMessageSink(msg snapshot.Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("序列化 snapshot_message 失败: %v", err)
+		return
+	}
+	h.BroadcastEvent("snapshot_message", string(data))
 }
 
 func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +137,8 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	conn.SetReadLimit(4 << 20) // 4MB
+	h.registerConn(conn)
+	defer h.unregisterConn(conn)
 
 	log.Println("Frontend WebSocket connected")
 
@@ -60,8 +148,8 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type wsHistoryToolCall struct {
-		ID       string                   `json:"id"`
-		Type     string                   `json:"type"`
+		ID       string                    `json:"id"`
+		Type     string                    `json:"type"`
 		Function wsHistoryToolCallFunction `json:"function"`
 	}
 
@@ -69,18 +157,20 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		Role       string              `json:"role"`
 		Content    string              `json:"content"`
 		ToolCalls  []wsHistoryToolCall `json:"tool_calls,omitempty"`
-		ToolCallID string             `json:"tool_call_id,omitempty"`
-		Name       string             `json:"name,omitempty"`
+		ToolCallID string              `json:"tool_call_id,omitempty"`
+		Name       string              `json:"name,omitempty"`
 	}
 
 	type wsMessage struct {
-		Action    string             `json:"action"`
-		Content   string             `json:"content"`
-		SessionID string             `json:"session_id"`
-		History   []wsHistoryMessage `json:"history"`
-		RequestID string             `json:"request_id"`
-		Decision  string             `json:"decision"`
-		Scope     string             `json:"scope"`
+		Action       string             `json:"action"`
+		Content      string             `json:"content"`
+		SessionID    string             `json:"session_id"`
+		History      []wsHistoryMessage `json:"history"`
+		RequestID    string             `json:"request_id"`
+		Decision     string             `json:"decision"`
+		Scope        string             `json:"scope"`
+		SnapshotID   string             `json:"snapshot_id"`
+		DeleteExtras bool               `json:"delete_extras"`
 	}
 
 	var sessionIDs []string
@@ -121,6 +211,28 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		case msg := <-readChan:
 			switch msg.Action {
+			case "manual_snapshot":
+				if h.snapshotMgr != nil {
+					log.Println("[Snapshot] 手动快照触发")
+					h.snapshotMgr.TriggerManual()
+				}
+
+			case "system_lock":
+				if h.snapshotMgr != nil {
+					log.Println("[Snapshot] 系统锁屏，触发 flush 快照")
+					h.snapshotMgr.TriggerLock()
+				}
+
+			case "restore":
+				if h.snapshotMgr != nil {
+					log.Printf("[Snapshot] 还原指令: snapshot_id=%q delete_extras=%v", msg.SnapshotID, msg.DeleteExtras)
+					if msg.SnapshotID != "" && storage.ValidSnapshotID(msg.SnapshotID) {
+						h.snapshotMgr.RestoreAsync(msg.SnapshotID, msg.DeleteExtras)
+					} else {
+						h.BroadcastEvent("snapshot_message", `{"type":"error","text":"还原失败：快照编号无效"}`)
+					}
+				}
+
 			case "start_chat":
 				sessionId := msg.SessionID
 				if sessionId == "" {

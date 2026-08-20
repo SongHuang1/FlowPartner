@@ -49,9 +49,9 @@ func TestHTTPRoutes(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler)
+	registerRoutes(mux, wsHandler, nil)
 
 	tests := []struct {
 		name       string
@@ -99,9 +99,9 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler)
+	registerRoutes(mux, wsHandler, nil)
 
 	// 设置 API Key
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings",
@@ -146,10 +146,10 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 // TestShutdown_ClosesAllServers 验证 shutdown 按顺序关闭 gRPC → WebSocket → HTTP
 func TestShutdown_ClosesAllServers(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler)
+	registerRoutes(mux, wsHandler, nil)
 	httpServer := &http.Server{Handler: mux}
 
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -186,7 +186,7 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	mgr.RegisterSession("sess_shutdown_test", conn)
 
 	start := time.Now()
-	shutdown(grpcServer, httpServer, mgr, wsHandler)
+	shutdown(grpcServer, httpServer, mgr, wsHandler, nil)
 
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("shutdown took %v, expected < 2s", elapsed)
@@ -209,7 +209,7 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 // TestShutdown_ForceStopsStuckGRPC 验证 GracefulStop 超时 2 秒后强制停止（§5.5）
 func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	httpServer := &http.Server{Handler: http.NewServeMux()}
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -244,7 +244,7 @@ func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	defer stream.CloseSend()
 
 	start := time.Now()
-	shutdown(grpcServer, httpServer, mgr, wsHandler)
+	shutdown(grpcServer, httpServer, mgr, wsHandler, nil)
 
 	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Fatalf("shutdown took %v, expected force stop within ~2s", elapsed)

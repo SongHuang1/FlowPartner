@@ -16,7 +16,7 @@ import (
 
 func TestWebSocketHandler_HandleWS_StartChat(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -57,7 +57,7 @@ func TestWebSocketHandler_HandleWS_StartChat(t *testing.T) {
 
 func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -97,7 +97,7 @@ func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 // TestWebSocketHandler_HandleWS_SessionAndHistory 验证前端传入的 session_id 与 history 被透传到 Python
 func TestWebSocketHandler_HandleWS_SessionAndHistory(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -147,7 +147,7 @@ func TestWebSocketHandler_HandleWS_SessionAndHistory(t *testing.T) {
 // TestWebSocketHandler_HandleWS_InvalidSessionID 验证非法 session_id 被拒绝（不进入 CmdChan）
 func TestWebSocketHandler_HandleWS_InvalidSessionID(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -179,7 +179,7 @@ func TestWebSocketHandler_HandleWS_InvalidSessionID(t *testing.T) {
 // TestWebSocketHandler_Close 验证 Close 后 HandleWS 循环确实退出
 func TestWebSocketHandler_Close(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	handlerReturned := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +211,7 @@ func TestWebSocketHandler_Close(t *testing.T) {
 // 场景：读取 goroutine 已读到消息但尚未被主循环消费时触发 Close
 func TestWebSocketHandler_Close_MessageInFlight(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	handlerReturned := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +260,7 @@ func TestWebSocketHandler_Close_MessageInFlight(t *testing.T) {
 // TestWebSocketHandler_CmdChanFull_ErrorEvent 验证 CmdChan 满时向前端回发 error 事件
 func TestWebSocketHandler_CmdChanFull_ErrorEvent(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	// 填满 CmdChan（无消费者）
 	for i := 0; i < cap(mgr.CmdChan); i++ {
@@ -304,7 +304,7 @@ func TestWebSocketHandler_CmdChanFull_ErrorEvent(t *testing.T) {
 // TestWebSocketHandler_UnregistersSessionOnDisconnect 验证连接断开后 session 被注销
 func TestWebSocketHandler_UnregistersSessionOnDisconnect(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -349,7 +349,7 @@ func TestWebSocketHandler_UnregistersSessionOnDisconnect(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_Allow(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am)
+	wsHandler := NewWebSocketHandler(mgr, am, nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -417,7 +417,7 @@ func TestWebSocketHandler_PermissionResponse_Allow(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_Deny(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am)
+	wsHandler := NewWebSocketHandler(mgr, am, nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -478,7 +478,7 @@ func TestWebSocketHandler_PermissionResponse_Deny(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_InvalidDecision(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am)
+	wsHandler := NewWebSocketHandler(mgr, am, nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -522,7 +522,7 @@ func TestWebSocketHandler_PermissionResponse_InvalidDecision(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_EmptyRequestID(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am)
+	wsHandler := NewWebSocketHandler(mgr, am, nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -567,7 +567,7 @@ func TestWebSocketHandler_PermissionResponse_EmptyRequestID(t *testing.T) {
 
 func TestWebSocketHandler_CancelTask_ForwardsToPython(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -616,7 +616,7 @@ func TestWebSocketHandler_CancelTask_ForwardsToPython(t *testing.T) {
 
 func TestWebSocketHandler_CancelTask_InvalidSessionID(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager())
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()

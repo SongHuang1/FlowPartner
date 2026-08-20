@@ -1,7 +1,8 @@
-﻿package main
+package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/server"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/static"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
@@ -24,15 +26,28 @@ import (
 
 func main() {
 	// 1. 读取配置
- 	cfg := config.Load()
+	cfg := config.Load()
 
- 	// 2. 初始化 keystore 状态（从已保存的 settings.json 恢复 hasAPIKey）
- 	initializeKeystore()
+	// 2. 初始化 keystore 状态（从已保存的 settings.json 恢复 hasAPIKey）
+	initializeKeystore()
 
- 	// 3. 创建 bridge.Manager 和 WebSocketHandler（共享桥接层）
- 	mgr := bridge.NewManager()
+	// 3. 创建 bridge.Manager、WebSocketHandler 与快照管理器（共享桥接层）
+	mgr := bridge.NewManager()
 	approvalManager := tools.NewApprovalManager()
- 	wsHandler := handler.NewWebSocketHandler(mgr, approvalManager)
+
+	// 快照管理器：状态与消息事件通过 WebSocket 广播到前端
+	var wsHandler *handler.WebSocketHandler
+	snapshotMgr := snapshot.NewManager(
+		func(status snapshot.Status) {
+			wsHandler.BroadcastEvent("snapshot_status", mustJSON(status))
+		},
+		func(msg snapshot.Message) {
+			wsHandler.BroadcastEvent("snapshot_message", mustJSON(msg))
+		},
+	)
+	wsHandler = handler.NewWebSocketHandler(mgr, approvalManager, snapshotMgr)
+	// 启动时按已保存设置应用快照配置（含启动清理，后台执行）
+	applySnapshotConfig(snapshotMgr)
 
 	// 3. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
@@ -51,7 +66,7 @@ func main() {
 
 	// 4. 注册 HTTP 路由
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler)
+	registerRoutes(mux, wsHandler, snapshotMgr)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
 	staticHandler.Handle(mux)
 
@@ -98,17 +113,18 @@ func main() {
 		log.Fatalf("gRPC server error: %v", err)
 	case sig := <-quit:
 		log.Printf("Received signal %v, gracefully shutting down...", sig)
-		shutdown(grpcServer, httpServer, mgr, wsHandler)
+		shutdown(grpcServer, httpServer, mgr, wsHandler, snapshotMgr)
 	}
 
 	log.Println("Server exited")
 }
 
-func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
-	settingsHandler := &handler.SettingsHandler{}
+func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
+	settingsHandler := handler.NewSettingsHandler(snapshotMgr)
 	historyHandler := &handler.HistoryHandler{}
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
+	snapshotHandler := handler.NewSnapshotHandler(snapshotMgr)
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
@@ -117,6 +133,8 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 	mux.HandleFunc("/api/unlock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock", unlockHandler.Handle)
 	mux.HandleFunc("/api/lock_status", unlockHandler.Handle)
+	mux.HandleFunc("/api/snapshots", snapshotHandler.Handle)
+	mux.HandleFunc("/api/snapshots/", snapshotHandler.Handle)
 	mux.HandleFunc("/api/model_configs", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/model_configs" {
 			modelConfigHandler.Handle(w, r)
@@ -136,6 +154,28 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler) {
 		modelConfigHandler.HandleByID(w, r)
 	})
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
+}
+
+// applySnapshotConfig 按已保存设置启动快照管理器（工作区根与 PathGuard 同源）。
+func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
+	settings := handler.LoadSettings()
+	workingDir := handler.ResolveWorkingDir(settings)
+	if workingDir == "" {
+		log.Println("[snapshot] 无法解析工作目录，快照未启用")
+		return
+	}
+	if err := snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+		log.Printf("[snapshot] 启动配置失败: %v", err)
+	}
+}
+
+// mustJSON 序列化状态/消息事件；失败时返回空对象占位。
+func mustJSON(v interface{}) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 // initializeKeystore 从已保存的 settings.json 恢复 keystore 的 hasAPIKey 状态
@@ -159,7 +199,10 @@ func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }
 
-func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Manager, wsHandler *handler.WebSocketHandler) {
+func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Manager, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
+	// 0. 停止快照管理器（不做退出快照，§2.4；15min 周期兜底 + 锁屏 flush 已覆盖）
+	snapshotMgr.Close()
+
 	// 1. 先关闭 gRPC Server（等待当前 RPC 完成，超时 2 秒强制停止）
 	gracefulDone := make(chan struct{})
 	go func() {

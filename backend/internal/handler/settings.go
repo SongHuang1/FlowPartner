@@ -16,6 +16,7 @@ import (
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/response"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
@@ -58,6 +59,10 @@ type Settings struct {
 	SidebarView    string `json:"sidebar_view"`
 
 	TrashDir string `json:"trash_dir"`
+
+	SnapshotDir            string `json:"snapshot_dir"`
+	SnapshotEnabled        bool   `json:"snapshot_enabled"`
+	SnapshotIncludeSecrets bool   `json:"snapshot_include_secrets"`
 }
 
 func DefaultSettings() Settings {
@@ -82,6 +87,7 @@ func DefaultSettings() Settings {
 		SidebarVisible:   true,
 		SidebarView:      "conversation",
 		TrashDir:         "",
+		SnapshotEnabled:  false,
 	}
 }
 
@@ -308,7 +314,71 @@ func pathHasPrefix(child, parent string) bool {
 	return strings.HasPrefix(child, parentWithSep)
 }
 
-type SettingsHandler struct{}
+type SettingsHandler struct {
+	snapshotMgr *snapshot.Manager
+}
+
+// NewSettingsHandler 创建设置处理器。snapshotMgr 用于在设置变更后重配快照管理器。
+func NewSettingsHandler(snapshotMgr *snapshot.Manager) *SettingsHandler {
+	return &SettingsHandler{snapshotMgr: snapshotMgr}
+}
+
+// ResolveWorkingDir 解析实际工作目录：未设置时回退到用户主目录（与 ExecuteTool 一致）。
+func ResolveWorkingDir(settings Settings) string {
+	if settings.WorkingDirectory != "" {
+		return settings.WorkingDirectory
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
+// validateSnapshotDir 校验快照储存目录（§3.8 双向嵌套 + 绝对路径 + 可写）。
+func validateSnapshotDir(snapshotDir, workingDir string) error {
+	if strings.TrimSpace(snapshotDir) == "" {
+		return fmt.Errorf("启用快照前必须指定快照储存目录")
+	}
+	if !filepath.IsAbs(snapshotDir) {
+		return fmt.Errorf("快照储存目录必须是绝对路径")
+	}
+	clean := filepath.Clean(snapshotDir)
+	target := filepath.Dir(clean)
+	if fi, err := os.Stat(clean); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("快照储存目录已存在但不是文件夹: %s", clean)
+		}
+		target = clean
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("无法检查快照储存目录: %v", err)
+	}
+	if err := dirWritable(target); err != nil {
+		return fmt.Errorf("快照储存目录不可写: %v", err)
+	}
+	if workingDir != "" {
+		if err := snapshot.ValidateNoNesting(workingDir, clean); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconfigSnapshot 将当前设置应用到快照管理器。
+func (h *SettingsHandler) reconfigSnapshot(settings Settings) {
+	if h.snapshotMgr == nil {
+		return
+	}
+	workingDir := ResolveWorkingDir(settings)
+	if workingDir == "" {
+		h.snapshotMgr.Configure("", "", false, false)
+		return
+	}
+	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+		// 配置失败（如工作区根不存在）时状态已置 error 并推送，不影响设置保存
+		log.Printf("[snapshot] 快照管理器配置失败: %v", err)
+	}
+}
 
 // Handle 根据 HTTP 方法分发到 Get/Put
 func (h *SettingsHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -399,6 +469,15 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 			response.Error(response.CodeInvalidParam, err.Error()))
 		return
 	}
+	// 快照目录校验（启用时必须合法；未启用时仅存字段，不做约束）
+	if settings.SnapshotEnabled {
+		workDirForSnapshot := ResolveWorkingDir(existing)
+		if err := validateSnapshotDir(settings.SnapshotDir, workDirForSnapshot); err != nil {
+			response.WriteJSON(w, http.StatusBadRequest,
+				response.Error(response.CodeInvalidParam, err.Error()))
+			return
+		}
+	}
 	if strings.TrimSpace(settings.Model) == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
 			response.Error(response.CodeInvalidParam, "模型不能为空"))
@@ -464,6 +543,9 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 			response.Error(response.CodeInternalError, "Failed to save settings"))
 		return
 	}
+
+	// 设置保存成功后重配快照管理器。
+	h.reconfigSnapshot(settings)
 
 	response.WriteJSON(w, http.StatusOK, response.Success(settings))
 }
