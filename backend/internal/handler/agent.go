@@ -8,13 +8,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -164,9 +164,9 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 			continue
 		}
 		resp := &proto.LLMResponse{
-			IsError:     chunk.Done && chunk.Data != "",
+			IsError:      chunk.Done && chunk.Data != "",
 			JsonResponse: chunk.Data,
-			MessageId:   messageID,
+			MessageId:    messageID,
 		}
 		if err := stream.Send(resp); err != nil {
 			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
@@ -182,7 +182,7 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 	return stream.Send(&proto.LLMResponse{
 		IsError:      true,
 		JsonResponse: string(data),
-		MessageId:   messageID,
+		MessageId:    messageID,
 	})
 }
 
@@ -210,7 +210,7 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 		log.Printf("[ExecuteTool] 未设置工作目录，已回退到用户主目录: %s", workingDir)
 	}
 
-	executor, err := tools.NewToolExecutor(workingDir)
+	executor, err := tools.NewToolExecutor(workingDir, tools.WithTrashDir(settings.TrashDir))
 	if err != nil {
 		log.Printf("[ExecuteTool] 创建工具执行器失败: %v", err)
 		return &proto.ToolResponse{
@@ -233,7 +233,7 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 
 	if needsPermission {
 		if req.ApprovalId == "" {
-			if h.approvalManager.IsTrusted(req.SessionId, req.ToolName, resolvedPath) {
+			if req.ToolName != "purge" && h.approvalManager.IsTrusted(req.SessionId, req.ToolName, resolvedPath) {
 				log.Printf("[ExecuteTool] Session trust hit, skipping approval: tool=%s path=%s", req.ToolName, resolvedPath)
 			} else {
 				requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
@@ -260,6 +260,7 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 	execCtx := ctx
 	if needsPermission {
 		execCtx = tools.WithApproval(ctx)
+		execCtx = tools.WithApprovalID(execCtx, req.ApprovalId)
 	}
 	result := executor.Execute(execCtx, req.SessionId, req.ToolName, req.Arguments)
 
