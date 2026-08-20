@@ -23,6 +23,9 @@ export function DefaultSettings(): Settings {
     sidebar_visible: true,
     sidebar_view: 'conversation',
     trash_dir: '',
+    snapshot_dir: '',
+    snapshot_enabled: false,
+    snapshot_include_secrets: false,
   }
 }
 

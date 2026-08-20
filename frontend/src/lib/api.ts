@@ -1,4 +1,4 @@
-import type { Settings, LockStatus, HistoryEntry, HistorySession } from '@/types'
+import type { Settings, LockStatus, HistoryEntry, HistorySession, SnapshotManifest, SnapshotDetail } from '@/types'
 
 const FETCH_TIMEOUT_MS = 5000
 
@@ -164,4 +164,18 @@ export async function clearApiKey(): Promise<void> {
   if (data.code !== 0) {
     throw new Error(data.message || '清除 API Key 失败')
   }
+}
+
+export async function getSnapshots(): Promise<SnapshotManifest[]> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/snapshots`)
+  const data: ApiResponse<{ snapshots: SnapshotManifest[] }> = await res.json()
+  return data.data.snapshots || []
+}
+
+export async function getSnapshotDetail(snapshotId: string): Promise<SnapshotDetail> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/snapshots/${encodeURIComponent(snapshotId)}`)
+  const data: ApiResponse<SnapshotDetail> = await res.json()
+  return data.data
 }

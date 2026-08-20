@@ -63,6 +63,62 @@ export interface Settings {
   sidebar_view: string
 
   trash_dir: string
+
+  snapshot_dir: string
+  snapshot_enabled: boolean
+  snapshot_include_secrets: boolean
+}
+
+export interface SnapshotStatus {
+  phase: 'idle' | 'snapshotting' | 'error'
+  last_at?: string
+  count: number
+  size_bytes: number
+  skipped_files: number
+  queued?: boolean
+  error?: string
+  last_snapshot_id?: string
+}
+
+export interface SnapshotMessage {
+  type: 'info' | 'warning' | 'error'
+  text: string
+}
+
+export interface SkippedFile {
+  path: string
+  reason: string
+  detail?: string
+}
+
+export interface SymlinkEntry {
+  path: string
+  target: string
+}
+
+export interface SnapshotManifest {
+  snapshot_id: string
+  project_id: string
+  reason: 'debounce' | 'ticker' | 'lock' | 'manual' | 'prerestore'
+  created_at: string
+  workspace_root: string
+  workspace_root_normalized: string
+  file_count: number
+  total_size_bytes: number
+  complete: boolean
+  skipped_files: SkippedFile[]
+  symlinks: SymlinkEntry[]
+}
+
+export interface ProtectedEntry {
+  path: string
+  type: 'secret' | 'too_large' | 'excluded_dir'
+  detail?: string
+}
+
+export interface SnapshotDetail {
+  manifest: SnapshotManifest
+  protected_files: ProtectedEntry[]
 }
 
 export interface LockStatus {

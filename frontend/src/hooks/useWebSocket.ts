@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort, updateApiBase } from '@/lib/api'
-import type { Message, PermissionRequestPayload, IterationStep } from '@/types'
+import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -23,7 +23,7 @@ const MAX_PORT = 65535
 const KNOWN_EVENT_TYPES = [
   'status_update', 'tool_call', 'tool_result', 'final_answer',
   'error', 'permission_request', 'iteration_start', 'llm_chunk',
-  'loop_terminated',
+  'loop_terminated', 'snapshot_status', 'snapshot_message',
 ] as const
 
 function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
@@ -39,6 +39,9 @@ export interface UseWebSocketReturn {
   sendMessage: (content: string, sessionId: string, history: Message[]) => boolean
   sendCancel: (sessionId: string) => void
   sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => void
+  sendManualSnapshot: () => void
+  sendRestore: (snapshotId: string, deleteExtras: boolean) => void
+  sendSystemLock: () => void
   events: ChatEvent[]
   steps: IterationStep[]
   manualReconnect: () => void
@@ -46,6 +49,8 @@ export interface UseWebSocketReturn {
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
   onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
+  onSnapshotStatus: (cb: (status: SnapshotStatus) => void) => () => void
+  onSnapshotMessage: (cb: (message: SnapshotMessage) => void) => () => void
 }
 
 function buildSteps(events: ChatEvent[]): IterationStep[] {
@@ -133,6 +138,8 @@ export function useWebSocket(): UseWebSocketReturn {
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
+  const snapshotStatusCallbacksRef = useRef<Set<(status: SnapshotStatus) => void>>(new Set())
+  const snapshotMessageCallbacksRef = useRef<Set<(message: SnapshotMessage) => void>>(new Set())
   const connectRef = useRef<(port: number) => void>(() => {})
   const sessionIdRef = useRef<string>('')
 
@@ -203,6 +210,31 @@ export function useWebSocket(): UseWebSocketReturn {
 
         if (!raw.event_type || !isKnownEventType(raw.event_type)) {
           console.warn('Unknown event_type:', raw.event_type)
+          return
+        }
+
+        // 快照事件是全局事件（与对话无关），不进入会话事件流，也不受会话结束状态门控
+        if (raw.event_type === 'snapshot_status') {
+          try {
+            const parsed = JSON.parse(raw.payload) as SnapshotStatus
+            snapshotStatusCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onSnapshotStatus callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse snapshot_status payload:', raw.payload)
+          }
+          return
+        }
+
+        if (raw.event_type === 'snapshot_message') {
+          try {
+            const parsed = JSON.parse(raw.payload) as SnapshotMessage
+            snapshotMessageCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onSnapshotMessage callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse snapshot_message payload:', raw.payload)
+          }
           return
         }
 
@@ -331,6 +363,8 @@ export function useWebSocket(): UseWebSocketReturn {
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
     const permissionCbs = permissionRequestCallbacksRef.current
+    const snapshotStatusCbs = snapshotStatusCallbacksRef.current
+    const snapshotMessageCbs = snapshotMessageCallbacksRef.current
 
     return () => {
       mountedRef.current = false
@@ -345,6 +379,8 @@ export function useWebSocket(): UseWebSocketReturn {
       errorCbs.clear()
       securityCbs.clear()
       permissionCbs.clear()
+      snapshotStatusCbs.clear()
+      snapshotMessageCbs.clear()
       setEvents([])
     }
   }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
@@ -417,6 +453,25 @@ export function useWebSocket(): UseWebSocketReturn {
     wsRef.current.send(JSON.stringify(payload))
   }, [])
 
+  const sendManualSnapshot = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({ action: 'manual_snapshot' }))
+  }, [])
+
+  const sendRestore = useCallback((snapshotId: string, deleteExtras: boolean) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'restore',
+      snapshot_id: snapshotId,
+      delete_extras: deleteExtras,
+    }))
+  }, [])
+
+  const sendSystemLock = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({ action: 'system_lock' }))
+  }, [])
+
   const manualReconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
     setReconnectAttempts(0)
@@ -444,6 +499,16 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { permissionRequestCallbacksRef.current.delete(cb) }
   }, [])
 
+  const onSnapshotStatus = useCallback((cb: (status: SnapshotStatus) => void) => {
+    snapshotStatusCallbacksRef.current.add(cb)
+    return () => { snapshotStatusCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onSnapshotMessage = useCallback((cb: (message: SnapshotMessage) => void) => {
+    snapshotMessageCallbacksRef.current.add(cb)
+    return () => { snapshotMessageCallbacksRef.current.delete(cb) }
+  }, [])
+
   return {
     connected,
     reconnecting,
@@ -453,6 +518,9 @@ export function useWebSocket(): UseWebSocketReturn {
     sendMessage,
     sendCancel,
     sendPermissionResponse,
+    sendManualSnapshot,
+    sendRestore,
+    sendSystemLock,
     events,
     steps,
     manualReconnect,
@@ -460,5 +528,7 @@ export function useWebSocket(): UseWebSocketReturn {
     onError,
     onSecurityEvent,
     onPermissionRequest,
+    onSnapshotStatus,
+    onSnapshotMessage,
   }
 }
