@@ -42,12 +42,14 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
     setHistoryError(null)
     try {
       const session = await getHistorySession(sessionId)
-      const msgs: Message[] = session.messages.map((m, i) => ({
-        id: `msg_${sessionId}_${i}`,
-        role: m.role,
-        content: m.content,
-        timestamp: Date.now(),
-      }))
+      const msgs: Message[] = session.messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m, i) => ({
+          id: `msg_${sessionId}_${i}`,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          timestamp: Date.now(),
+        }))
       onLoadSession(sessionId, msgs)
       setView('welcome')
     } catch (e) {

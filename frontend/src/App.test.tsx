@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import App from './App'
 import { LockProvider } from '@/hooks/useLock'
 import { SettingsProvider } from '@/hooks/useSettings'
+import { SnapshotProvider } from '@/hooks/useSnapshot'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -25,7 +26,9 @@ function renderApp() {
   return render(
     <SettingsProvider>
       <LockProvider>
-        <App />
+        <SnapshotProvider>
+          <App />
+        </SnapshotProvider>
       </LockProvider>
     </SettingsProvider>
   )

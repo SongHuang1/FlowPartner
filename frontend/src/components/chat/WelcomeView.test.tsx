@@ -24,6 +24,9 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     window_height: 800,
     sidebar_visible: true,
     sidebar_view: 'conversation',
+    snapshot_dir: '',
+    snapshot_enabled: false,
+    snapshot_include_secrets: false,
     ...overrides,
   }
 }

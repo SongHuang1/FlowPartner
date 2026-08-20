@@ -1,23 +1,25 @@
 import { useState } from 'react'
-import { X, Key, Bot, Settings, Save } from 'lucide-react'
+import { X, Key, Bot, Settings, Save, HardDrive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useSettings } from '@/hooks/useSettings'
 import { saveSettings } from '@/lib/api'
 import { APISettings } from './APISettings'
 import { AgentSettings } from './AgentSettings'
 import { CloseBehaviorSettings } from './CloseBehaviorSettings'
+import { SnapshotSettings } from './SnapshotSettings'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
 }
 
-type TabId = 'api' | 'agent' | 'behavior'
+type TabId = 'api' | 'agent' | 'behavior' | 'snapshot'
 
 const tabs: { id: TabId; label: string; icon: typeof Key }[] = [
   { id: 'api', label: 'API 配置', icon: Key },
   { id: 'agent', label: '智能体', icon: Bot },
   { id: 'behavior', label: '行为', icon: Settings },
+  { id: 'snapshot', label: '本地快照', icon: HardDrive },
 ]
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -73,6 +75,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           {activeTab === 'api' && <APISettings />}
           {activeTab === 'agent' && <AgentSettings />}
           {activeTab === 'behavior' && <CloseBehaviorSettings />}
+          {activeTab === 'snapshot' && <SnapshotSettings />}
         </div>
 
         <div className="flex justify-end px-6 py-4 border-t border-neutral-200 bg-neutral-50">

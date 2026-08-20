@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { initApi } from './lib/api'
 import { SettingsProvider } from './hooks/useSettings'
 import { LockProvider } from './hooks/useLock'
+import { SnapshotProvider } from './hooks/useSnapshot'
 
 async function bootstrap() {
   const port = await window.flowPartner.fetchBackendPort()
@@ -14,7 +15,9 @@ async function bootstrap() {
     <StrictMode>
       <SettingsProvider>
         <LockProvider>
-          <App />
+          <SnapshotProvider>
+            <App />
+          </SnapshotProvider>
         </LockProvider>
       </SettingsProvider>
     </StrictMode>,

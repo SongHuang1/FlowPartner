@@ -25,6 +25,8 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
     sessionId: 'sess_test_1',
     sendMessage: mockSendMessage,
     addAssistantMessage: vi.fn(),
+    addToolMessage: vi.fn(),
+    addAssistantToolCalls: vi.fn(),
     startNewConversation: vi.fn(),
     loadConversation: vi.fn(),
     ...overrides,
