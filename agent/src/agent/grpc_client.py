@@ -8,7 +8,14 @@ import grpc
 
 from agent import agent_pb2, agent_pb2_grpc
 from agent.core.react_agent import ReactAgent
-from agent.tools.file_ops import make_bash_handler, make_edit_handler, make_read_handler, make_write_handler
+from agent.tools.file_ops import (
+    make_bash_handler,
+    make_edit_handler,
+    make_purge_handler,
+    make_read_handler,
+    make_trash_handler,
+    make_write_handler,
+)
 from agent.tools.registry import ToolRegistry
 
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
@@ -89,6 +96,39 @@ class FlowPartnerClient:
                 "required": ["path", "old_string", "new_string"]
             },
             handler=make_edit_handler(self)
+        )
+        self.tool_registry.register(
+            name="trash",
+            description=(
+                "Move files or directories to the recycle bin (trash) instead of permanently deleting them. "
+                "Use this tool whenever you need to delete files. Pass 'path' for a single item, or 'paths' "
+                "for multiple items. Deleted items can be recovered later."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Single file/dir path to move to trash (absolute or relative to working directory)"},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Multiple paths to move to trash"}
+                },
+                "required": []
+            },
+            handler=make_trash_handler(self)
+        )
+        self.tool_registry.register(
+            name="purge",
+            description=(
+                "Permanently delete items from the recycle bin (trash). Requires explicit user approval every time. "
+                "Use ONLY when the user explicitly asks to permanently delete trashed files. "
+                "Pass 'entry' to delete a single trashed item by name, or no arguments to empty the entire trash."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "entry": {"type": "string", "description": "Name of a single trashed item to permanently delete; omit to empty the entire trash"}
+                },
+                "required": []
+            },
+            handler=make_purge_handler(self)
         )
 
     async def send_event(self, session_id: str, event_type: str, payload: dict, queue: asyncio.Queue):

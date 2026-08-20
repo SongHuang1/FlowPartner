@@ -1,8 +1,18 @@
+import json
 import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agent.grpc_client import FlowPartnerClient
+
+
+def _format_result(result: dict) -> str:
+    """将 Go 端工具结果格式化为对 LLM 友好的 JSON（含错误码，供模型决策）。"""
+    return json.dumps({
+        "success": result.get("success", False),
+        "result": result.get("result", ""),
+        "error_code": result.get("error_code", ""),
+    }, ensure_ascii=False)
 
 
 def make_read_handler(client: "FlowPartnerClient"):
@@ -33,7 +43,7 @@ def make_bash_handler(client: "FlowPartnerClient"):
     async def bash(command: str) -> str:
         logging.info(f"[Tool] Bash (via Go): {command}")
         result = await client.execute_tool("", "bash", {"command": command})
-        return result["result"]
+        return _format_result(result)
 
     return bash
 
@@ -51,3 +61,27 @@ def make_edit_handler(client: "FlowPartnerClient"):
         return result["result"]
 
     return edit
+
+
+def make_trash_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 trash 工具 handler（移入回收站，可恢复）。"""
+
+    async def trash(path: str = "", paths: list | None = None) -> str:
+        args = {"paths": paths} if paths else {"path": path}
+        logging.info(f"[Tool] Trash (via Go): {args}")
+        result = await client.execute_tool("", "trash", args)
+        return _format_result(result)
+
+    return trash
+
+
+def make_purge_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 purge 工具 handler（永久删除，需显式审批）。"""
+
+    async def purge(entry: str = "") -> str:
+        args = {"entry": entry} if entry else {}
+        logging.info(f"[Tool] Purge (via Go): {args}")
+        result = await client.execute_tool("", "purge", args)
+        return _format_result(result)
+
+    return purge

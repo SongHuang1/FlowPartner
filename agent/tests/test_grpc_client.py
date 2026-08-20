@@ -64,7 +64,19 @@ class TestFlowPartnerClientInit:
             tool["function"]["name"]
             for tool in client.tool_registry.get_openai_tools_definition()
         }
-        assert names == {"read", "write", "bash", "edit"}
+        assert names == {"read", "write", "bash", "edit", "trash", "purge"}
+
+    def test_trash_and_purge_tools_defined(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        definitions = client.tool_registry.get_openai_tools_definition()
+        by_name = {tool["function"]["name"]: tool["function"] for tool in definitions}
+        # trash: 安全删除（移入回收站）
+        trash_props = by_name["trash"]["parameters"]["properties"]
+        assert "path" in trash_props
+        assert "paths" in trash_props
+        # purge: 永久删除（需审批）
+        purge_props = by_name["purge"]["parameters"]["properties"]
+        assert "entry" in purge_props
 
     def test_default_grpc_address(self, tmp_path: Path):
         client = make_client(tmp_path)

@@ -1,7 +1,14 @@
 import asyncio
 from unittest.mock import AsyncMock
 
-from agent.tools.file_ops import make_bash_handler, make_edit_handler, make_read_handler, make_write_handler
+from agent.tools.file_ops import (
+    make_bash_handler,
+    make_edit_handler,
+    make_purge_handler,
+    make_read_handler,
+    make_trash_handler,
+    make_write_handler,
+)
 from agent.tools.registry import ToolRegistry
 
 
@@ -185,3 +192,73 @@ class TestEditBridge:
 
         result = asyncio.run(handler(path="file.txt", old_string="abc", new_string="xyz"))
         assert "匹配数 3 大于 1" in result
+
+
+class TestTrashBridge:
+    def test_trash_single_path(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "已移入回收站: old.log",
+            "error_code": "",
+        })
+        handler = make_trash_handler(mock_client)
+
+        result = asyncio.run(handler(path="old.log"))
+        assert "old.log" in result
+        assert '"success": true' in result
+        mock_client.execute_tool.assert_called_once_with("", "trash", {"path": "old.log"})
+
+    def test_trash_multiple_paths(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "已移入回收站: a.log, b.log",
+            "error_code": "",
+        })
+        handler = make_trash_handler(mock_client)
+
+        result = asyncio.run(handler(paths=["a.log", "b.log"]))
+        assert '"success": true' in result
+        mock_client.execute_tool.assert_called_once_with("", "trash", {"paths": ["a.log", "b.log"]})
+
+    def test_trash_blocked_result_keeps_error_code(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": False,
+            "result": "删除操作被拦截，请改用 trash 工具",
+            "error_code": "TOOL_DELETION_BLOCKED",
+        })
+        handler = make_trash_handler(mock_client)
+
+        result = asyncio.run(handler(path="x.log"))
+        assert "TOOL_DELETION_BLOCKED" in result
+        assert '"success": false' in result
+
+
+class TestPurgeBridge:
+    def test_purge_all(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "已永久删除 2 个条目",
+            "error_code": "",
+        })
+        handler = make_purge_handler(mock_client)
+
+        result = asyncio.run(handler())
+        assert "已永久删除" in result
+        mock_client.execute_tool.assert_called_once_with("", "purge", {})
+
+    def test_purge_single_entry(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={
+            "success": True,
+            "result": "已永久删除 1 个条目",
+            "error_code": "",
+        })
+        handler = make_purge_handler(mock_client)
+
+        result = asyncio.run(handler(entry="20260101T000000000001Z__1__a.log"))
+        assert '"success": true' in result
+        mock_client.execute_tool.assert_called_once_with("", "purge", {"entry": "20260101T000000000001Z__1__a.log"})
