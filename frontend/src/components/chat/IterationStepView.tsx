@@ -10,6 +10,9 @@ interface IterationStepViewProps {
 function ToolCallBlock({ tc }: { tc: IterationStep['toolCalls'][number] }) {
   const [expanded, setExpanded] = useState(false)
 
+  const deletionBlocked = tc.result !== undefined && tc.result.includes('TOOL_DELETION_BLOCKED')
+  const trashNotConfigured = tc.result !== undefined && tc.result.includes('TOOL_TRASH_NOT_CONFIGURED')
+
   return (
     <div className="border border-neutral-200 rounded-md text-sm">
       <button
@@ -24,6 +27,11 @@ function ToolCallBlock({ tc }: { tc: IterationStep['toolCalls'][number] }) {
         <Wrench className="w-3.5 h-3.5 text-blue-500" />
         <span className="font-mono text-blue-600">{tc.tool}</span>
         <span className="text-neutral-400 text-xs">工具调用</span>
+        {(deletionBlocked || trashNotConfigured) && (
+          <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded ml-auto">
+            已拦截
+          </span>
+        )}
       </button>
       {expanded && (
         <div className="px-3 pb-2 pt-1 border-t border-neutral-100 space-y-1.5">
@@ -48,6 +56,13 @@ function ToolCallBlock({ tc }: { tc: IterationStep['toolCalls'][number] }) {
               </pre>
             </div>
           )}
+        </div>
+      )}
+      {(deletionBlocked || trashNotConfigured) && (
+        <div className="px-3 pb-2 text-xs text-amber-700 bg-amber-50 border-t border-amber-100">
+          {deletionBlocked
+            ? '已拦截删除命令：为保护文件，删除操作不会直接执行。Agent 应改用 trash 工具将文件移入回收站。'
+            : '回收站未配置：请在设置中指定回收站文件夹，Agent 才能安全删除文件。'}
         </div>
       )}
     </div>

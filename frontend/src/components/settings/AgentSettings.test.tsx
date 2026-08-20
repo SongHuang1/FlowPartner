@@ -11,6 +11,7 @@ vi.mock('@/hooks/useSettings', () => ({
       agent_id: 'default',
       context_window: 8192,
       working_directory: '',
+      trash_dir: '',
       language: 'zh-CN',
       base_url: 'https://api.openai.com/v1',
       encrypted_api_key: '',
@@ -175,5 +176,19 @@ it('renders temperature range labels', () => {
     fireEvent.change(input, { target: { value: '0' } })
     fireEvent.blur(input)
     expect(mockUpdateSettings).toHaveBeenCalledWith({ context_window: 1 })
+  })
+
+  it('renders trash dir input with current value', () => {
+    render(<AgentSettings />)
+    const input = screen.getByLabelText('回收站文件夹') as HTMLInputElement
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('选择回收站文件夹')
+  })
+
+  it('calls updateSettings when trash dir changes', () => {
+    render(<AgentSettings />)
+    const input = screen.getByLabelText('回收站文件夹')
+    fireEvent.change(input, { target: { value: 'C:\\trash' } })
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ trash_dir: 'C:\\trash' })
   })
 })

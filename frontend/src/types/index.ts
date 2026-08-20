@@ -61,6 +61,8 @@ export interface Settings {
   window_height: number
   sidebar_visible: boolean
   sidebar_view: string
+
+  trash_dir: string
 }
 
 export interface LockStatus {

@@ -51,6 +51,13 @@ export function AgentSettings() {
     }
   }
 
+  const handleSelectTrashFolder = async () => {
+    const folder = await window.flowPartner.selectFolder()
+    if (folder) {
+      updateSettings({ trash_dir: folder })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
@@ -84,6 +91,27 @@ export function AgentSettings() {
             </button>
           </div>
           <p className="text-xs text-neutral-400">限制 Agent 的文件操作范围于此文件夹内</p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="trash-dir" className="text-xs font-medium text-neutral-600">回收站文件夹</label>
+          <div className="flex gap-2">
+            <Field
+              id="trash-dir"
+              value={settings.trash_dir}
+              onChange={(e) => updateSettings({ trash_dir: e.target.value })}
+              placeholder="选择回收站文件夹"
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleSelectTrashFolder}
+              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-lg transition-colors"
+              title="浏览文件夹"
+            >
+              <FolderOpen className="w-4 h-4 text-neutral-600" />
+            </button>
+          </div>
+          <p className="text-xs text-neutral-400">Agent 删除的文件将移入此文件夹，而非永久删除</p>
         </div>
       </div>
 
@@ -120,7 +148,7 @@ export function AgentSettings() {
           />
           <div className="flex justify-between text-xs text-neutral-400">
             <span>0.0 精确</span>
-            <span>0.5 平衡</span>
+            <span>0.7 平衡</span>
             <span>1.0 创意</span>
           </div>
         </div>

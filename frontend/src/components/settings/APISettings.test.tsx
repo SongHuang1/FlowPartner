@@ -8,6 +8,7 @@ const mockSettings = {
   agent_id: 'default',
   context_window: 8192,
   working_directory: '',
+  trash_dir: '',
   language: 'zh-CN',
   base_url: 'https://api.openai.com/v1',
   encrypted_api_key: '',

@@ -22,6 +22,7 @@ export function DefaultSettings(): Settings {
     window_height: 800,
     sidebar_visible: true,
     sidebar_view: 'conversation',
+    trash_dir: '',
   }
 }
 
