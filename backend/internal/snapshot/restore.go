@@ -63,7 +63,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		log.Printf("[snapshot] 还原前预快照完成: %s", result.PreSnapshotID)
 	}
 
-	// 3. 写回快照文件（覆盖 + 新增）。
+	// 2. 写回快照文件（覆盖 + 新增）。
 	ex := NewExcluder(opts.IncludeSecrets, "")
 	restored, err := writeBack(ctx, snapshotPath, opts.WorkingDir)
 	if err != nil {
@@ -71,7 +71,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 	}
 	result.RestoredFiles = restored
 
-	// 4. deleteExtras（排除/跳过文件永不删除）。
+	// 3. deleteExtras（排除/跳过文件永不删除）。
 	if opts.DeleteExtras {
 		deleted, err := deleteExtras(ctx, snapshotPath, opts.WorkingDir, ex)
 		if err != nil {
@@ -80,7 +80,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		result.DeletedFiles = deleted
 	}
 
-	// 5. 重建符号链接（失败跳过并警告，不令还原失败）。
+	// 4. 重建符号链接（失败跳过并警告，不令还原失败）。
 	for _, link := range m.Symlinks {
 		if err := ctx.Err(); err != nil {
 			return result, err

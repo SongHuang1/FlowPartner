@@ -148,7 +148,8 @@ func (e *ToolExecutor) checkSinglePath(path string) (bool, string, string, error
 	return false, "", "", nil
 }
 
-// checkTrashPath 校验 trash 工具参数：单路径走工作目录审批；
+// checkTrashPath 校验 trash 工具参数：单路径模式越权走用户审批；
+// paths 数组模式要求所有源路径均在工作区内，不支持审批。
 
 func (e *ToolExecutor) checkTrashPath(argsJSON string) (bool, string, string, error) {
 	var args map[string]interface{}

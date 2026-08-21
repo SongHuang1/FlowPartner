@@ -12,7 +12,7 @@ const (
 	maxReadCharCount = 10000
 )
 
-// executeRead 读取文件内容（UTF-8），超过 10000 字符截断。
+// executeRead 读取文件内容（UTF-8），超过 10000 字节截断。
 func (e *ToolExecutor) executeRead(ctx context.Context, args map[string]interface{}) ToolResult {
 	path, ok := getStringArg(args, "path")
 	if !ok {
@@ -67,7 +67,7 @@ func (e *ToolExecutor) executeRead(ctx context.Context, args map[string]interfac
 
 	content := string(data)
 
-	// 超过 10000 字符截断
+	// 超过 10000 字节截断（len 为字节数）
 	if len(content) > maxReadCharCount {
 		content = content[:maxReadCharCount] + "\n... [文件过长，已截断]"
 	}

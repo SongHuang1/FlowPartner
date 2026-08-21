@@ -107,7 +107,7 @@ func WriteJSON(filename string, src interface{}) error {
 	return nil
 }
 
-// ToolCallParam LLM 返回的工具调用参数。
+// ToolCallFunction LLM 返回的工具调用信息（工具名 + JSON 参数字符串）。
 type ToolCallFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`

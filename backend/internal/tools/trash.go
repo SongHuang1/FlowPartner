@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// trashSeq 进程内自增序号，保证同一微秒内并发删除同名文件不冲突（B1）。
+// trashSeq 进程内自增序号，保证同一秒内并发删除同名文件不冲突（时间戳仅秒级精度）。
 var trashSeq uint64
 
 // executeTrash 将目标文件/目录移入回收站（F5-F11）。

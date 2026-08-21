@@ -60,7 +60,7 @@ func (e *Excluder) IsExcludedDir(dir string) bool {
 }
 
 // ShouldSkipFile 判断文件是否应被跳过；返回跳过原因与详情。
-// reason 取值：secret（密钥）、too_large（超大）、inside_excluded_dir（已由上层处理，不在此判定）。
+// reason 取值：secret（密钥）、too_large（超大）；排除目录由 walkAndCopy 直接标记为 excluded_dir，不经此判定。
 func (e *Excluder) ShouldSkipFile(path string, size int64) (skipped bool, reason, detail string) {
 	if !e.includeSecrets && isSecretFile(path) {
 		return true, "secret", "敏感文件，默认不纳入快照（可在设置中开启包含）"

@@ -197,7 +197,7 @@ class FlowPartnerClient:
                 logging.info(f"[Permission] Tool {tool_name} needs approval: request_id={request_id}")
 
                 path = arguments.get("path", "")
-                operation_map = {"read": "读取", "write": "写入", "edit": "编辑", "list": "列出", "search": "搜索", "info": "查询"}
+                operation_map = {"read": "读取", "write": "写入", "edit": "编辑"}
                 operation = operation_map.get(tool_name, tool_name)
 
                 event_payload = {
@@ -261,13 +261,9 @@ class FlowPartnerClient:
     async def call_llm_via_go(self, session_id: str, json_payload: str, send_event_func=None, iteration: int = 0) -> dict:
         """通过 gRPC 请求 Go 代为调用大模型（服务端流式）。
 
-        返回结构:
-        - success: bool
-        - content: str (完整文本)
-        - finish_reason: str
-        - tool_calls: list[dict] (完整工具调用列表)
-        - usage: dict (token 用量)
-        - error_message: str (失败时)
+        成功时返回: success=True, content(完整文本), finish_reason,
+        json_response(恒为空串), 以及可选的 tool_calls(已剔除参数非法/无名目的条目)、usage。
+        失败时返回: success=False, error_message, error_guess(原因猜测，可能为空), json_response=""。
         """
         if self.stub is None:
             return {"success": False, "error_message": "gRPC 连接未建立，请稍后重试", "error_guess": "", "json_response": ""}

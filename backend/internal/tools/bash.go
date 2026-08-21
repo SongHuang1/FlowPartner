@@ -15,7 +15,7 @@ const (
 	maxBashCharCount = 10000
 )
 
-// executeBash 在工作目录内执行 bash 命令，超时 30 秒。
+// executeBash 在工作目录内执行 shell 命令（Windows 用 cmd /c，其余平台 sh -c），超时 30 秒。
 func (e *ToolExecutor) executeBash(ctx context.Context, args map[string]interface{}) ToolResult {
 	command, ok := getStringArg(args, "command")
 	if !ok {
@@ -90,7 +90,7 @@ func (e *ToolExecutor) executeBash(ctx context.Context, args map[string]interfac
 		}
 	}
 
-	// 超过 10000 字符截断
+	// 超过 10000 字节截断（len 为字节数）
 	if len(output) > maxBashCharCount {
 		output = output[:maxBashCharCount] + "\n... [输出过长，已截断]"
 	}

@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 
 class ToolRegistry:
-    """工具注册表：管理所有 Agent 可用的本地工具"""
+    """工具注册表：管理暴露给 LLM 的全部可调用项（read/write/bash/edit/trash/purge 经 gRPC 由 Go 代理执行，agent__* 为子智能体调度入口）。"""
 
     def __init__(self):
         self._tools: dict[str, dict] = {}

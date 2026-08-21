@@ -157,7 +157,7 @@ func (m *ApprovalManager) GetApproval(sessionID, approvalID string) (toolName, r
 	return approval.ToolName, approval.ResolvedPath, true
 }
 
-// CancelSession 将指定 session 的所有待审批记录置为已拒绝（断连时调用）。
+// CancelSession 将指定 session 的所有待审批记录置为已拒绝，并清除该会话的全部会话级信任（断连时调用）。
 func (m *ApprovalManager) CancelSession(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

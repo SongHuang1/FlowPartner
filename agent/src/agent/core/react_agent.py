@@ -5,13 +5,13 @@ import time
 import uuid
 from typing import Any
 
-
 MAX_ITERATIONS = 15
 LOOP_DEADLINE_SECONDS = 5 * 60
 TOKEN_BUDGET = 60000000  # 累计 token 上限（输入+输出合计）
 STUCK_THRESHOLD = 3  # 连续相同工具调用触发卡死
 
-# 默认系统提示词（与 Go 侧 defaultMainPrompt 一致）；executor 定义缺失时的兜底
+# 默认系统提示词；executor 定义缺失时的兜底。内容仿照 Go 侧 defaultMainPrompt，
+# 但两份文案各自维护、已有差异（Go 版含 "FlowPartner" 字样），修改时需人工同步。
 DEFAULT_SYSTEM_PROMPT = (
     "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，"
     "帮助用户完成各种任务。请根据用户需求合理使用工具。删除任何文件或目录时，"
@@ -38,7 +38,7 @@ class ReactAgent:
         self.tools = tool_registry
 
     async def _emit(self, event_type: str, payload: dict) -> None:
-        """发送事件到前端。"""
+        """发送事件到 send_event_func（主循环直连前端队列；作为子 agent 运行时经 SubAgentRunner._forward 转换后转发）。"""
         await self.send_event(self.session_id, event_type, payload)
 
     def _check_loop_termination(

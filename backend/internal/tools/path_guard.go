@@ -102,7 +102,7 @@ func (g *PathGuard) Validate(targetPath string) error {
 	return nil
 }
 
-// ValidateBashWorkDir 校验 bash 工具的工作目录（即工作目录本身）。
+// ValidateBashWorkDir 占位：bash 的工作目录即工作目录本身，当前无需额外校验；保留扩展点。
 func (g *PathGuard) ValidateBashWorkDir() error {
 	// bash 工具的工作目录就是工作目录本身，无需额外校验
 	return nil

@@ -26,7 +26,7 @@ const (
 // SkippedFile 记录被跳过的文件及其原因。
 type SkippedFile struct {
 	Path   string `json:"path"`             // 相对工作区根的路径
-	Reason string `json:"reason"`           // secret | too_large | read_error | symlink_restore_failed
+	Reason string `json:"reason"`           // secret | too_large | read_error | excluded_dir | symlink_restore_failed
 	Detail string `json:"detail,omitempty"` // 补充说明（大小、错误信息等）
 }
 

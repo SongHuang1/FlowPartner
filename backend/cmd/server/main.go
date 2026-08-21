@@ -49,7 +49,7 @@ func main() {
 	// 启动时按已保存设置应用快照配置（含启动清理，后台执行）
 	applySnapshotConfig(snapshotMgr)
 
-	// 3. 端口探索
+	// 4. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
 	if err != nil {
 		log.Fatalf("HTTP port discovery failed: %v", err)
@@ -64,7 +64,7 @@ func main() {
 	}
 	defer grpcListener.Close()
 
-	// 4. 注册 HTTP 路由
+	// 5. 注册 HTTP 路由
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, snapshotMgr, mgr)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
@@ -72,11 +72,11 @@ func main() {
 
 	httpServer := &http.Server{Handler: mux}
 
-	// 5. 创建 gRPC Server
+	// 6. 创建 gRPC Server
 	grpcServer := grpc.NewServer()
 	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, approvalManager))
 
-	// 6. 启动 HTTP Server (goroutine)
+	// 7. 启动 HTTP Server (goroutine)
 	httpErrChan := make(chan error, 1)
 	readyChan := make(chan struct{}, 2)
 	go func() {
@@ -87,7 +87,7 @@ func main() {
 		}
 	}()
 
-	// 7. 启动 gRPC Server (goroutine)
+	// 8. 启动 gRPC Server (goroutine)
 	grpcErrChan := make(chan error, 1)
 	go func() {
 		log.Printf("gRPC server starting on :%d", grpcPort)
@@ -97,12 +97,12 @@ func main() {
 		}
 	}()
 
-	// 8. 等待两个服务真正开始 Accept 连接后，输出就绪信号
+	// 9. 等待两个服务 goroutine 启动后输出就绪信号（listener 已在端口探索时绑定，早到的连接由内核排队）
 	<-readyChan
 	<-readyChan
 	fmt.Fprintln(os.Stderr, readySignal(httpPort, grpcPort))
 
-	// 9. 优雅退出
+	// 10. 优雅退出
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
