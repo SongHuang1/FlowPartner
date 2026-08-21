@@ -2,17 +2,21 @@ import { useState, useRef, useLayoutEffect, useEffect } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { Message, PermissionRequestPayload } from '@/types'
+import type { Message, PermissionRequestPayload, AgentMeta, SubAgentRun } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { listAgents } from '@/lib/api'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
 import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
 import { IterationStepView } from './IterationStepView'
+import { AgentSelector } from './AgentSelector'
+import { SubAgentCard } from './SubAgentCard'
+import { SubAgentDrilldown } from './SubAgentDrilldown'
 
 export function MessageList({ messages }: { messages: Message[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -144,6 +148,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendCancel,
     sendPermissionResponse,
     steps,
+    subagentRuns,
     manualReconnect,
     onFinalAnswer,
     onError,
@@ -155,6 +160,19 @@ export function ChatArea({ conversation }: ChatAreaProps) {
   const [chatError, setChatError] = useState<string | null>(null)
   const [securityWarning, setSecurityWarning] = useState<string | null>(null)
   const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null)
+  const [agents, setAgents] = useState<AgentMeta[]>([])
+  const [executorAgentId, setExecutorAgentId] = useState('')
+  const [drilldownRun, setDrilldownRun] = useState<SubAgentRun | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listAgents()
+      .then((items) => {
+        if (!cancelled) setAgents(items)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
   const unregisterErrorRef = useRef<(() => void) | null>(null)
@@ -192,11 +210,34 @@ export function ChatArea({ conversation }: ChatAreaProps) {
       return
     }
 
+    let injectAgentId: string | undefined
+    const kept: string[] = []
+    for (const token of trimmed.split(/\s+/)) {
+      if (token.startsWith('@')) {
+        const agent = agents.find((a) => a.name === token.slice(1))
+        if (agent) {
+          injectAgentId = agent.id
+          continue
+        }
+      }
+      kept.push(token)
+    }
+    const content = kept.join(' ')
+    if (!content) {
+      setChatError('消息内容为空，请补充要交给智能体执行的任务')
+      return
+    }
+    const executor = executorAgentId || 'main'
+    if (injectAgentId && injectAgentId === executor) {
+      setChatError('不能强制调用会话执行者本身')
+      return
+    }
+
     setInputValue('')
     setChatError(null)
-    const history = sendMessage(trimmed)
+    const history = sendMessage(content)
 
-    const sent = wsSendMessage(trimmed, sessionId, history)
+    const sent = wsSendMessage(content, sessionId, history, executor, injectAgentId)
     if (!sent) {
       if (!connected) {
         setChatError('网络连接中，请稍后重试')
@@ -228,6 +269,9 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           request={pendingPermission}
           onDecision={handlePermissionDecision}
         />
+      )}
+      {drilldownRun && (
+        <SubAgentDrilldown run={drilldownRun} onClose={() => setDrilldownRun(null)} />
       )}
       {messages.length === 0 ? (
         <WelcomeView
@@ -263,6 +307,14 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           {processing && steps.length === 0 && (
             <ThinkingIndicator />
           )}
+          {subagentRuns.length > 0 && (
+            <div className="px-4 py-2 space-y-2 border-t border-neutral-100">
+              <p className="text-xs text-neutral-400">子智能体任务</p>
+              {subagentRuns.map((run) => (
+                <SubAgentCard key={run.span_id} run={run} onClick={setDrilldownRun} />
+              ))}
+            </div>
+          )}
           {securityWarning && (
             <div className="px-4 py-2 text-sm text-amber-800 bg-amber-50 border-t border-amber-200">
               {securityWarning}
@@ -273,6 +325,15 @@ export function ChatArea({ conversation }: ChatAreaProps) {
               {chatError}
             </div>
           )}
+          <div className="flex items-center gap-3 px-4 pt-2">
+            <AgentSelector
+              agents={agents}
+              value={executorAgentId}
+              onChange={setExecutorAgentId}
+              disabled={lockStatus.locked || processing}
+            />
+            <span className="text-xs text-neutral-400">在消息中输入 @智能体名 可强制指定子智能体执行</span>
+          </div>
           <ChatInput
             value={inputValue}
             onChange={setInputValue}
