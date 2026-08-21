@@ -23,10 +23,12 @@ const (
 
 // --- 1. Python 发给 Go 的事件 (实时汇报) ---
 type AgentEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	EventType     string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // 例如: "status_update", "tool_call", "llm_chunk", "final_answer", "error"
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                      // JSON 格式的具体内容
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	EventType string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // 例如: "iteration_start", "llm_chunk", "tool_call", "tool_result",
+	// "final_answer", "loop_terminated", "error", "permission_request",
+	// "subagent_start", "subagent_step", "subagent_end", "subagent_error"
+	Payload       string `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"` // JSON 格式的具体内容
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,7 +145,7 @@ func (x *ServerCommand) GetPayload() string {
 	return ""
 }
 
-// --- 3. Agent 请求 Go 代为调用大模型 (保持同步调用，方便 Go 控制 API Key 和计费) ---
+// --- 3. Agent 请求 Go 代为调用大模型（服务端流式，方便 Go 控制 API Key 和计费） ---
 type LLMRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -260,7 +262,7 @@ func (x *LLMResponse) GetMessageId() string {
 type ToolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`       // 工具名称：read, write, bash, edit
+	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`       // 工具名称：read, write, bash, edit, trash, purge
 	Arguments     string                 `protobuf:"bytes,3,opt,name=arguments,proto3" json:"arguments,omitempty"`                     // JSON 格式的工具参数
 	ApprovalId    string                 `protobuf:"bytes,4,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"` // 越权审批通过后携带的审批 ID（一次性）
 	unknownFields protoimpl.UnknownFields
@@ -330,7 +332,7 @@ type ToolResponse struct {
 	Success         bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`                                        // 是否执行成功
 	Result          string                 `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`                                           // 成功时的结果文本 / 失败时的中文错误文案
 	ErrorCode       string                 `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`                    // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
-	NeedsPermission bool                   `protobuf:"varint,4,opt,name=needs_permission,json=needsPermission,proto3" json:"needs_permission,omitempty"` // true = 路径越权，需用户审批
+	NeedsPermission bool                   `protobuf:"varint,4,opt,name=needs_permission,json=needsPermission,proto3" json:"needs_permission,omitempty"` // true = 需用户审批（路径越权，或 purge 这类按策略强制审批的操作）
 	RequestId       string                 `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`                    // 越权申请的唯一 ID（needs_permission=true 时返回）
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache

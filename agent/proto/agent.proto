@@ -5,7 +5,9 @@ package flowpartner;
 // --- 1. Python 发给 Go 的事件 (实时汇报) ---
 message AgentEvent {
     string session_id = 1;
-    string event_type = 2; // 例如: "status_update", "tool_call", "llm_chunk", "final_answer", "error"
+    string event_type = 2; // 例如: "iteration_start", "llm_chunk", "tool_call", "tool_result",
+                           // "final_answer", "loop_terminated", "error", "permission_request",
+                           // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
     string payload = 3;    // JSON 格式的具体内容
 }
 
@@ -16,7 +18,7 @@ message ServerCommand {
     string payload = 3;      // JSON 格式，包含用户提问、历史上下文等
 }
 
-// --- 3. Agent 请求 Go 代为调用大模型 (保持同步调用，方便 Go 控制 API Key 和计费) ---
+// --- 3. Agent 请求 Go 代为调用大模型（服务端流式，方便 Go 控制 API Key 和计费） ---
 message LLMRequest {
     string session_id = 1;
     string json_payload = 2; // Python 组装好的完整请求体
@@ -31,7 +33,7 @@ message LLMResponse {
 // --- 4. 工具执行代理 ---
 message ToolRequest {
     string session_id = 1;
-    string tool_name = 2;    // 工具名称：read, write, bash, edit
+    string tool_name = 2;    // 工具名称：read, write, bash, edit, trash, purge
     string arguments = 3;    // JSON 格式的工具参数
     string approval_id = 4;  // 越权审批通过后携带的审批 ID（一次性）
 }
@@ -40,7 +42,7 @@ message ToolResponse {
     bool success = 1;        // 是否执行成功
     string result = 2;       // 成功时的结果文本 / 失败时的中文错误文案
     string error_code = 3;   // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
-    bool needs_permission = 4; // true = 路径越权，需用户审批
+    bool needs_permission = 4; // true = 需用户审批（路径越权，或 purge 这类按策略强制审批的操作）
     string request_id = 5;   // 越权申请的唯一 ID（needs_permission=true 时返回）
 }
 
