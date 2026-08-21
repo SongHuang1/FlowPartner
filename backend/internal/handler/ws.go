@@ -26,6 +26,10 @@ var upgrader = websocket.Upgrader{
 
 const maxHistoryMessages = 100
 
+func validAgentID(id string) bool {
+	return id == "" || storage.ValidSessionID(id)
+}
+
 type WebSocketHandler struct {
 	manager         *bridge.Manager
 	approvalManager *tools.ApprovalManager
@@ -162,15 +166,17 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type wsMessage struct {
-		Action       string             `json:"action"`
-		Content      string             `json:"content"`
-		SessionID    string             `json:"session_id"`
-		History      []wsHistoryMessage `json:"history"`
-		RequestID    string             `json:"request_id"`
-		Decision     string             `json:"decision"`
-		Scope        string             `json:"scope"`
-		SnapshotID   string             `json:"snapshot_id"`
-		DeleteExtras bool               `json:"delete_extras"`
+		Action          string             `json:"action"`
+		Content         string             `json:"content"`
+		SessionID       string             `json:"session_id"`
+		History         []wsHistoryMessage `json:"history"`
+		RequestID       string             `json:"request_id"`
+		Decision        string             `json:"decision"`
+		Scope           string             `json:"scope"`
+		SnapshotID      string             `json:"snapshot_id"`
+		DeleteExtras    bool               `json:"delete_extras"`
+		ExecutorAgentID string             `json:"executor_agent_id"`
+		InjectAgentID   string             `json:"inject_agent_id"`
 	}
 
 	var sessionIDs []string
@@ -246,6 +252,10 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Rejecting start_chat with invalid session ID: %q", sessionId)
 					continue
 				}
+				if !validAgentID(msg.ExecutorAgentID) || !validAgentID(msg.InjectAgentID) {
+					log.Printf("Rejecting start_chat with invalid agent ids: executor=%q inject=%q", msg.ExecutorAgentID, msg.InjectAgentID)
+					continue
+				}
 				sessionIDs = append(sessionIDs, sessionId)
 
 				h.manager.RegisterSession(sessionId, conn)
@@ -268,8 +278,10 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				}
 
 				payloadBytes, err := json.Marshal(map[string]interface{}{
-					"user_message": msg.Content,
-					"history":      history,
+					"user_message":      msg.Content,
+					"history":           history,
+					"executor_agent_id": msg.ExecutorAgentID,
+					"inject_agent_id":   msg.InjectAgentID,
 				})
 				if err != nil {
 					log.Printf("JSON encoding failed: %v", err)

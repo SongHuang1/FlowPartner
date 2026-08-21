@@ -68,8 +68,8 @@ func TestSettingsHandler_Put_And_Get(t *testing.T) {
 	storage.ResetDataDirCache()
 	handler := &SettingsHandler{}
 
-	// PUT 新设置
-	body := `{"model":"gpt-3.5","agent_id":"test-agent","context_window":4096,"working_directory":"/tmp/test","language":"en-US"}`
+	// PUT 新设置（模型来自激活的模型配置）
+	body := `{"model":"gpt-3.5","agent_id":"test-agent","context_window":4096,"working_directory":"/tmp/test","language":"en-US","model_configs":[{"id":"cfg-test","name":"测试","base_url":"https://api.example.com/v1","model_name":"gpt-3.5","encrypted_api_key":"enc-key","temperature":0.7,"timeout_secs":30}],"active_config_id":"cfg-test"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -249,7 +249,7 @@ func TestSettingsHandler_Put_OverwriteExisting(t *testing.T) {
 	handler := &SettingsHandler{}
 
 	// 第一次 PUT
-	body1 := `{"model":"gpt-4","agent_id":"agent1","context_window":4096,"language":"en-US"}`
+	body1 := `{"model":"gpt-4","agent_id":"agent1","context_window":4096,"language":"en-US","model_configs":[{"id":"cfg-1","name":"配置1","base_url":"https://api.example.com/v1","model_name":"gpt-4","encrypted_api_key":"enc-key-1","temperature":0.7,"timeout_secs":30}],"active_config_id":"cfg-1"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body1))
 	rec := httptest.NewRecorder()
 	handler.Put(rec, req)
@@ -259,7 +259,7 @@ func TestSettingsHandler_Put_OverwriteExisting(t *testing.T) {
 	}
 
 	// 第二次 PUT（覆盖）
-	body2 := `{"model":"gpt-3.5","agent_id":"agent2","context_window":2048,"language":"zh-CN"}`
+	body2 := `{"model":"gpt-3.5","agent_id":"agent2","context_window":2048,"language":"zh-CN","model_configs":[{"id":"cfg-2","name":"配置2","base_url":"https://api.example.com/v1","model_name":"gpt-3.5","encrypted_api_key":"enc-key-2","temperature":0.7,"timeout_secs":30}],"active_config_id":"cfg-2"}`
 	req = httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body2))
 	rec = httptest.NewRecorder()
 	handler.Put(rec, req)

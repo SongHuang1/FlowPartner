@@ -179,7 +179,8 @@ func TestAgentHandler_CallLLM_NoActiveConfig(t *testing.T) {
 
 func TestAgentHandler_CallLLM_LockedKey(t *testing.T) {
 	setupTestStorage(t)
-	writeSettingsJSON(t, `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":"https://api.example.com/v1","model_name":"gpt-4"}],"active_config_id":"cfg-1"}`)
+	keystore.Reset()
+	writeSettingsJSON(t, `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":"https://api.example.com/v1","model_name":"gpt-4","encrypted_api_key":"enc-test-key"}],"active_config_id":"cfg-1"}`)
 
 	h := newTestAgentHandler(bridge.NewManager())
 	stream := &fakeCallLLMServer{ctx: context.Background()}
@@ -203,7 +204,8 @@ func TestAgentHandler_CallLLM_LockedKey(t *testing.T) {
 
 func TestAgentHandler_CallLLM_InvalidBaseURL(t *testing.T) {
 	setupTestStorage(t)
-	writeSettingsJSON(t, `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":"not-a-url","model_name":"gpt-4"}],"active_config_id":"cfg-1"}`)
+	keystore.Reset()
+	writeSettingsJSON(t, `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":"not-a-url","model_name":"gpt-4","encrypted_api_key":"enc-test-key"}],"active_config_id":"cfg-1"}`)
 
 	ks := keystore.Instance()
 	if err := ks.Unlock([]byte("sk-test-key")); err != nil {
@@ -249,9 +251,10 @@ func TestAgentHandler_CallLLM_StreamingSuccess(t *testing.T) {
 	}))
 	defer sseServer.Close()
 
-	cfgJSON := `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":%q,"model_name":"gpt-4","temperature":0.7,"timeout_secs":5}],"active_config_id":"cfg-1"}`
+	cfgJSON := `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":%q,"model_name":"gpt-4","encrypted_api_key":"enc-test-key","temperature":0.7,"timeout_secs":5}],"active_config_id":"cfg-1"}`
 	writeSettingsJSON(t, fmt.Sprintf(cfgJSON, sseServer.URL))
 
+	keystore.Reset()
 	ks := keystore.Instance()
 	if err := ks.Unlock([]byte("sk-test-key")); err != nil {
 		t.Fatalf("unlock failed: %v", err)
@@ -302,9 +305,10 @@ func TestAgentHandler_CallLLM_HTTPError(t *testing.T) {
 	}))
 	defer sseServer.Close()
 
-	cfgJSON := `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":%q,"model_name":"gpt-4","temperature":0.7,"timeout_secs":5}],"active_config_id":"cfg-1"}`
+	cfgJSON := `{"model_configs":[{"id":"cfg-1","name":"Test","base_url":%q,"model_name":"gpt-4","encrypted_api_key":"enc-test-key","temperature":0.7,"timeout_secs":5}],"active_config_id":"cfg-1"}`
 	writeSettingsJSON(t, fmt.Sprintf(cfgJSON, sseServer.URL))
 
+	keystore.Reset()
 	ks := keystore.Instance()
 	if err := ks.Unlock([]byte("sk-test-key")); err != nil {
 		t.Fatalf("unlock failed: %v", err)

@@ -51,7 +51,7 @@ func TestHTTPRoutes(t *testing.T) {
 	mgr := bridge.NewManager()
 	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil)
+	registerRoutes(mux, wsHandler, nil, mgr)
 
 	tests := []struct {
 		name       string
@@ -101,7 +101,7 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	mgr := bridge.NewManager()
 	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil)
+	registerRoutes(mux, wsHandler, nil, mgr)
 
 	// 设置 API Key
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings",
@@ -149,7 +149,7 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
 
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil)
+	registerRoutes(mux, wsHandler, nil, mgr)
 	httpServer := &http.Server{Handler: mux}
 
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")

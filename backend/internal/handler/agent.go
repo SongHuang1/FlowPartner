@@ -13,6 +13,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
+	"github.com/songhuang/flowpartner/backend/internal/storage"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc/codes"
@@ -177,6 +178,54 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	return nil
 }
 
+func (h *AgentHandler) ListAgents(ctx context.Context, _ *proto.Empty) (*proto.AgentDefList, error) {
+	defs, err := storage.LoadAgents()
+	if err != nil {
+		log.Printf("[ListAgents] 读取智能体定义失败: %s", sanitize.Error(err))
+		return nil, status.Errorf(codes.Internal, "读取智能体定义失败")
+	}
+
+	main := BuiltinMainAgent()
+	result := []*proto.AgentDef{agentDefToProto(main)}
+	for _, d := range defs {
+		result = append(result, agentDefToProto(d))
+	}
+	return &proto.AgentDefList{Agents: result}, nil
+}
+
+func (h *AgentHandler) GetAgent(ctx context.Context, req *proto.AgentId) (*proto.AgentDef, error) {
+	if req == nil || req.Id == "" {
+		return nil, status.Error(codes.InvalidArgument, "智能体 ID 不能为空")
+	}
+	if req.Id == mainAgentID {
+		return agentDefToProto(BuiltinMainAgent()), nil
+	}
+
+	defs, err := storage.LoadAgents()
+	if err != nil {
+		log.Printf("[GetAgent] 读取智能体定义失败: %s", sanitize.Error(err))
+		return nil, status.Errorf(codes.Internal, "读取智能体定义失败")
+	}
+	for _, d := range defs {
+		if d.ID == req.Id {
+			return agentDefToProto(d), nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "智能体不存在: %s", req.Id)
+}
+
+// agentDefToProto 将存储层智能体定义转换为 proto 消息。
+func agentDefToProto(def storage.AgentDef) *proto.AgentDef {
+	return &proto.AgentDef{
+		Id:           def.ID,
+		Name:         def.Name,
+		Description:  def.Description,
+		SystemPrompt: def.SystemPrompt,
+		CreatedAt:    def.CreatedAt,
+		UpdatedAt:    def.UpdatedAt,
+	}
+}
+
 func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, messageID string, llmErr *llm.LLMError) error {
 	data, _ := json.Marshal(llmErr)
 	return stream.Send(&proto.LLMResponse{
@@ -186,9 +235,6 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 	})
 }
 
-// ExecuteTool 一元 RPC：Python 调用 Go 执行工具，返回执行结果。
-// 越权路径：路径校验失败时，若未携带 approval_id 则返回 needs_permission=true，
-// 携带 approval_id 时校验审批有效性后执行。
 func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
 	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
 

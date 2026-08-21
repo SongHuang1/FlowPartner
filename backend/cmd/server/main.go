@@ -66,7 +66,7 @@ func main() {
 
 	// 4. 注册 HTTP 路由
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, snapshotMgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, mgr)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
 	staticHandler.Handle(mux)
 
@@ -119,12 +119,13 @@ func main() {
 	log.Println("Server exited")
 }
 
-func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
+func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, mgr *bridge.Manager) {
 	settingsHandler := handler.NewSettingsHandler(snapshotMgr)
 	historyHandler := &handler.HistoryHandler{}
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
 	snapshotHandler := handler.NewSnapshotHandler(snapshotMgr)
+	agentDefHandler := handler.NewAgentDefHandler(mgr)
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
@@ -135,6 +136,8 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, sna
 	mux.HandleFunc("/api/lock_status", unlockHandler.Handle)
 	mux.HandleFunc("/api/snapshots", snapshotHandler.Handle)
 	mux.HandleFunc("/api/snapshots/", snapshotHandler.Handle)
+	mux.HandleFunc("/api/agents", agentDefHandler.Handle)
+	mux.HandleFunc("/api/agents/", agentDefHandler.HandleByID)
 	mux.HandleFunc("/api/model_configs", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/model_configs" {
 			modelConfigHandler.Handle(w, r)

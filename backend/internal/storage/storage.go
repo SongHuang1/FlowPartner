@@ -12,9 +12,14 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("file not found")
+	ErrNotFound        = errors.New("file not found")
 	ErrInvalidFilename = errors.New("invalid filename: must not contain path separators or '..'")
 )
+
+// IsNotFound 判断错误是否为文件不存在。
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
 
 var dataDirCache string
 var testDataDir string
