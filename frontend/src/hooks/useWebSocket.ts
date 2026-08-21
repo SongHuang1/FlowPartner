@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getApiPort, updateApiBase } from '@/lib/api'
+import { getApiPort } from '@/lib/api'
 import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep } from '@/types'
 
 export interface ChatEvent {
@@ -396,11 +396,8 @@ export function useWebSocket(): UseWebSocketReturn {
     [clearReconnectTimer, resetProcessing],
   )
 
-  const processingRef = useRef(processing)
-
   useEffect(() => {
     connectRef.current = connect
-    processingRef.current = processing
   })
 
   useEffect(() => {
@@ -409,22 +406,6 @@ export function useWebSocket(): UseWebSocketReturn {
     const port = getApiPort()
     if (port) {
       connectRef.current(port)
-    }
-
-    const handlePortChanged = (newPort: number) => {
-      if (processingRef.current) {
-        resetProcessing()
-        errorCallbacksRef.current.forEach((cb) => {
-          try { cb('连接已断开，请重试') } catch (e) { console.error('onError callback error:', e) }
-        })
-      }
-      updateApiBase(newPort)
-      connectRef.current(newPort)
-    }
-
-    let unsubscribePortChanged: (() => void) | undefined
-    if (window.flowPartner?.onBackendPortChanged) {
-      unsubscribePortChanged = window.flowPartner.onBackendPortChanged(handlePortChanged)
     }
 
     const finalAnswerCbs = finalAnswerCallbacksRef.current
@@ -438,7 +419,6 @@ export function useWebSocket(): UseWebSocketReturn {
       mountedRef.current = false
       clearReconnectTimer()
       clearProcessingTimer()
-      unsubscribePortChanged?.()
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null

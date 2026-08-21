@@ -8,6 +8,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { CloseDialog } from '@/components/layout/CloseDialog'
 import { useSettings } from '@/hooks/useSettings'
 import { useConversation } from '@/hooks/useConversation'
+import { useWindowState } from '@/hooks/useWindowState'
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -15,6 +16,7 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const { updateSettings } = useSettings()
   const conversation = useConversation()
+  useWindowState()
 
   useEffect(() => {
     window.flowPartner.onCloseAction(() => {

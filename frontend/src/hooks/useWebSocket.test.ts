@@ -3,11 +3,9 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { useWebSocket, type ChatEvent } from '@/hooks/useWebSocket'
 
 const mockGetApiPort = vi.fn()
-const mockUpdateApiBase = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   getApiPort: () => mockGetApiPort(),
-  updateApiBase: (port: number) => mockUpdateApiBase(port),
 }))
 
 class MockWebSocket {
@@ -43,7 +41,6 @@ class MockWebSocket {
 let mockWebSocketInstance: MockWebSocket | null = null
 
 const mockFetchBackendPort = vi.fn()
-const mockOnBackendPortChanged = vi.fn().mockReturnValue(() => {})
 
 describe('useWebSocket', () => {
   beforeEach(() => {
@@ -58,7 +55,6 @@ describe('useWebSocket', () => {
       onSystemLock: vi.fn(),
       onSystemFocus: vi.fn(),
       fetchBackendPort: mockFetchBackendPort,
-      onBackendPortChanged: mockOnBackendPortChanged,
       onCloseAction: vi.fn(),
       sendCloseAction: vi.fn(),
       updateCloseBehavior: vi.fn(),
@@ -597,59 +593,6 @@ describe('useWebSocket', () => {
     })
   })
 
-  describe('port change', () => {
-    it('reconnects on port change', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
-      renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      expect(portChangeHandler).not.toBeNull()
-
-      act(() => {
-        portChangeHandler!(9090)
-      })
-
-      expect(mockUpdateApiBase).toHaveBeenCalledWith(9090)
-    })
-
-    it('resets processing and notifies on port change during processing', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      act(() => {
-        result.current.sendMessage('hello', 'sess_test_1', [])
-      })
-      expect(result.current.processing).toBe(true)
-
-      const errorCb = vi.fn()
-      act(() => {
-        result.current.onError(errorCb)
-      })
-
-      expect(portChangeHandler).not.toBeNull()
-
-      act(() => {
-        portChangeHandler!(9090)
-      })
-
-      expect(result.current.processing).toBe(false)
-      expect(errorCb).toHaveBeenCalledWith('连接已断开，请重试')
-    })
-  })
-
   describe('cleanup on unmount', () => {
     it('closes WebSocket on unmount', async () => {
       const { unmount } = renderHook(() => useWebSocket())
@@ -762,12 +705,6 @@ describe('useWebSocket', () => {
 
   describe('security events', () => {
     it('triggers security callback for invalid port', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
@@ -777,22 +714,15 @@ describe('useWebSocket', () => {
         result.current.onSecurityEvent(securityCb)
       })
 
-      expect(portChangeHandler).not.toBeNull()
-
+      mockGetApiPort.mockReturnValue(100)
       act(() => {
-        portChangeHandler!(100)
+        result.current.manualReconnect()
       })
 
       await waitFor(() => expect(securityCb).toHaveBeenCalled())
     })
 
     it('does not trigger onError for security events', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
@@ -802,10 +732,9 @@ describe('useWebSocket', () => {
         result.current.onError(errorCb)
       })
 
-      expect(portChangeHandler).not.toBeNull()
-
+      mockGetApiPort.mockReturnValue(100)
       act(() => {
-        portChangeHandler!(100)
+        result.current.manualReconnect()
       })
 
       expect(errorCb).not.toHaveBeenCalled()

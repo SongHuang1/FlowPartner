@@ -115,6 +115,10 @@ function startPythonAgent(grpcPort) {
   console.log(`[main.cjs] Starting Python Agent, gRPC port: ${grpcPort || 'not set (will use default 50051)'}`)
 
   if (isDev) {
+    // main.py 使用 "from agent.xxx import ..." 包导入，必须把 src 与 src/agent 都加入 PYTHONPATH
+    const agentSrcDir = path.join(__dirname, '..', '..', 'agent', 'src')
+    const pyPathSep = process.platform === 'win32' ? ';' : ':'
+    safeEnv.PYTHONPATH = `${agentSrcDir}${pyPathSep}${path.join(agentSrcDir, 'agent')}`
     pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
       cwd: path.join(__dirname, '..', '..'),
       env: safeEnv,
@@ -205,7 +209,7 @@ function waitForReady(timeoutMs) {
   })
 }
 
-// TODO: 退出流程需与 Python Agent 的关闭机制一起设计
+// TODO: Go 后端目前用 SIGTERM+3s 后 SIGKILL 兜底，未使用后端的优雅关闭信号；整体退出流程待统一设计
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 

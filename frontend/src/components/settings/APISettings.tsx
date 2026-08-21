@@ -81,7 +81,7 @@ export function APISettings() {
       return
     }
     if (!isPasswordStrong(password)) {
-      setLocalError('密码至少 8 位，且需包含大写字母和数字')
+      setLocalError('密码至少 8 位，且需包含大写字母、小写字母和数字')
       return
     }
     if (password !== passwordConfirm) {

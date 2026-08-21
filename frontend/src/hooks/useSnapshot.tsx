@@ -92,7 +92,8 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
     }
   }, [onSnapshotStatus, onSnapshotMessage])
 
-  // 系统锁屏：刷新快照（flush）以保护未保存的工作
+  // 系统锁屏：刷新快照（flush）以保护未保存的工作。
+  // system-lock DOM 事件由 App 挂载的 useWindowState 在收到 Electron 主进程通知后派发。
   useEffect(() => {
     const handleSystemLock = () => {
       sendSystemLock()
