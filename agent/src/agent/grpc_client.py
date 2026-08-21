@@ -2,11 +2,13 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from pathlib import Path
 
 import grpc
 
 from agent import agent_pb2, agent_pb2_grpc
+from agent.core.agent_registry import AgentRegistry
 from agent.core.react_agent import ReactAgent
 from agent.tools.file_ops import (
     make_bash_handler,
@@ -46,6 +48,7 @@ class FlowPartnerClient:
         self._active_queues: dict[str, asyncio.Queue] = {}
 
         self.tool_registry = ToolRegistry()
+        self.agent_registry = AgentRegistry(self)
         self.tool_registry.register(
             name="read",
             description="Read the content of a local file at the specified path",
@@ -130,6 +133,45 @@ class FlowPartnerClient:
             },
             handler=make_purge_handler(self)
         )
+
+    async def list_agents(self) -> list[dict]:
+
+        if self.stub is None:
+            raise grpc.aio.AioRpcError(
+                grpc.StatusCode.UNAVAILABLE, None, None, "gRPC 连接未建立"
+            )
+        response = await self.stub.ListAgents(agent_pb2.Empty())
+        return [
+            {
+                "id": agent.id,
+                "name": agent.name,
+                "description": agent.description,
+                "system_prompt": agent.system_prompt,
+                "created_at": agent.created_at,
+                "updated_at": agent.updated_at,
+            }
+            for agent in response.agents
+        ]
+
+    async def get_agent(self, agent_id: str) -> dict | None:
+        if self.stub is None:
+            raise grpc.aio.AioRpcError(
+                grpc.StatusCode.UNAVAILABLE, None, None, "gRPC 连接未建立"
+            )
+        try:
+            response = await self.stub.GetAgent(agent_pb2.AgentId(id=agent_id))
+        except grpc.aio.AioRpcError as e:
+            if e.code() == grpc.StatusCode.NOT_FOUND:
+                return None
+            raise
+        return {
+            "id": response.id,
+            "name": response.name,
+            "description": response.description,
+            "system_prompt": response.system_prompt,
+            "created_at": response.created_at,
+            "updated_at": response.updated_at,
+        }
 
     async def send_event(self, session_id: str, event_type: str, payload: dict, queue: asyncio.Queue):
         event = agent_pb2.AgentEvent(
@@ -389,6 +431,9 @@ class FlowPartnerClient:
                         else:
                             logging.info(f"[Cancel] No active task for session={session_id}, ignoring")
 
+                    elif command.command_type == "agents_changed":
+                        self.agent_registry.invalidate()
+
             except grpc.aio.AioRpcError as e:
                 logging.warning(f"Connection lost (attempt {attempt}/{max_retries}): {e.code()}, {e.details()}")
             except Exception as e:
@@ -427,18 +472,54 @@ class FlowPartnerClient:
             if not isinstance(history, list):
                 history = []
 
-            logging.info(f"[Chat started] Session: {session_id} | User length: {len(user_message)}")
+
+            executor_agent_id = payload.get("executor_agent_id") or "main"
+            inject_agent_id = payload.get("inject_agent_id") or ""
+
+            logging.info(f"[Chat started] Session: {session_id} | User length: {len(user_message)} | Executor: {executor_agent_id}")
+
+            trace_id = str(uuid.uuid4())
+
+            async def send_evt(sid: str, etype: str, epayload: dict) -> None:
+                await self.send_event(sid, etype, epayload, queue)
+
+            system_prompt = await self.agent_registry.system_prompt_for(executor_agent_id)
+            tool_registry = await self.agent_registry.build_tool_registry(
+                executor_agent_id, session_id, 1, trace_id, "", send_evt
+            )
+
+            forced_tool_call = None
+            if inject_agent_id:
+                if inject_agent_id == executor_agent_id:
+                    await self.send_event(
+                        session_id, "error",
+                        {"message": f"不能强制调用当前会话执行者自身（{executor_agent_id}），请选择其他智能体。"},
+                        queue,
+                    )
+                    return
+                target_def = await self.agent_registry.get(inject_agent_id)
+                if target_def is None:
+                    await self.send_event(
+                        session_id, "error",
+                        {"message": f"智能体不存在或已被删除，无法调用：{inject_agent_id}"},
+                        queue,
+                    )
+                    return
+                forced_tool_call = {"name": f"agent__{inject_agent_id}", "arguments": {"task": user_message}}
+                logging.info(f"[Chat] 强制触发子智能体调用: {inject_agent_id}")
 
             agent = ReactAgent(
                 session_id=session_id,
                 call_llm_func=self.call_llm_via_go,
-                send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
-                tool_registry=self.tool_registry
+                send_event_func=send_evt,
+                tool_registry=tool_registry
             )
             final_answer, all_messages = await agent.run(
                 user_message,
                 history=history,
-                send_event_func=lambda sid, etype, epayload: self.send_event(sid, etype, epayload, queue),
+                send_event_func=send_evt,
+                system_prompt=system_prompt,
+                forced_tool_call=forced_tool_call,
             )
 
             history_file = self.history_dir / f"{session_id}.json"
@@ -446,6 +527,8 @@ class FlowPartnerClient:
                 with open(history_file, "a", encoding="utf-8") as f:
                     for msg in all_messages:
                         f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+
+                    f.write(json.dumps({"meta": {"executor_agent_id": executor_agent_id}}, ensure_ascii=False) + "\n")
 
             logging.info(f"Chat completed | Session: {session_id}")
 

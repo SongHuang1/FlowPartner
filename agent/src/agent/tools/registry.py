@@ -17,6 +17,12 @@ class ToolRegistry:
         }
         logging.info(f"Tool registered: {name}")
 
+    def copy(self) -> "ToolRegistry":
+        """浅拷贝工具注册表（handler 共享，供子 agent 各自重建工具集）。"""
+        cloned = ToolRegistry()
+        cloned._tools = dict(self._tools)
+        return cloned
+
     def get_openai_tools_definition(self) -> list[dict]:
         """生成 OpenAI 格式的 tools 定义"""
         return [

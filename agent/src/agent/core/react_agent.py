@@ -2,13 +2,22 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
-# ReAct 循环护栏常量（规约 2.2-F3）
+
 MAX_ITERATIONS = 15
-LOOP_DEADLINE_SECONDS = 5 * 60  # 整轮墙钟超时：5 分钟
-TOKEN_BUDGET = 60000  # 累计 token 上限（输入+输出合计）
+LOOP_DEADLINE_SECONDS = 5 * 60
+TOKEN_BUDGET = 60000000  # 累计 token 上限（输入+输出合计）
 STUCK_THRESHOLD = 3  # 连续相同工具调用触发卡死
+
+# 默认系统提示词（与 Go 侧 defaultMainPrompt 一致）；executor 定义缺失时的兜底
+DEFAULT_SYSTEM_PROMPT = (
+    "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，"
+    "帮助用户完成各种任务。请根据用户需求合理使用工具。删除任何文件或目录时，"
+    "必须使用 trash 工具（移入回收站，可恢复），禁止使用 shell 删除命令。"
+    "仅当用户明确要求永久删除回收站内容时，才使用 purge 工具（该操作不可逆且每次都需要用户审批）。"
+)
 
 
 def _make_tool_call_signature(tool_call: dict) -> str:
@@ -57,17 +66,22 @@ class ReactAgent:
 
         return None
 
-    async def run(self, user_message: str, history: list | None = None, send_event_func=None) -> tuple[str, list[dict]]:
-        """执行 ReAct 循环。
+    async def run(
+        self,
+        user_message: str,
+        history: list | None = None,
+        send_event_func=None,
+        system_prompt: str | None = None,
+        forced_tool_call: dict | None = None,
+    ) -> tuple[str, list[dict]]:
 
-        返回:
-            (final_answer_text, all_messages) — all_messages 包含完整的结构化消息列表
-        """
         if history is None:
             history = []
 
+        system_content = system_prompt if system_prompt else DEFAULT_SYSTEM_PROMPT
+
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，帮助用户完成各种任务。请根据用户需求合理使用工具。删除任何文件或目录时，必须使用 trash 工具（移入回收站，可恢复），禁止使用 shell 删除命令。仅当用户明确要求永久删除回收站内容时，才使用 purge 工具（该操作不可逆且每次都需要用户审批）。"}
+            {"role": "system", "content": system_content}
         ]
 
         for h in history:
@@ -93,6 +107,58 @@ class ReactAgent:
 
         user_msg_record = {"role": "user", "content": user_message}
         recorded_messages: list[dict[str, Any]] = [user_msg_record]
+
+        if forced_tool_call:
+            forced_name = forced_tool_call.get("name", "")
+            forced_args = forced_tool_call.get("arguments", {})
+            if not isinstance(forced_args, dict):
+                forced_args = {}
+            forced_call_id = f"call_forced_{uuid.uuid4().hex[:12]}"
+            forced_call = {
+                "id": forced_call_id,
+                "type": "function",
+                "function": {"name": forced_name, "arguments": json.dumps(forced_args, ensure_ascii=False)},
+            }
+            forced_assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [forced_call],
+            }
+            messages.append(forced_assistant_msg)
+            recorded_messages.append(forced_assistant_msg)
+
+            sig = _make_tool_call_signature(forced_call)
+            tool_call_history.append(sig)
+
+            logging.info(f"[ReAct] forced tool_call: {forced_name}")
+            await self._emit("tool_call", {
+                "tool": forced_name,
+                "args": forced_args,
+                "call_id": forced_call_id,
+                "iteration": 1,
+            })
+
+            forced_result = await self.tools.execute(forced_name, forced_args)
+            truncated = False
+            if len(forced_result) > 10000:
+                forced_result = forced_result[:10000]
+                truncated = True
+
+            await self._emit("tool_result", {
+                "tool": forced_name,
+                "result": forced_result,
+                "call_id": forced_call_id,
+                "iteration": 1,
+                "truncated": truncated,
+            })
+
+            forced_tool_msg = {
+                "role": "tool",
+                "tool_call_id": forced_call_id,
+                "content": forced_result,
+            }
+            messages.append(forced_tool_msg)
+            recorded_messages.append(forced_tool_msg)
 
         try:
             for iteration in range(MAX_ITERATIONS):
@@ -145,6 +211,7 @@ class ReactAgent:
                         "text": summary,
                         "iteration": iteration + 1,
                     })
+                    recorded_messages.append({"role": "assistant", "content": summary})
                     return summary, recorded_messages
 
                 if finish_reason == "tool_calls" and llm_resp.get("tool_calls"):
@@ -208,6 +275,7 @@ class ReactAgent:
                         "text": final_answer,
                         "iteration": iteration + 1,
                     })
+                    recorded_messages.append({"role": "assistant", "content": final_answer})
                     return final_answer, recorded_messages
 
                 if not final_answer and not finish_reason:
@@ -216,6 +284,7 @@ class ReactAgent:
                         "iteration": iteration + 1,
                         "incomplete": True,
                     })
+                    recorded_messages.append({"role": "assistant", "content": final_answer or ""})
                     return final_answer or "", recorded_messages
 
             fallback = "抱歉，经过多轮尝试后未能得出结论。请尝试简化你的问题。"
@@ -223,6 +292,7 @@ class ReactAgent:
                 "text": fallback,
                 "iteration": MAX_ITERATIONS,
             })
+            recorded_messages.append({"role": "assistant", "content": fallback})
             return fallback, recorded_messages
 
         except asyncio.CancelledError:
