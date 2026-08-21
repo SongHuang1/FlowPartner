@@ -54,7 +54,7 @@ describe('AgentSettings', () => {
 
   it('displays current temperature value', () => {
     render(<AgentSettings />)
-    expect(screen.getByText(/0\.7/)).toBeInTheDocument()
+    expect(screen.getByText('0.7')).toBeInTheDocument()
   })
 
   it('calls updateSettings when system prompt changes', () => {
@@ -74,7 +74,7 @@ describe('AgentSettings', () => {
 it('renders temperature range labels', () => {
     render(<AgentSettings />)
     expect(screen.getByText('0.0 精确')).toBeInTheDocument()
-    expect(screen.getByText('0.5 平衡')).toBeInTheDocument()
+    expect(screen.getByText('0.7 平衡')).toBeInTheDocument()
     expect(screen.getByText('1.0 创意')).toBeInTheDocument()
   })
 

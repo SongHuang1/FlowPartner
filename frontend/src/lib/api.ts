@@ -1,4 +1,4 @@
-import type { Settings, LockStatus, HistoryEntry, HistorySession, SnapshotManifest, SnapshotDetail } from '@/types'
+import type { Settings, LockStatus, HistoryEntry, HistorySession, SnapshotManifest, SnapshotDetail, AgentMeta, AgentDef, AgentInput } from '@/types'
 
 const FETCH_TIMEOUT_MS = 5000
 
@@ -178,4 +178,47 @@ export async function getSnapshotDetail(snapshotId: string): Promise<SnapshotDet
   const res = await fetchWithTimeout(`${BASE}/snapshots/${encodeURIComponent(snapshotId)}`)
   const data: ApiResponse<SnapshotDetail> = await res.json()
   return data.data
+}
+
+export async function listAgents(): Promise<AgentMeta[]> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/agents`)
+  const data: ApiResponse<AgentMeta[]> = await res.json()
+  return data.data
+}
+
+export async function getAgent(agentId: string): Promise<AgentDef> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/agents/${encodeURIComponent(agentId)}`)
+  const data: ApiResponse<AgentDef> = await res.json()
+  return data.data
+}
+
+export async function createAgent(input: AgentInput): Promise<AgentDef> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/agents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const data: ApiResponse<AgentDef> = await res.json()
+  return data.data
+}
+
+export async function updateAgent(agentId: string, input: AgentInput): Promise<AgentDef> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const data: ApiResponse<AgentDef> = await res.json()
+  return data.data
+}
+
+export async function deleteAgent(agentId: string): Promise<void> {
+  await ensureReady()
+  await fetchWithTimeout(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: 'DELETE',
+  })
 }

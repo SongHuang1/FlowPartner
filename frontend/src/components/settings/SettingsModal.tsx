@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { X, Key, Bot, Settings, Save, HardDrive } from 'lucide-react'
+import { X, Key, Bot, Settings, Save, HardDrive, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useSettings } from '@/hooks/useSettings'
 import { saveSettings } from '@/lib/api'
 import { APISettings } from './APISettings'
 import { AgentSettings } from './AgentSettings'
+import { AgentsManager } from './AgentsManager'
 import { CloseBehaviorSettings } from './CloseBehaviorSettings'
 import { SnapshotSettings } from './SnapshotSettings'
 
@@ -13,11 +14,12 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type TabId = 'api' | 'agent' | 'behavior' | 'snapshot'
+type TabId = 'api' | 'agent' | 'behavior' | 'snapshot' | 'agents'
 
 const tabs: { id: TabId; label: string; icon: typeof Key }[] = [
   { id: 'api', label: 'API 配置', icon: Key },
   { id: 'agent', label: '智能体', icon: Bot },
+  { id: 'agents', label: '多智能体', icon: Users },
   { id: 'behavior', label: '行为', icon: Settings },
   { id: 'snapshot', label: '本地快照', icon: HardDrive },
 ]
@@ -56,7 +58,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               key={id}
               onClick={() => setActiveTab(id)}
               className={
-                'flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors relative ' +
+                'flex items-center gap-1.5 px-4 py-3 text-sm font-medium transition-colors relative ' +
                 (activeTab === id
                   ? 'text-blue-600 bg-white'
                   : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50')
@@ -74,6 +76,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'api' && <APISettings />}
           {activeTab === 'agent' && <AgentSettings />}
+          {activeTab === 'agents' && <AgentsManager />}
           {activeTab === 'behavior' && <CloseBehaviorSettings />}
           {activeTab === 'snapshot' && <SnapshotSettings />}
         </div>

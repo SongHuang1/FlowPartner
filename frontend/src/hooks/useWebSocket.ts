@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort, updateApiBase } from '@/lib/api'
-import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage } from '@/types'
+import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -24,6 +24,7 @@ const KNOWN_EVENT_TYPES = [
   'status_update', 'tool_call', 'tool_result', 'final_answer',
   'error', 'permission_request', 'iteration_start', 'llm_chunk',
   'loop_terminated', 'snapshot_status', 'snapshot_message',
+  'subagent_start', 'subagent_step', 'subagent_end', 'subagent_error',
 ] as const
 
 function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
@@ -36,7 +37,7 @@ export interface UseWebSocketReturn {
   reconnectAttempts: number
   isReconnectExhausted: boolean
   processing: boolean
-  sendMessage: (content: string, sessionId: string, history: Message[]) => boolean
+  sendMessage: (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string) => boolean
   sendCancel: (sessionId: string) => void
   sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => void
   sendManualSnapshot: () => void
@@ -44,6 +45,7 @@ export interface UseWebSocketReturn {
   sendSystemLock: () => void
   events: ChatEvent[]
   steps: IterationStep[]
+  subagentRuns: SubAgentRun[]
   manualReconnect: () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
   onError: (cb: (message: string) => void) => () => void
@@ -122,6 +124,71 @@ function buildSteps(events: ChatEvent[]): IterationStep[] {
   return steps
 }
 
+function buildSubagentRuns(events: ChatEvent[]): SubAgentRun[] {
+  const runs = new Map<string, SubAgentRun>()
+  const order: string[] = []
+
+  for (const evt of events) {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(evt.payload)
+    } catch {
+      continue
+    }
+
+    const spanId = (parsed.span_id as string) || ''
+    if (!spanId) continue
+
+    let run = runs.get(spanId)
+    if (evt.event_type === 'subagent_start') {
+      if (!run) {
+        run = {
+          agent_id: (parsed.agent_id as string) || '',
+          agent_name: (parsed.agent_name as string) || '',
+          depth: (parsed.depth as number) || 1,
+          span_id: spanId,
+          trace_id: (parsed.trace_id as string) || '',
+          parent_span_id: (parsed.parent_span_id as string) || undefined,
+          status: 'running',
+          task: (parsed.task as string) || '',
+          steps: [],
+        }
+        runs.set(spanId, run)
+        order.push(spanId)
+      }
+      continue
+    }
+
+    if (!run) continue
+
+    if (evt.event_type === 'subagent_step') {
+      const step: SubAgentStep = {
+        step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
+      }
+      if (typeof parsed.content === 'string') step.content = parsed.content
+      if (typeof parsed.tool === 'string') step.tool = parsed.tool
+      if (parsed.args && typeof parsed.args === 'object') step.args = parsed.args as Record<string, unknown>
+      if (typeof parsed.result === 'string') step.result = parsed.result
+      if (typeof parsed.truncated === 'boolean') step.truncated = parsed.truncated
+      run.steps.push(step)
+      continue
+    }
+
+    if (evt.event_type === 'subagent_end') {
+      run.status = 'done'
+      if (typeof parsed.result === 'string') run.result = parsed.result
+      continue
+    }
+
+    if (evt.event_type === 'subagent_error') {
+      run.status = 'error'
+      run.error = (parsed.message as string) || '未知错误'
+    }
+  }
+
+  return order.map((id) => runs.get(id)!).filter(Boolean)
+}
+
 export function useWebSocket(): UseWebSocketReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
   const [events, setEvents] = useState<ChatEvent[]>([])
@@ -147,6 +214,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const reconnecting = connectionState === 'reconnecting'
   const isReconnectExhausted = connectionState === 'reconnect_exhausted'
   const steps = buildSteps(events)
+  const subagentRuns = buildSubagentRuns(events)
 
   const clearProcessingTimer = useCallback(() => {
     if (processingTimerRef.current) {
@@ -386,7 +454,7 @@ export function useWebSocket(): UseWebSocketReturn {
   }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
 
   const sendMessage = useCallback(
-    (content: string, sessionId: string, history: Message[]): boolean => {
+    (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string): boolean => {
       const trimmed = content.trim()
       if (!trimmed) return false
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
@@ -424,6 +492,8 @@ export function useWebSocket(): UseWebSocketReturn {
         content: trimmed,
         session_id: sessionId,
         history: historyPayload,
+        executor_agent_id: executorAgentId || '',
+        inject_agent_id: injectAgentId || '',
       })
       wsRef.current.send(msg)
       return true
@@ -523,6 +593,7 @@ export function useWebSocket(): UseWebSocketReturn {
     sendSystemLock,
     events,
     steps,
+    subagentRuns,
     manualReconnect,
     onFinalAnswer,
     onError,

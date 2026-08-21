@@ -160,3 +160,48 @@ export interface IterationStep {
   toolCalls: IterationStepToolCall[]
   loopTerminated?: { reason: string }
 }
+
+export interface AgentMeta {
+  id: string
+  name: string
+  description: string
+}
+
+export interface AgentDef extends AgentMeta {
+  system_prompt: string
+  created_at: number
+  updated_at: number
+}
+
+export interface AgentInput {
+  name: string
+  description: string
+  system_prompt: string
+}
+
+export type SubAgentStepType = 'thinking' | 'tool_call' | 'tool_result' | 'final_answer'
+
+export interface SubAgentStep {
+  step_type: SubAgentStepType
+  content?: string
+  tool?: string
+  args?: Record<string, unknown>
+  result?: string
+  truncated?: boolean
+}
+
+export type SubAgentStatus = 'running' | 'done' | 'error'
+
+export interface SubAgentRun {
+  agent_id: string
+  agent_name: string
+  depth: number
+  span_id: string
+  trace_id: string
+  parent_span_id?: string
+  status: SubAgentStatus
+  task?: string
+  result?: string
+  error?: string
+  steps: SubAgentStep[]
+}

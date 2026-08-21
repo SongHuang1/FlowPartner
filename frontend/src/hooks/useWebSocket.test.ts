@@ -811,4 +811,169 @@ describe('useWebSocket', () => {
       expect(errorCb).not.toHaveBeenCalled()
     })
   })
+
+  describe('subagent events', () => {
+    it('builds subagentRuns from start/step/end events', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({
+        event_type: 'subagent_start',
+        payload: JSON.stringify({
+          event_type: 'subagent_start',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          parent_span_id: 'span-root',
+          task: '翻译这段话',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_step',
+        payload: JSON.stringify({
+          event_type: 'subagent_step',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          step_type: 'thinking',
+          content: '先理解原文',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_step',
+        payload: JSON.stringify({
+          event_type: 'subagent_step',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          step_type: 'tool_call',
+          tool: 'read_file',
+          args: { path: 'a.txt' },
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_end',
+        payload: JSON.stringify({
+          event_type: 'subagent_end',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          result: '译文',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toMatchObject({
+        agent_id: 'agent-1',
+        agent_name: '翻译官',
+        depth: 2,
+        span_id: 'span-1',
+        trace_id: 'trace-1',
+        parent_span_id: 'span-root',
+        status: 'done',
+        task: '翻译这段话',
+        result: '译文',
+      })
+      expect(runs[0].steps).toHaveLength(2)
+      expect(runs[0].steps[0]).toMatchObject({ step_type: 'thinking', content: '先理解原文' })
+      expect(runs[0].steps[1]).toMatchObject({ step_type: 'tool_call', tool: 'read_file', args: { path: 'a.txt' } })
+    })
+
+    it('marks run as error on subagent_error event', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({
+        event_type: 'subagent_start',
+        payload: JSON.stringify({
+          event_type: 'subagent_start',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          task: '翻译',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_error',
+        payload: JSON.stringify({
+          event_type: 'subagent_error',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          message: '调用失败',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(1)
+      expect(runs[0].status).toBe('error')
+      expect(runs[0].error).toBe('调用失败')
+    })
+
+    it('keeps multiple subagent runs independent by span_id', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      for (const span of ['span-1', 'span-2']) {
+        sendEvent({
+          event_type: 'subagent_start',
+          payload: JSON.stringify({
+            event_type: 'subagent_start',
+            agent_id: 'agent-1',
+            agent_name: '翻译官',
+            depth: 2,
+            span_id: span,
+            trace_id: 'trace-1',
+            task: `任务 ${span}`,
+          }),
+        })
+      }
+      sendEvent({
+        event_type: 'subagent_end',
+        payload: JSON.stringify({
+          event_type: 'subagent_end',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          result: '译文 1',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(2)
+      expect(runs[0].status).toBe('done')
+      expect(runs[1].status).toBe('running')
+    })
+
+    it('sends executor_agent_id and inject_agent_id in start_chat payload', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      const sent = result.current.sendMessage('hello', 'sess_test_1', [], 'agent-2', 'agent-1')
+      expect(sent).toBe(true)
+
+      const parsed = JSON.parse(mockWebSocketInstance!.sentMessages[0])
+      expect(parsed.executor_agent_id).toBe('agent-2')
+      expect(parsed.inject_agent_id).toBe('agent-1')
+    })
+  })
 })
