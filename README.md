@@ -33,28 +33,31 @@ Early development. The project has three layers in place:
 FlowPartner/
 ├── .github/workflows/    # CI: ci.yml, release.yml
 ├── agent/                # Python Agent layer
-│   ├── proto/            # proto file (sync with backend/proto/)
-│   ├── src/agent/        # main.py, grpc_client.py, core/, tools/
+│   ├── proto/            # proto file (byte-identical with backend/proto/)
+│   ├── src/agent/        # main.py, grpc_client.py, core/ (react_agent, subagent_runner, agent_registry), tools/
 │   └── pyproject.toml
 ├── backend/              # Go backend
 │   ├── cmd/server/main.go
 │   ├── internal/
 │   │   ├── bridge/       # WebSocket ↔ gRPC bridge
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
-│   │   ├── tools/        # Tool execution layer (read/write/bash/edit)
+│   │   ├── tools/        # Tool execution layer (read/write/bash/edit/trash/purge)
+│   │   ├── snapshot/     # Workspace snapshot subsystem (auto capture + restore)
+│   │   ├── config/       # Environment config
 │   │   ├── crypto/       # API Key encryption/zeroing
 │   │   ├── keystore/     # API Key memory management
 │   │   ├── llm/          # LLM HTTP streaming client (SSE)
+│   │   ├── response/     # Standard API response format
 │   │   ├── sanitize/     # Error sanitization
 │   │   ├── server/       # Port discovery
 │   │   ├── static/       # Frontend static file server
-│   │   └── storage/      # Atomic JSON writes
+│   │   └── storage/      # Atomic JSON writes (history, agent definitions)
 │   └── proto/            # proto definitions + generated .pb.go
 ├── frontend/             # Electron + React + TypeScript + Tailwind
 │   ├── electron/
 │   │   ├── main.cjs      # Electron main process (spawns Go + Python)
 │   │   └── preload.cjs   # IPC bridge to renderer
-│   ├── src/              # React UI
+│   ├── src/              # React UI (chat, settings incl. agents/snapshots)
 │   ├── electron-builder.yml
 │   └── package.json
 ├── Makefile

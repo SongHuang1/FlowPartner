@@ -45,13 +45,14 @@ Feature requests are welcome. Please open an issue and describe:
 - Node.js 26+
 - npm 10+
 - Python 3.12+ (with uv)
+- protoc + `protoc-gen-go` / `protoc-gen-go-grpc` / `grpc_tools.protoc` (only needed when changing proto files)
 
 ### Getting Started
 
 ```bash
 # Clone the repository
-git clone https://github.com/songhuang/flowpartner.git
-cd flowpartner
+git clone https://github.com/SongHuang1/FlowPartner.git
+cd FlowPartner
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
@@ -88,11 +89,11 @@ make test-all
 
 ## Proto / gRPC
 
-Proto definitions are duplicated in two locations:
-- `backend/proto/agent.proto` (with `go_package` option, source for Go codegen)
-- `agent/proto/agent.proto` (without `go_package`, source for Python codegen)
+Proto definitions are duplicated in two locations and must stay **byte-identical** (both contain the `go_package` option):
+- `backend/proto/agent.proto` (source for Go codegen)
+- `agent/proto/agent.proto` (source for Python codegen)
 
-**Any proto change must be applied to both files**, then regenerate:
+**Any proto change must be applied to both files**, then regenerate via `make gen-proto`:
 - Go: `agent.pb.go`, `agent_grpc.pb.go`
 - Python: `agent_pb2.py`, `agent_pb2_grpc.py`
 

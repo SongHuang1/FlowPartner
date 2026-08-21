@@ -17,22 +17,22 @@ Early development. Some security mechanisms are already implemented; others are 
 - Error message sanitization (prevents credential/token leaking in error responses)
 - Dual-layer path validation (lexical + symlink resolution)
 - Permission approval flow for out-of-workspace operations
-- Tool execution via Go proxy (read, write, bash, edit)
+- Tool execution via Go proxy (read, write, bash, edit, trash, purge)
 - 30s timeout for shell execution
 - File size limits (10MB for read operations)
+- Shell deletion-command blacklist (`rm`, `del`, `Remove-Item`, etc. are intercepted and routed to the recoverable `trash` tool)
+- Recoverable deletion: files are moved to a recycle-bin directory via `trash`; permanent `purge` always requires explicit user approval and writes an audit log
+- Automatic workspace snapshots: change-triggered (60s debounce) plus periodic fallback (15min), sensitive files excluded by default, restore always takes a pre-snapshot first
 
 **Planned:**
-- Dangerous operation blacklist (file deletion, system config changes, privilege escalation)
-- Automatic file backup before modification or deletion
-- Append-only operation logs
-- Per-session operation audit trail
+- Append-only operation logs (currently only purge/agent-definition changes are audited; no global append-only log API yet)
 
 ## Our Security Philosophy
 
 FlowPartner's core premise is that non-technical users tend to trust AI too much. The software must act as a safety gatekeeper. This means:
 
 - **Dangerous operations are blocked by default.** File deletion, system configuration changes, privilege escalation — these require explicit user confirmation.
-- **Every file operation is backed up.** Before a file is modified or deleted, the original is preserved. One click to undo.
+- **Recoverable by default.** Deletions go to a recycle bin; the workspace is snapshotted automatically so state can be rolled back (single files are backed up via snapshots on a best-effort schedule rather than before every individual write).
 - **All operations are logged.** Logs are append-only and cannot be deleted through the API.
 
 ## Reporting a Security Issue
