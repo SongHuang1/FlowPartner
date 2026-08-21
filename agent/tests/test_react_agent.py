@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.core.react_agent import ReactAgent
+from agent.core.react_agent import MAX_ITERATIONS, ReactAgent
 from agent.tools.registry import ToolRegistry
 
 
@@ -19,23 +19,27 @@ def make_agent(call_llm_func, tool_registry=None):
     ), send_event
 
 
+def get_tool_calls(send_event, event_type="tool_call"):
+    return [call.args[2] for call in send_event.await_args_list if call.args[1] == event_type]
+
+
 class TestReactAgent:
     async def _run_simple_chat(self, llm_response):
         call_llm = AsyncMock(return_value=llm_response)
         agent, send_event = make_agent(call_llm)
-        result = await agent.run("Hello")
+        result, _ = await agent.run("Hello")
         return result, send_event, call_llm
 
     @pytest.mark.asyncio
     async def test_simple_response(self):
-        result, send_event, call_llm = await self._run_simple_chat({
+        result, send_event, _ = await self._run_simple_chat({
             "success": True,
             "content": "Hi there!",
             "finish_reason": "stop",
         })
         assert result == "Hi there!"
-        send_event.assert_any_call("test-session", "status_update", {"status": "thinking", "iteration": 1})
-        send_event.assert_any_call("test-session", "final_answer", {"text": "Hi there!"})
+        send_event.assert_any_call("test-session", "iteration_start", {"iteration": 1, "max_iterations": MAX_ITERATIONS})
+        send_event.assert_any_call("test-session", "final_answer", {"text": "Hi there!", "iteration": 1})
 
     @pytest.mark.asyncio
     async def test_llm_error(self):
@@ -45,7 +49,7 @@ class TestReactAgent:
             "error_guess": "Check your API key",
         })
         agent, send_event = make_agent(call_llm)
-        result = await agent.run("Hello")
+        result, _ = await agent.run("Hello")
 
         assert result == "API key invalid"
         send_event.assert_any_call("test-session", "error", {
@@ -86,11 +90,17 @@ class TestReactAgent:
         registry.register("echo", "Echo", {}, echo_handler)
 
         agent, send_event = make_agent(call_llm, registry)
-        result = await agent.run("Use echo tool")
+        result, _ = await agent.run("Use echo tool")
 
         assert result == "Done!"
-        send_event.assert_any_call("test-session", "tool_call", {"tool": "echo", "args": {"text": "hello"}})
-        send_event.assert_any_call("test-session", "tool_result", {"tool": "echo", "result": "echo: hello"})
+        send_event.assert_any_call(
+            "test-session", "tool_call",
+            {"tool": "echo", "args": {"text": "hello"}, "call_id": "call_1", "iteration": 1},
+        )
+        send_event.assert_any_call(
+            "test-session", "tool_result",
+            {"tool": "echo", "result": "echo: hello", "call_id": "call_1", "iteration": 1, "truncated": False},
+        )
 
     @pytest.mark.asyncio
     async def test_max_iterations_exceeded(self):
@@ -100,10 +110,10 @@ class TestReactAgent:
             "finish_reason": "length",
         })
         agent, send_event = make_agent(call_llm)
-        result = await agent.run("Loop forever")
+        result, _ = await agent.run("Loop forever")
 
-        assert "未能得出结论" in result
-        assert call_llm.call_count == agent.max_iterations
+        assert "已达最大迭代次数上限" in result
+        assert call_llm.call_count == MAX_ITERATIONS
 
     @pytest.mark.asyncio
     async def test_incomplete_response(self):
@@ -113,10 +123,10 @@ class TestReactAgent:
             "finish_reason": "",
         })
         agent, send_event = make_agent(call_llm)
-        result = await agent.run("Hello")
+        result, _ = await agent.run("Hello")
 
         assert result == ""
-        send_event.assert_any_call("test-session", "final_answer", {"text": "", "incomplete": True})
+        send_event.assert_any_call("test-session", "final_answer", {"text": "", "iteration": 1, "incomplete": True})
 
     @pytest.mark.asyncio
     async def test_history_passed_through(self):
@@ -197,10 +207,11 @@ class TestReactAgent:
         registry.register("echo", "Echo", {}, echo_handler)
 
         agent, send_event = make_agent(call_llm, registry)
-        result = await agent.run("Use tool")
+        result, _ = await agent.run("Use tool")
 
         assert result == "recovered"
-        send_event.assert_any_call("test-session", "tool_call", {"tool": "echo", "args": {}})
+        tool_calls = get_tool_calls(send_event)
+        assert tool_calls[0]["args"] == {}
 
     @pytest.mark.asyncio
     async def test_tool_call_missing_id_recovers(self):
@@ -231,7 +242,7 @@ class TestReactAgent:
         registry.register("echo", "Echo", {}, echo_handler)
 
         agent, _ = make_agent(call_llm, registry)
-        result = await agent.run("Use tool")
+        result, _ = await agent.run("Use tool")
 
         assert result == "done"
 
@@ -270,11 +281,11 @@ class TestReactAgent:
         registry.register("echo", "Echo", {}, echo_handler)
 
         agent, send_event = make_agent(call_llm, registry)
-        result = await agent.run("Use tools")
+        result, _ = await agent.run("Use tools")
 
         assert result == "done"
-        send_event.assert_any_call("test-session", "tool_call", {"tool": "echo", "args": {"text": "a"}})
-        send_event.assert_any_call("test-session", "tool_call", {"tool": "echo", "args": {"text": "b"}})
+        tool_calls = get_tool_calls(send_event)
+        assert [tc["args"] for tc in tool_calls] == [{"text": "a"}, {"text": "b"}]
 
     @pytest.mark.asyncio
     async def test_unknown_tool_result_fed_back(self):
@@ -299,17 +310,16 @@ class TestReactAgent:
         ])
 
         agent, send_event = make_agent(call_llm)
-        result = await agent.run("Use tool")
+        result, _ = await agent.run("Use tool")
 
         assert result == "ok"
-        send_event.assert_any_call(
-            "test-session", "tool_result", {"tool": "nonexistent_tool", "result": "错误：未知工具 'nonexistent_tool'"}
-        )
+        tool_results = get_tool_calls(send_event, "tool_result")
+        assert tool_results[0]["result"] == "错误：未知工具 'nonexistent_tool'"
 
     @pytest.mark.asyncio
-    async def test_tool_result_truncated_to_500_chars(self):
+    async def test_tool_result_truncated_to_10000_chars(self):
         async def long_handler():
-            return "x" * 800
+            return "x" * 12000
 
         registry = ToolRegistry()
         registry.register("long", "Long output", {}, long_handler)
@@ -337,7 +347,9 @@ class TestReactAgent:
         agent, send_event = make_agent(call_llm, registry)
         await agent.run("Use tool")
 
-        send_event.assert_any_call("test-session", "tool_result", {"tool": "long", "result": "x" * 500})
+        tool_results = get_tool_calls(send_event, "tool_result")
+        assert tool_results[0]["result"] == "x" * 10000
+        assert tool_results[0]["truncated"] is True
 
     @pytest.mark.asyncio
     async def test_send_event_func_forwarded_to_call_llm(self):
@@ -354,7 +366,7 @@ class TestReactAgent:
         assert call_llm.await_args.kwargs.get("send_event_func") is llm_chunk_cb
 
     @pytest.mark.asyncio
-    async def test_status_update_for_each_iteration(self):
+    async def test_iteration_start_for_each_iteration(self):
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "",
@@ -364,10 +376,10 @@ class TestReactAgent:
 
         await agent.run("Loop")
 
-        status_calls = [call.args for call in send_event.await_args_list if call.args[1] == "status_update"]
-        assert len(status_calls) == agent.max_iterations
-        assert status_calls[0][2] == {"status": "thinking", "iteration": 1}
-        assert status_calls[-1][2] == {"status": "thinking", "iteration": agent.max_iterations}
+        iteration_calls = [call.args[2] for call in send_event.await_args_list if call.args[1] == "iteration_start"]
+        assert len(iteration_calls) == MAX_ITERATIONS
+        assert iteration_calls[0] == {"iteration": 1, "max_iterations": MAX_ITERATIONS}
+        assert iteration_calls[-1] == {"iteration": MAX_ITERATIONS, "max_iterations": MAX_ITERATIONS}
 
     @pytest.mark.asyncio
     async def test_llm_error_without_guess(self):
@@ -377,7 +389,33 @@ class TestReactAgent:
         })
         agent, send_event = make_agent(call_llm)
 
-        result = await agent.run("Hello")
+        result, _ = await agent.run("Hello")
 
         assert result == "boom"
         send_event.assert_any_call("test-session", "error", {"message": "boom"})
+
+    @pytest.mark.asyncio
+    async def test_forced_tool_call_executed_before_llm(self):
+        registry = ToolRegistry()
+
+        async def echo_handler(task):
+            return f"echo: {task}"
+
+        registry.register("agent__sub-1", "Sub agent", {"type": "object"}, echo_handler)
+
+        call_llm = AsyncMock(return_value={
+            "success": True,
+            "content": "final",
+            "finish_reason": "stop",
+        })
+        agent, send_event = make_agent(call_llm, registry)
+        result, messages = await agent.run(
+            "帮我完成任务",
+            forced_tool_call={"name": "agent__sub-1", "arguments": {"task": "帮我完成任务"}},
+        )
+
+        assert result == "final"
+        # 强制调用先执行并进入上下文
+        assert {"role": "tool", "tool_call_id": messages[1]["tool_calls"][0]["id"], "content": "echo: 帮我完成任务"} in messages
+        tool_calls = get_tool_calls(send_event)
+        assert tool_calls[0]["tool"] == "agent__sub-1"

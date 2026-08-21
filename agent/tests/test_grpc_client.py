@@ -233,14 +233,34 @@ class TestCallLLMViaGo:
         await client.call_llm_via_go("sess-1", "{}", send_event_func=send_event)
 
         send_event.assert_any_await(
-            "sess-1", "llm_chunk", {"content": "Hel", "finish_reason": None}
+            "sess-1", "llm_chunk", {"content": "Hel", "iteration": 0}
         )
         send_event.assert_any_await(
-            "sess-1", "llm_chunk", {"content": "lo", "finish_reason": "stop"}
+            "sess-1", "llm_chunk", {"content": "lo", "iteration": 0}
         )
 
 
 class TestHandleChat:
+    @staticmethod
+    def read_history_lines(tmp_path: Path, session_id: str) -> list[dict]:
+        """读取 JSONL 历史文件并过滤 meta 行（无 role 字段）。"""
+        history_file = tmp_path / "history" / f"{session_id}.json"
+        assert history_file.is_file()
+        return [
+            json.loads(line)
+            for line in history_file.read_text(encoding="utf-8").strip().splitlines()
+            if line.strip() and json.loads(line).get("role")
+        ]
+
+    @staticmethod
+    def read_history_meta(tmp_path: Path, session_id: str) -> list[dict]:
+        history_file = tmp_path / "history" / f"{session_id}.json"
+        return [
+            json.loads(line)
+            for line in history_file.read_text(encoding="utf-8").strip().splitlines()
+            if line.strip() and json.loads(line).get("meta")
+        ]
+
     @pytest.mark.asyncio
     async def test_writes_history_file(self, tmp_path: Path):
         client = make_client(tmp_path)
@@ -258,13 +278,31 @@ class TestHandleChat:
 
         await client.handle_chat(command, queue)
 
-        history_file = tmp_path / "history" / "sess-1.json"
-        assert history_file.is_file()
-        entries = json.loads(history_file.read_text(encoding="utf-8").strip())
+        entries = self.read_history_lines(tmp_path, "sess-1")
         assert entries == [
             {"role": "user", "content": "你好"},
             {"role": "assistant", "content": "final answer"},
         ]
+
+    @pytest.mark.asyncio
+    async def test_writes_executor_meta_line(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        client.call_llm_via_go = AsyncMock(return_value={  # type: ignore[method-assign]
+            "success": True,
+            "content": "final answer",
+            "finish_reason": "stop",
+        })
+        command = agent_pb2.ServerCommand(
+            session_id="sess-meta",
+            command_type="start_chat",
+            payload=json.dumps({"user_message": "你好", "executor_agent_id": "sub-1"}),
+        )
+        queue: asyncio.Queue = asyncio.Queue()
+
+        await client.handle_chat(command, queue)
+
+        meta = self.read_history_meta(tmp_path, "sess-meta")
+        assert meta == [{"meta": {"executor_agent_id": "sub-1"}}]
 
     @pytest.mark.asyncio
     async def test_handles_empty_payload(self, tmp_path: Path):
@@ -283,8 +321,7 @@ class TestHandleChat:
 
         await client.handle_chat(command, queue)
 
-        history_file = tmp_path / "history" / "sess-2.json"
-        entries = json.loads(history_file.read_text(encoding="utf-8").strip())
+        entries = self.read_history_lines(tmp_path, "sess-2")
         assert entries[0] == {"role": "user", "content": ""}
 
     @pytest.mark.asyncio
@@ -320,8 +357,7 @@ class TestHandleChat:
         assert {"role": "user", "content": "第二个问题"} in messages
 
         # 历史文件应追加同一会话
-        history_file = tmp_path / "history" / "sess-3.json"
-        entries = json.loads(history_file.read_text(encoding="utf-8").strip())
+        entries = self.read_history_lines(tmp_path, "sess-3")
         assert entries == [
             {"role": "user", "content": "第二个问题"},
             {"role": "assistant", "content": "final answer"},
@@ -518,6 +554,7 @@ class TestExecuteToolPermissionFlow:
         # 模拟用户拒绝
         async with client._approval_lock:
             future = client._pending_approvals.get("req-456")
+        assert future is not None
         future.set_result("deny")
 
         result = await asyncio.wait_for(task, timeout=2.0)
@@ -599,7 +636,7 @@ class TestReactAgentCancelledError:
 
         sent_events = []
 
-        async def fake_call_llm(session_id, json_payload, send_event_func=None):
+        async def fake_call_llm(session_id, json_payload, send_event_func=None, iteration=None):
             raise asyncio.CancelledError()
 
         async def fake_send_event(session_id, event_type, payload):
@@ -609,15 +646,13 @@ class TestReactAgentCancelledError:
         mock_registry = MagicMock()
         mock_registry.get_openai_tools_definition.return_value = []
 
-        # 创建一个会抛出 CancelledError 的 agent
+        # 创建会抛出 CancelledError 的 agent（fake_call_llm 直接抛 CancelledError）
         agent = ReactAgent(
             session_id="sess-cancel-test",
             call_llm_func=fake_call_llm,
             send_event_func=fake_send_event,
             tool_registry=mock_registry,
         )
-        # 注入 cancelled 标记
-        agent._cancelled = True
 
         with pytest.raises(asyncio.CancelledError):
             await agent.run("test message")
