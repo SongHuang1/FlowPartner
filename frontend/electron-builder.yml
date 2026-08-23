@@ -1,5 +1,6 @@
 appId: com.flowpartner.app
 productName: FlowPartner
+cacheDir: .electron-cache
 directories:
   output: dist-electron
 files:

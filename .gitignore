@@ -239,7 +239,7 @@ frontend/src/assets/
 # --- Electron ---
 frontend/bin/
 frontend/dist-electron/
-
+.electron-cache
 
 # --- OS ---
 Thumbs.db
