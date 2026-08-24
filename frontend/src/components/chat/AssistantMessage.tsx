@@ -1,8 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
+import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import type { Message } from '@/types'
 import { MessageToolbar } from './MessageToolbar'
@@ -12,10 +12,49 @@ interface AssistantMessageProps {
   streamingContent?: string
 }
 
+function renderMathInElement(element: HTMLElement) {
+  // 行间公式：<pre><code class="language-math math-display">
+  element.querySelectorAll('pre > code.language-math.math-display').forEach((code) => {
+    const pre = code.parentElement
+    if (!pre) return
+    const text = code.textContent || ''
+    try {
+      const html = katex.renderToString(text, { displayMode: true, throwOnError: false })
+      const wrapper = document.createElement('div')
+      wrapper.className = 'katex-block'
+      wrapper.innerHTML = html
+      pre.replaceWith(wrapper)
+    } catch {
+      // 渲染失败时保持原样
+    }
+  })
+
+  // 行内公式：<code class="language-math math-inline">
+  element.querySelectorAll('code.language-math.math-inline').forEach((code) => {
+    const text = code.textContent || ''
+    try {
+      const html = katex.renderToString(text, { displayMode: false, throwOnError: false })
+      const wrapper = document.createElement('span')
+      wrapper.className = 'katex-inline'
+      wrapper.innerHTML = html
+      code.replaceWith(wrapper)
+    } catch {
+      // 渲染失败时保持原样
+    }
+  })
+}
+
 export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
   const isStreaming = message.status === 'streaming'
   const content = isStreaming && streamingContent ? streamingContent : message.content
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (containerRef.current) {
+      renderMathInElement(containerRef.current)
+    }
+  }, [content])
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
@@ -27,10 +66,9 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     <div className="flex justify-start">
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
-        <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
+        <div ref={containerRef} className="text-sm text-neutral-800 prose prose-sm max-w-none">
           <Markdown
             remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
             components={{
               a: (props) => (
                 <a
