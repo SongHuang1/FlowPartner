@@ -15,14 +15,26 @@ function generateSessionId(): string {
   return `sess_${Date.now()}_${Array.from(array, b => chars[b % chars.length]).join('')}`
 }
 
+export interface SubAgentResult {
+  span_id: string
+  agent_name: string
+  task: string
+  content: string
+  status: 'running' | 'done' | 'error'
+}
+
 export interface UseConversationReturn {
   messages: Message[]
   sessionId: string
   streamingContent: string
+  subagentResults: SubAgentResult[]
   sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
   appendStreamChunk: (chunk: string) => void
   finalizeStream: (finalContent?: string) => void
+  addSubAgentStart: (info: { span_id: string; agent_name: string; task: string }) => void
+  appendSubAgentChunk: (span_id: string, chunk: string) => void
+  finalizeSubAgent: (span_id: string, result: string) => void
   addToolMessage: (toolCallId: string, name: string, content: string) => void
   addAssistantToolCalls: (toolCalls: ToolCall[]) => void
   startNewConversation: () => void
@@ -33,6 +45,7 @@ export function useConversation(): UseConversationReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId())
   const [streamingContent, setStreamingContent] = useState('')
+  const [subagentResults, setSubagentResults] = useState<SubAgentResult[]>([])
   const messagesRef = useRef<Message[]>([])
   const streamingIdRef = useRef<string | null>(null)
   const streamingContentRef = useRef<string>('')
@@ -104,6 +117,26 @@ export function useConversation(): UseConversationReturn {
     }
   }, [])
 
+  const addSubAgentStart = useCallback((info: { span_id: string; agent_name: string; task: string }) => {
+    setSubagentResults(prev => {
+      const existing = prev.find(r => r.span_id === info.span_id)
+      if (existing) return prev
+      return [...prev, { span_id: info.span_id, agent_name: info.agent_name, task: info.task, content: '', status: 'running' }]
+    })
+  }, [])
+
+  const appendSubAgentChunk = useCallback((span_id: string, chunk: string) => {
+    setSubagentResults(prev => prev.map(r =>
+      r.span_id === span_id ? { ...r, content: r.content + chunk } : r
+    ))
+  }, [])
+
+  const finalizeSubAgent = useCallback((span_id: string, result: string) => {
+    setSubagentResults(prev => prev.map(r =>
+      r.span_id === span_id ? { ...r, content: r.content || result, status: 'done' } : r
+    ))
+  }, [])
+
   const addAssistantToolCalls = useCallback((toolCalls: ToolCall[]) => {
     const lastMsg = messagesRef.current[messagesRef.current.length - 1]
     if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status === 'streaming') {
@@ -147,5 +180,5 @@ export function useConversation(): UseConversationReturn {
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
+  return { messages, sessionId, streamingContent, subagentResults, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
 }

@@ -49,6 +49,9 @@ export interface UseWebSocketReturn {
   manualReconnect: () => void
   onStreamChunk: (cb: (chunk: string) => void) => () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
+  onSubAgentStart: (cb: (info: { span_id: string; agent_name: string; task: string }) => void) => () => void
+  onSubAgentStreamChunk: (cb: (span_id: string, chunk: string) => void) => () => void
+  onSubAgentEnd: (cb: (span_id: string, result: string) => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
   onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
@@ -204,6 +207,9 @@ export function useWebSocket(): UseWebSocketReturn {
   const mountedRef = useRef(true)
   const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
   const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
+  const subAgentStartCallbacksRef = useRef<Set<(info: { span_id: string; agent_name: string; task: string }) => void>>(new Set())
+  const subAgentStreamChunkCallbacksRef = useRef<Set<(span_id: string, chunk: string) => void>>(new Set())
+  const subAgentEndCallbacksRef = useRef<Set<(span_id: string, result: string) => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
@@ -361,6 +367,48 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
+        // 子智能体事件处理
+        if (raw.event_type === 'subagent_start') {
+          try {
+            const parsed = JSON.parse(raw.payload)
+            subAgentStartCallbacksRef.current.forEach((cb) => {
+              try { cb({ span_id: parsed.span_id || '', agent_name: parsed.agent_name || '', task: parsed.task || '' }) } catch (e) { console.error('onSubAgentStart callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse subagent_start payload:', raw.payload)
+          }
+          return
+        }
+
+        if (raw.event_type === 'subagent_step') {
+          try {
+            const parsed = JSON.parse(raw.payload)
+            // 只流式输出 final_answer 内容
+            if (parsed.step_type === 'final_answer' && parsed.content) {
+              const spanId = parsed.span_id || ''
+              subAgentStreamChunkCallbacksRef.current.forEach((cb) => {
+                try { cb(spanId, parsed.content) } catch (e) { console.error('onSubAgentStreamChunk callback error:', e) }
+              })
+            }
+          } catch {
+            console.error('Failed to parse subagent_step payload:', raw.payload)
+          }
+          return
+        }
+
+        if (raw.event_type === 'subagent_end') {
+          try {
+            const parsed = JSON.parse(raw.payload)
+            const spanId = parsed.span_id || ''
+            subAgentEndCallbacksRef.current.forEach((cb) => {
+              try { cb(spanId, parsed.result || '') } catch (e) { console.error('onSubAgentEnd callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse subagent_end payload:', raw.payload)
+          }
+          return
+        }
+
         if (raw.event_type === 'error') {
           setEvents((prev) => [...prev, raw])
           let message: string
@@ -425,6 +473,9 @@ export function useWebSocket(): UseWebSocketReturn {
 
     const finalAnswerCbs = finalAnswerCallbacksRef.current
     const streamChunkCbs = streamChunkCallbacksRef.current
+    const subAgentStartCbs = subAgentStartCallbacksRef.current
+    const subAgentStreamChunkCbs = subAgentStreamChunkCallbacksRef.current
+    const subAgentEndCbs = subAgentEndCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
     const permissionCbs = permissionRequestCallbacksRef.current
@@ -441,6 +492,9 @@ export function useWebSocket(): UseWebSocketReturn {
       }
       finalAnswerCbs.clear()
       streamChunkCbs.clear()
+      subAgentStartCbs.clear()
+      subAgentStreamChunkCbs.clear()
+      subAgentEndCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
       permissionCbs.clear()
@@ -556,6 +610,21 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { finalAnswerCallbacksRef.current.delete(cb) }
   }, [])
 
+  const onSubAgentStart = useCallback((cb: (info: { span_id: string; agent_name: string; task: string }) => void) => {
+    subAgentStartCallbacksRef.current.add(cb)
+    return () => { subAgentStartCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onSubAgentStreamChunk = useCallback((cb: (span_id: string, chunk: string) => void) => {
+    subAgentStreamChunkCallbacksRef.current.add(cb)
+    return () => { subAgentStreamChunkCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onSubAgentEnd = useCallback((cb: (span_id: string, result: string) => void) => {
+    subAgentEndCallbacksRef.current.add(cb)
+    return () => { subAgentEndCallbacksRef.current.delete(cb) }
+  }, [])
+
   const onError = useCallback((cb: (message: string) => void) => {
     errorCallbacksRef.current.add(cb)
     return () => { errorCallbacksRef.current.delete(cb) }
@@ -599,6 +668,9 @@ export function useWebSocket(): UseWebSocketReturn {
     manualReconnect,
     onStreamChunk,
     onFinalAnswer,
+    onSubAgentStart,
+    onSubAgentStreamChunk,
+    onSubAgentEnd,
     onError,
     onSecurityEvent,
     onPermissionRequest,
