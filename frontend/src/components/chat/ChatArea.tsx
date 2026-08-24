@@ -13,12 +13,11 @@ import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
 import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
-import { IterationStepView } from './IterationStepView'
 import { AgentSelector } from './AgentSelector'
 import { SubAgentCard } from './SubAgentCard'
 import { SubAgentDrilldown } from './SubAgentDrilldown'
 
-export function MessageList({ messages }: { messages: Message[] }) {
+export function MessageList({ messages, streamingContent }: { messages: Message[]; streamingContent: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -26,17 +25,23 @@ export function MessageList({ messages }: { messages: Message[] }) {
       top: scrollRef.current.scrollHeight,
       behavior: 'smooth',
     })
-  }, [messages])
+  }, [messages, streamingContent])
 
   return (
     <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
-      {messages.map((msg) =>
-        msg.role === 'user' ? (
-          <UserMessage key={msg.id} message={msg} />
-        ) : (
-          <AssistantMessage key={msg.id} message={msg} />
+      {messages.map((msg) => {
+        if (msg.role === 'user') {
+          return <UserMessage key={msg.id} message={msg} />
+        }
+        const isStreaming = msg.status === 'streaming'
+        return (
+          <AssistantMessage
+            key={msg.id}
+            message={msg}
+            streamingContent={isStreaming ? streamingContent : undefined}
+          />
         )
-      )}
+      })}
     </div>
   )
 }
@@ -135,7 +140,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation }: ChatAreaProps) {
-  const { messages, sessionId, sendMessage, addAssistantMessage } = conversation
+  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeStream } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
   const {
@@ -147,9 +152,9 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendMessage: wsSendMessage,
     sendCancel,
     sendPermissionResponse,
-    steps,
     subagentRuns,
     manualReconnect,
+    onStreamChunk,
     onFinalAnswer,
     onError,
     onSecurityEvent,
@@ -174,14 +179,18 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     return () => { cancelled = true }
   }, [])
 
+  const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
   const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
   const unregisterErrorRef = useRef<(() => void) | null>(null)
   const unregisterSecurityRef = useRef<(() => void) | null>(null)
   const unregisterPermissionRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
-      addAssistantMessage(answer)
+    unregisterStreamChunkRef.current = onStreamChunk((chunk) => {
+      appendStreamChunk(chunk)
+    })
+    unregisterFinalAnswerRef.current = onFinalAnswer(() => {
+      finalizeStream()
     })
     unregisterErrorRef.current = onError((message) => {
       setChatError(message)
@@ -194,12 +203,13 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     })
 
     return () => {
+      unregisterStreamChunkRef.current?.()
       unregisterFinalAnswerRef.current?.()
       unregisterErrorRef.current?.()
       unregisterSecurityRef.current?.()
       unregisterPermissionRef.current?.()
     }
-  }, [onFinalAnswer, onError, onSecurityEvent, onPermissionRequest, addAssistantMessage])
+  }, [onStreamChunk, onFinalAnswer, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk, finalizeStream])
 
   const handleSend = () => {
     const trimmed = inputValue.trim()
@@ -281,6 +291,8 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           onSend={handleSend}
           disabled={lockStatus.locked}
           loading={processing}
+          executorAgentId={executorAgentId}
+          onExecutorChange={setExecutorAgentId}
         />
       ) : (
         <>
@@ -292,19 +304,8 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             reconnectExhausted={isReconnectExhausted}
             onManualReconnect={manualReconnect}
           />
-          <MessageList messages={messages} />
-          {steps.length > 0 && (
-            <div className="px-4 py-2 space-y-2 border-t border-neutral-100">
-              {steps.map((step, i) => (
-                <IterationStepView
-                  key={step.iteration}
-                  step={step}
-                  isLast={i === steps.length - 1}
-                />
-              ))}
-            </div>
-          )}
-          {processing && steps.length === 0 && (
+          <MessageList messages={messages} streamingContent={streamingContent} />
+          {processing && !streamingContent && (
             <ThinkingIndicator />
           )}
           {subagentRuns.length > 0 && (

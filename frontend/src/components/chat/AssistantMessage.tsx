@@ -1,11 +1,21 @@
 import { useCallback } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import type { Message } from '@/types'
 import { MessageToolbar } from './MessageToolbar'
 
-export function AssistantMessage({ message }: { message: Message }) {
+interface AssistantMessageProps {
+  message: Message
+  streamingContent?: string
+}
+
+export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
+  const isStreaming = message.status === 'streaming'
+  const content = isStreaming && streamingContent ? streamingContent : message.content
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
@@ -19,7 +29,8 @@ export function AssistantMessage({ message }: { message: Message }) {
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
         <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
           <Markdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
             components={{
               a: (props) => (
                 <a
@@ -31,16 +42,14 @@ export function AssistantMessage({ message }: { message: Message }) {
                 />
               ),
               code: (props) => {
-                const { inline, className, children, node, ...rest } = props as {
+                const { inline, className, children, ...rest } = props as {
                   inline?: boolean
                   className?: string
                   children?: React.ReactNode
-                  node?: { properties?: { inline?: boolean } }
                 }
-                const isInline = inline || node?.properties?.inline
-                if (isInline) {
+                if (inline) {
                   return (
-                    <code style={{ display: 'inline', background: '#f3f4f6', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', fontSize: '0.875rem', fontFamily: 'monospace', color: '#db2777' }}>
+                    <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-pink-600 text-[0.875em] font-mono" {...rest}>
                       {children}
                     </code>
                   )
@@ -64,7 +73,7 @@ export function AssistantMessage({ message }: { message: Message }) {
               },
             }}
           >
-            {message.content}
+            {content}
           </Markdown>
         </div>
         {isCompleted && <MessageToolbar content={message.content} />}

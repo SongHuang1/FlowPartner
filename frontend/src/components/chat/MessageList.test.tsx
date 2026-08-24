@@ -9,7 +9,7 @@ function msg(id: string, role: 'user' | 'assistant', content: string): Message {
 
 describe('MessageList', () => {
   it('renders empty list when no messages provided', () => {
-    const { container } = render(<MessageList messages={[]} />)
+    const { container } = render(<MessageList messages={[]} streamingContent="" />)
     const list = container.querySelector('.flex.flex-col.gap-3')
     expect(list).toBeInTheDocument()
     expect(list?.children.length).toBe(0)
@@ -17,7 +17,7 @@ describe('MessageList', () => {
 
   it('renders a single assistant message with left alignment', () => {
     const messages: Message[] = [msg('1', 'assistant', 'Hello from AI')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     const el = screen.getByText('Hello from AI')
     expect(el).toBeInTheDocument()
@@ -26,7 +26,7 @@ describe('MessageList', () => {
 
   it('renders a single user message with right alignment', () => {
     const messages: Message[] = [msg('1', 'user', 'Hello from user')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     const el = screen.getByText('Hello from user')
     expect(el).toBeInTheDocument()
@@ -39,7 +39,7 @@ describe('MessageList', () => {
       msg('2', 'user', 'First user'),
       msg('3', 'assistant', 'Second AI'),
     ]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     expect(screen.getByText('First AI')).toBeInTheDocument()
     expect(screen.getByText('First user')).toBeInTheDocument()
@@ -48,7 +48,7 @@ describe('MessageList', () => {
 
   it('applies blue style to user messages', () => {
     const messages: Message[] = [msg('1', 'user', 'Blue message')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     const bubble = screen.getByText('Blue message')
     expect(bubble).toHaveClass('bg-blue-500')
@@ -57,7 +57,7 @@ describe('MessageList', () => {
 
   it('applies neutral gray style to assistant messages', () => {
     const messages: Message[] = [msg('1', 'assistant', 'Gray message')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     const bubble = screen.getByText('Gray message')
     expect(bubble.closest('.text-neutral-800')).toBeTruthy()
@@ -65,14 +65,14 @@ describe('MessageList', () => {
 
   it('shows FlowPartner name for assistant messages', () => {
     const messages: Message[] = [msg('1', 'assistant', 'AI response')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     expect(screen.getByText('FlowPartner')).toBeInTheDocument()
   })
 
   it('does not show name for user messages', () => {
     const messages: Message[] = [msg('1', 'user', 'User message')]
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     expect(screen.queryByText('FlowPartner')).not.toBeInTheDocument()
   })
@@ -84,7 +84,7 @@ describe('MessageList', () => {
       msg('3', 'assistant', 'Msg 3'),
       msg('4', 'user', 'Msg 4'),
     ]
-    const { container } = render(<MessageList messages={messages} />)
+    const { container } = render(<MessageList messages={messages} streamingContent="" />)
     const list = container.querySelector('.flex.flex-col.gap-3')
     expect(list?.children.length).toBe(4)
   })
@@ -95,7 +95,7 @@ describe('MessageList', () => {
       msg('2', 'assistant', 'Unique 2'),
     ]
     const consoleSpy = vi.spyOn(console, 'error')
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} streamingContent="" />)
 
     expect(screen.getByText('Unique 1')).toBeInTheDocument()
     expect(screen.getByText('Unique 2')).toBeInTheDocument()

@@ -47,6 +47,7 @@ export interface UseWebSocketReturn {
   steps: IterationStep[]
   subagentRuns: SubAgentRun[]
   manualReconnect: () => void
+  onStreamChunk: (cb: (chunk: string) => void) => () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
@@ -202,6 +203,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const sessionEndedRef = useRef(false)
   const mountedRef = useRef(true)
   const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
+  const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
@@ -308,6 +310,19 @@ export function useWebSocket(): UseWebSocketReturn {
 
         if (sessionEndedRef.current) return
 
+        if (raw.event_type === 'llm_chunk') {
+          try {
+            const parsed = JSON.parse(raw.payload)
+            const content = (parsed.content as string) || ''
+            streamChunkCallbacksRef.current.forEach((cb) => {
+              try { cb(content) } catch (e) { console.error('onStreamChunk callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse llm_chunk payload:', raw.payload)
+          }
+          return
+        }
+
         if (raw.event_type === 'final_answer' || raw.event_type === 'error') {
           resetProcessing()
           sessionEndedRef.current = true
@@ -409,6 +424,7 @@ export function useWebSocket(): UseWebSocketReturn {
     }
 
     const finalAnswerCbs = finalAnswerCallbacksRef.current
+    const streamChunkCbs = streamChunkCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
     const permissionCbs = permissionRequestCallbacksRef.current
@@ -424,6 +440,7 @@ export function useWebSocket(): UseWebSocketReturn {
         wsRef.current = null
       }
       finalAnswerCbs.clear()
+      streamChunkCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
       permissionCbs.clear()
@@ -529,6 +546,11 @@ export function useWebSocket(): UseWebSocketReturn {
     if (port) connectRef.current(port)
   }, [])
 
+  const onStreamChunk = useCallback((cb: (chunk: string) => void) => {
+    streamChunkCallbacksRef.current.add(cb)
+    return () => { streamChunkCallbacksRef.current.delete(cb) }
+  }, [])
+
   const onFinalAnswer = useCallback((cb: (answer: string) => void) => {
     finalAnswerCallbacksRef.current.add(cb)
     return () => { finalAnswerCallbacksRef.current.delete(cb) }
@@ -575,6 +597,7 @@ export function useWebSocket(): UseWebSocketReturn {
     steps,
     subagentRuns,
     manualReconnect,
+    onStreamChunk,
     onFinalAnswer,
     onError,
     onSecurityEvent,

@@ -116,11 +116,11 @@ export function SnapshotSettings() {
             aria-checked={enabled}
             onClick={() => toggleEnabled(!enabled)}
             className={
-              'relative w-11 h-6 rounded-full transition-colors ' +
+              'relative shrink-0 w-11 h-6 rounded-full transition-colors ' +
               (enabled ? 'bg-blue-600' : 'bg-neutral-300')
             }
           >
-            <span className={'absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (enabled ? 'translate-x-5' : 'translate-x-0.5')} />
+            <span className={'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (enabled ? 'translate-x-[22px]' : 'translate-x-0')} />
           </button>
         </div>
 
@@ -150,18 +150,20 @@ export function SnapshotSettings() {
           <span>快照中包含敏感文件（密钥、证书等，默认排除）</span>
         </label>
 
-        <div className="text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2 flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className={status?.phase === 'snapshotting' ? 'text-blue-600' : status?.phase === 'error' ? 'text-red-600' : 'text-green-600'}>
-              {phaseLabel()}
-            </span>
-            {status?.last_at && <span className="text-neutral-400">· 上次：{formatDate(status.last_at)}</span>}
+        {enabled && status && (
+          <div className="text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className={status.phase === 'snapshotting' ? 'text-blue-600' : status.phase === 'error' ? 'text-red-600' : 'text-green-600'}>
+                {phaseLabel()}
+              </span>
+              {status.last_at && <span className="text-neutral-400">· 上次：{formatDate(status.last_at)}</span>}
+            </div>
+            <div className="text-neutral-400">
+              共 {status.count} 个快照，占用 {formatBytes(status.size_bytes)}
+              {status.skipped_files > 0 && `，跳过 ${status.skipped_files} 个文件`}
+            </div>
           </div>
-          <div className="text-neutral-400">
-            共 {status?.count ?? 0} 个快照，占用 {formatBytes(status?.size_bytes ?? 0)}
-            {status && status.skipped_files > 0 && `，跳过 ${status.skipped_files} 个文件`}
-          </div>
-        </div>
+        )}
 
         <div className="flex gap-2">
           <Button size="sm" onClick={snapshot.manualSnapshot} disabled={!enabled || status?.phase === 'snapshotting'}>

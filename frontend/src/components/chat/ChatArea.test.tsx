@@ -9,6 +9,7 @@ const mockUpdateSettings = vi.fn()
 const mockWsSendMessage = vi.fn()
 const mockSendCancel = vi.fn()
 const mockSendPermissionResponse = vi.fn()
+const mockOnStreamChunk = vi.fn(() => () => {})
 const mockOnFinalAnswer = vi.fn(() => () => {})
 const mockOnError = vi.fn(() => () => {})
 const mockOnSecurityEvent = vi.fn(() => () => {})
@@ -29,8 +30,11 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
   return {
     messages: [],
     sessionId: 'sess_test_1',
+    streamingContent: '',
     sendMessage: mockSendMessage,
     addAssistantMessage: vi.fn(),
+    appendStreamChunk: vi.fn(),
+    finalizeStream: vi.fn(),
     addToolMessage: vi.fn(),
     addAssistantToolCalls: vi.fn(),
     startNewConversation: vi.fn(),
@@ -84,6 +88,7 @@ const baseWsReturn = {
   steps: [],
   subagentRuns: [],
   manualReconnect: vi.fn(),
+  onStreamChunk: mockOnStreamChunk,
   onFinalAnswer: mockOnFinalAnswer,
   onError: mockOnError,
   onSecurityEvent: mockOnSecurityEvent,
@@ -118,13 +123,12 @@ describe('ChatArea empty state', () => {
   it('renders bottom info bar with settings', () => {
     render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
-    expect(screen.getByText(/智能体: default/)).toBeInTheDocument()
     expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
   it('renders working directory when set', () => {
     render(<ChatArea conversation={makeConversation()} />)
-    expect(screen.getByText(/路径: \/test\/path/)).toBeInTheDocument()
+    expect(screen.getByText(/工作路径: \/test\/path/)).toBeInTheDocument()
   })
 
   it('send button is disabled when input is empty', () => {

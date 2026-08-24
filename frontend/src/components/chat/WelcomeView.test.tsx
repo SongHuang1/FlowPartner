@@ -54,11 +54,6 @@ describe('WelcomeView', () => {
     expect(screen.getByText(/模型: gpt-3.5/)).toBeInTheDocument()
   })
 
-  it('displays agent_id from settings', () => {
-    render(<WelcomeView {...defaultProps} settings={createSettings({ agent_id: 'my-agent' })} />)
-    expect(screen.getByText(/智能体: my-agent/)).toBeInTheDocument()
-  })
-
   it('displays context_window from settings', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ context_window: 4096 })} />)
     expect(screen.getByText(/上下文: 4096/)).toBeInTheDocument()
@@ -66,12 +61,12 @@ describe('WelcomeView', () => {
 
   it('does not display working_directory when empty', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '' })} />)
-    expect(screen.queryByText(/路径:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/工作路径:/)).not.toBeInTheDocument()
   })
 
   it('displays working_directory when set', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '/home/user/project' })} />)
-    expect(screen.getByText(/路径: \/home\/user\/project/)).toBeInTheDocument()
+    expect(screen.getByText(/工作路径: \/home\/user\/project/)).toBeInTheDocument()
   })
 
   it('passes input value to ChatInput', () => {
@@ -94,9 +89,9 @@ describe('WelcomeView', () => {
 
   it('displays info bar with separator', () => {
     render(<WelcomeView {...defaultProps} />)
-    // The separator '|' appears between info items (2 separators for 3 info fields)
+    // The separator '|' appears between info items (1 separator for 2 info fields)
     const separators = screen.getAllByText('|')
-    expect(separators.length).toBe(2)
+    expect(separators.length).toBe(1)
   })
 
   it('renders with different model names', () => {

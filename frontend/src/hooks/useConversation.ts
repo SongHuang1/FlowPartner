@@ -18,8 +18,11 @@ function generateSessionId(): string {
 export interface UseConversationReturn {
   messages: Message[]
   sessionId: string
+  streamingContent: string
   sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
+  appendStreamChunk: (chunk: string) => void
+  finalizeStream: () => void
   addToolMessage: (toolCallId: string, name: string, content: string) => void
   addAssistantToolCalls: (toolCalls: ToolCall[]) => void
   startNewConversation: () => void
@@ -29,7 +32,9 @@ export interface UseConversationReturn {
 export function useConversation(): UseConversationReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId())
+  const [streamingContent, setStreamingContent] = useState('')
   const messagesRef = useRef<Message[]>([])
+  const streamingIdRef = useRef<string | null>(null)
 
   const sendMessage = useCallback((content: string): Message[] => {
     const trimmed = content.trim()
@@ -59,6 +64,39 @@ export function useConversation(): UseConversationReturn {
     const updated = [...messagesRef.current, newMessage]
     messagesRef.current = updated
     setMessages(updated)
+    setStreamingContent('')
+    streamingIdRef.current = null
+  }, [])
+
+  const appendStreamChunk = useCallback((chunk: string) => {
+    if (!streamingIdRef.current) {
+      const id = generateMessageId()
+      streamingIdRef.current = id
+      const newMessage: Message = {
+        id,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        status: 'streaming',
+      }
+      const updated = [...messagesRef.current, newMessage]
+      messagesRef.current = updated
+      setMessages(updated)
+    }
+    setStreamingContent(prev => prev + chunk)
+  }, [])
+
+  const finalizeStream = useCallback(() => {
+    if (streamingIdRef.current) {
+      const id = streamingIdRef.current
+      const updated = messagesRef.current.map(m =>
+        m.id === id ? { ...m, status: 'completed' as const } : m
+      )
+      messagesRef.current = updated
+      setMessages(updated)
+      setStreamingContent('')
+      streamingIdRef.current = null
+    }
   }, [])
 
   const addAssistantToolCalls = useCallback((toolCalls: ToolCall[]) => {
@@ -89,14 +127,18 @@ export function useConversation(): UseConversationReturn {
   const startNewConversation = useCallback(() => {
     messagesRef.current = []
     setMessages([])
+    setStreamingContent('')
+    streamingIdRef.current = null
     setSessionId(generateSessionId())
   }, [])
 
   const loadConversation = useCallback((sid: string, msgs: Message[]) => {
     messagesRef.current = msgs
     setMessages(msgs)
+    setStreamingContent('')
+    streamingIdRef.current = null
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, sendMessage, addAssistantMessage, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
+  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
 }
