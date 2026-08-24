@@ -22,7 +22,7 @@ export interface UseConversationReturn {
   sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
   appendStreamChunk: (chunk: string) => void
-  finalizeStream: () => void
+  finalizeStream: (finalContent?: string) => void
   addToolMessage: (toolCallId: string, name: string, content: string) => void
   addAssistantToolCalls: (toolCalls: ToolCall[]) => void
   startNewConversation: () => void
@@ -35,6 +35,7 @@ export function useConversation(): UseConversationReturn {
   const [streamingContent, setStreamingContent] = useState('')
   const messagesRef = useRef<Message[]>([])
   const streamingIdRef = useRef<string | null>(null)
+  const streamingContentRef = useRef<string>('')
 
   const sendMessage = useCallback((content: string): Message[] => {
     const trimmed = content.trim()
@@ -82,19 +83,23 @@ export function useConversation(): UseConversationReturn {
       const updated = [...messagesRef.current, newMessage]
       messagesRef.current = updated
       setMessages(updated)
+      streamingContentRef.current = ''
     }
-    setStreamingContent(prev => prev + chunk)
+    streamingContentRef.current += chunk
+    setStreamingContent(streamingContentRef.current)
   }, [])
 
-  const finalizeStream = useCallback(() => {
+  const finalizeStream = useCallback((finalContent?: string) => {
     if (streamingIdRef.current) {
       const id = streamingIdRef.current
+      const content = finalContent ?? streamingContentRef.current
       const updated = messagesRef.current.map(m =>
-        m.id === id ? { ...m, status: 'completed' as const } : m
+        m.id === id ? { ...m, status: 'completed' as const, content: m.content || content } : m
       )
       messagesRef.current = updated
       setMessages(updated)
       setStreamingContent('')
+      streamingContentRef.current = ''
       streamingIdRef.current = null
     }
   }, [])
@@ -128,6 +133,7 @@ export function useConversation(): UseConversationReturn {
     messagesRef.current = []
     setMessages([])
     setStreamingContent('')
+    streamingContentRef.current = ''
     streamingIdRef.current = null
     setSessionId(generateSessionId())
   }, [])
@@ -136,6 +142,7 @@ export function useConversation(): UseConversationReturn {
     messagesRef.current = msgs
     setMessages(msgs)
     setStreamingContent('')
+    streamingContentRef.current = ''
     streamingIdRef.current = null
     setSessionId(sid)
   }, [])

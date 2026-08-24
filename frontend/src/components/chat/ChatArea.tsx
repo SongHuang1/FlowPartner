@@ -189,8 +189,8 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     unregisterStreamChunkRef.current = onStreamChunk((chunk) => {
       appendStreamChunk(chunk)
     })
-    unregisterFinalAnswerRef.current = onFinalAnswer(() => {
-      finalizeStream()
+    unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
+      finalizeStream(answer)
     })
     unregisterErrorRef.current = onError((message) => {
       setChatError(message)

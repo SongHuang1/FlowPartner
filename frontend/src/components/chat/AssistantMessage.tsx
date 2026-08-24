@@ -25,7 +25,7 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
 
   return (
     <div className="flex justify-start">
-      <div className="w-full">
+      <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
         <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
           <Markdown
@@ -42,25 +42,20 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
                 />
               ),
               code: (props) => {
-                const { inline, className, children, ...rest } = props as {
-                  inline?: boolean
-                  className?: string
-                  children?: React.ReactNode
-                }
-                if (inline) {
+                const { inline, className, children, ...rest } = props as { inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown }
+                const hasLanguage = /language-(\w+)/.exec(className || '')
+                if (inline || !hasLanguage) {
                   return (
-                    <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-pink-600 text-[0.875em] font-mono" {...rest}>
+                    <code className="bg-neutral-100 px-1 py-0.5 rounded text-pink-600 text-[0.875em] font-mono" {...rest}>
                       {children}
                     </code>
                   )
                 }
-                const match = /language-(\w+)/.exec(className || '')
-                const language = match?.[1]
                 return (
                   <div className="relative my-3">
-                    {language && (
+                    {className && (
                       <div className="absolute top-0 left-0 px-3 py-1 text-xs text-neutral-500 bg-neutral-200 rounded-tl rounded-br font-mono z-10">
-                        {language}
+                        {className.replace('language-', '')}
                       </div>
                     )}
                     <pre className="bg-neutral-900 text-neutral-100 pt-8 p-4 rounded-lg overflow-x-auto max-h-[400px]">

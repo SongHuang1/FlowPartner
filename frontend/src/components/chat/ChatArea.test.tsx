@@ -128,7 +128,7 @@ describe('ChatArea empty state', () => {
 
   it('renders working directory when set', () => {
     render(<ChatArea conversation={makeConversation()} />)
-    expect(screen.getByText(/工作路径: \/test\/path/)).toBeInTheDocument()
+    expect(screen.getByText(/路径: \/test\/path/)).toBeInTheDocument()
   })
 
   it('send button is disabled when input is empty', () => {

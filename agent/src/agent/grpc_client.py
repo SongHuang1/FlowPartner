@@ -518,6 +518,9 @@ class FlowPartnerClient:
                 forced_tool_call=forced_tool_call,
             )
 
+            if final_answer:
+                await send_evt(session_id, "final_answer", {"text": final_answer})
+
             history_file = self.history_dir / f"{session_id}.json"
             async with self._history_lock:
                 with open(history_file, "a", encoding="utf-8") as f:

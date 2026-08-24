@@ -66,7 +66,7 @@ describe('WelcomeView', () => {
 
   it('displays working_directory when set', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '/home/user/project' })} />)
-    expect(screen.getByText(/工作路径: \/home\/user\/project/)).toBeInTheDocument()
+    expect(screen.getByText(/路径: \/home\/user\/project/)).toBeInTheDocument()
   })
 
   it('passes input value to ChatInput', () => {
@@ -87,11 +87,10 @@ describe('WelcomeView', () => {
     expect(inputArea).toBeInTheDocument()
   })
 
-  it('displays info bar with separator', () => {
+  it('displays info bar with settings', () => {
     render(<WelcomeView {...defaultProps} />)
-    // The separator '|' appears between info items (1 separator for 2 info fields)
-    const separators = screen.getAllByText('|')
-    expect(separators.length).toBe(1)
+    expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
+    expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
   it('renders with different model names', () => {

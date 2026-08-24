@@ -30,10 +30,10 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">
-      <h2 className="text-lg font-medium text-neutral-700 mb-4">
+      <h2 className="text-lg font-medium text-neutral-700 mb-6">
         你好！我是 FlowPartner
       </h2>
-      <div className="w-full max-w-2xl space-y-3">
+      <div className="w-full max-w-2xl">
         <ChatInput
           value={inputValue}
           onChange={onInputChange}
@@ -41,26 +41,25 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
           disabled={disabled}
           loading={loading}
         />
-        <div className="flex items-center justify-between px-1">
+        <div className="mt-4 flex flex-col gap-2 px-1">
           {onExecutorChange && (
-            <AgentSelector
-              agents={agents}
-              value={executorAgentId || ''}
-              onChange={onExecutorChange}
-              disabled={disabled || loading}
-            />
+            <div className="flex items-center justify-between">
+              <AgentSelector
+                agents={agents}
+                value={executorAgentId || ''}
+                onChange={onExecutorChange}
+                disabled={disabled || loading}
+              />
+              <span className="text-xs text-neutral-400">
+                输入 @智能体名 可指定子智能体
+              </span>
+            </div>
           )}
-          <div className="text-xs text-neutral-400 flex items-center gap-2">
-            <span>模型: {settings.model}</span>
-            <span className="text-neutral-300">|</span>
-            <span>上下文: {settings.context_window}</span>
+          <div className="flex items-center justify-between text-xs text-neutral-400">
+            <span>模型: {settings.model} · 上下文: {settings.context_window}</span>
+            {settings.working_directory && <span>路径: {settings.working_directory}</span>}
           </div>
         </div>
-        {settings.working_directory && (
-          <div className="text-xs text-neutral-400 text-center">
-            工作路径: {settings.working_directory}
-          </div>
-        )}
       </div>
     </div>
   )
