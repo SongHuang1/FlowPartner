@@ -81,6 +81,10 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
               ),
               code: (props) => {
                 const { inline, className, children, ...rest } = props as { inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown }
+                // 数学公式保持原样，由 renderMathInElement 后处理
+                if (className && (className.includes('math-display') || className.includes('math-inline'))) {
+                  return <code className={className} {...rest}>{children}</code>
+                }
                 const hasLanguage = /language-(\w+)/.exec(className || '')
                 if (inline || !hasLanguage) {
                   return (
