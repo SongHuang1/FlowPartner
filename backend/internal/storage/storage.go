@@ -120,13 +120,23 @@ type ToolCall struct {
 	Function ToolCallFunction   `json:"function"`
 }
 
+// SubAgentResult 子智能体调用结果
+type SubAgentResult struct {
+	SpanID    string `json:"span_id"`
+	AgentName string `json:"agent_name"`
+	Task      string `json:"task"`
+	Content   string `json:"content"`
+	Status    string `json:"status"`
+}
+
 // HistoryMessage 历史会话中的单条消息，支持结构化工具上下文。
 type HistoryMessage struct {
-	Role     string     `json:"role"`
-	Content  string     `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string   `json:"tool_call_id,omitempty"`
-	Name      string     `json:"name,omitempty"`
+	Role           string           `json:"role"`
+	Content        string           `json:"content"`
+	ToolCalls      []ToolCall       `json:"tool_calls,omitempty"`
+	ToolCallID     string           `json:"tool_call_id,omitempty"`
+	Name           string           `json:"name,omitempty"`
+	SubAgentResults []SubAgentResult `json:"subagent_results,omitempty"`
 }
 
 // HistoryEntry 历史会话列表条目

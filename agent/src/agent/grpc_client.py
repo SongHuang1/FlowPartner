@@ -504,22 +504,65 @@ class FlowPartnerClient:
                 forced_tool_call = {"name": f"agent__{inject_agent_id}", "arguments": {"task": user_message}}
                 logging.info(f"[Chat] 强制触发子智能体调用: {inject_agent_id}")
 
+            # 跟踪子智能体调用结果
+            subagent_results = {}  # span_id -> {agent_name, task, content, status}
+
+            async def tracking_send_evt(sid: str, etype: str, epayload: dict) -> None:
+                # 拦截子智能体事件，记录结果
+                if etype == "subagent_start":
+                    span_id = epayload.get("span_id", "")
+                    if span_id:
+                        subagent_results[span_id] = {
+                            "span_id": span_id,
+                            "agent_name": epayload.get("agent_name", ""),
+                            "task": epayload.get("task", ""),
+                            "content": "",
+                            "status": "running",
+                        }
+                elif etype == "subagent_step":
+                    span_id = epayload.get("span_id", "")
+                    if span_id and span_id in subagent_results:
+                        if epayload.get("step_type") == "final_answer":
+                            subagent_results[span_id]["content"] = epayload.get("content", "")
+                elif etype == "subagent_end":
+                    span_id = epayload.get("span_id", "")
+                    if span_id and span_id in subagent_results:
+                        subagent_results[span_id]["status"] = "done"
+                        if not subagent_results[span_id]["content"]:
+                            subagent_results[span_id]["content"] = epayload.get("result", "")
+                elif etype == "subagent_error":
+                    span_id = epayload.get("span_id", "")
+                    if span_id and span_id in subagent_results:
+                        subagent_results[span_id]["status"] = "error"
+                        subagent_results[span_id]["content"] = epayload.get("message", "")
+                # 转发原始事件
+                await send_evt(sid, etype, epayload)
+
             agent = ReactAgent(
                 session_id=session_id,
                 call_llm_func=self.call_llm_via_go,
-                send_event_func=send_evt,
+                send_event_func=tracking_send_evt,
                 tool_registry=tool_registry
             )
             final_answer, all_messages = await agent.run(
                 user_message,
                 history=history,
-                send_event_func=send_evt,
+                send_event_func=tracking_send_evt,
                 system_prompt=system_prompt,
                 forced_tool_call=forced_tool_call,
             )
 
             if final_answer:
                 await send_evt(session_id, "final_answer", {"text": final_answer})
+
+            # 将子智能体结果附加到最后一条 assistant 消息
+            results_list = list(subagent_results.values())
+            if results_list and all_messages:
+                # 找到最后一条 assistant 消息
+                for i in range(len(all_messages) - 1, -1, -1):
+                    if all_messages[i].get("role") == "assistant":
+                        all_messages[i]["subagent_results"] = results_list
+                        break
 
             history_file = self.history_dir / f"{session_id}.json"
             async with self._history_lock:

@@ -49,6 +49,7 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
           role: m.role as 'user' | 'assistant',
           content: m.content,
           timestamp: Date.now(),
+          subagent_results: m.subagent_results,
         }))
       onLoadSession(sessionId, msgs)
       setView('welcome')

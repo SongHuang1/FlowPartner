@@ -31,7 +31,6 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
     messages: [],
     sessionId: 'sess_test_1',
     streamingContent: '',
-    subagentResults: [],
     sendMessage: mockSendMessage,
     addAssistantMessage: vi.fn(),
     appendStreamChunk: vi.fn(),

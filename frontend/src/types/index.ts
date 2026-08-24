@@ -7,6 +7,14 @@ export interface ToolCall {
   }
 }
 
+export interface SubAgentResult {
+  span_id: string
+  agent_name: string
+  task: string
+  content: string
+  status: 'running' | 'done' | 'error'
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -16,6 +24,7 @@ export interface Message {
   tool_calls?: ToolCall[]
   tool_call_id?: string
   name?: string
+  subagent_results?: SubAgentResult[]
 }
 
 export interface HistoryEntry {
@@ -31,6 +40,7 @@ export interface HistoryMessage {
   tool_calls?: ToolCall[]
   tool_call_id?: string
   name?: string
+  subagent_results?: SubAgentResult[]
 }
 
 export interface HistorySession {

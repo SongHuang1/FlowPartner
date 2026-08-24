@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message, ToolCall } from '@/types'
+import type { Message, ToolCall, SubAgentResult } from '@/types'
 
 function generateMessageId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -15,19 +15,10 @@ function generateSessionId(): string {
   return `sess_${Date.now()}_${Array.from(array, b => chars[b % chars.length]).join('')}`
 }
 
-export interface SubAgentResult {
-  span_id: string
-  agent_name: string
-  task: string
-  content: string
-  status: 'running' | 'done' | 'error'
-}
-
 export interface UseConversationReturn {
   messages: Message[]
   sessionId: string
   streamingContent: string
-  subagentResults: SubAgentResult[]
   sendMessage: (content: string) => Message[]
   addAssistantMessage: (content: string) => void
   appendStreamChunk: (chunk: string) => void
@@ -45,10 +36,25 @@ export function useConversation(): UseConversationReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId())
   const [streamingContent, setStreamingContent] = useState('')
-  const [subagentResults, setSubagentResults] = useState<SubAgentResult[]>([])
   const messagesRef = useRef<Message[]>([])
   const streamingIdRef = useRef<string | null>(null)
   const streamingContentRef = useRef<string>('')
+
+  // 更新当前流式消息的子智能体结果
+  const updateCurrentMessageSubAgent = useCallback((updater: (results: SubAgentResult[]) => SubAgentResult[]) => {
+    if (!streamingIdRef.current) return
+    const id = streamingIdRef.current
+    const updated = messagesRef.current.map(m => {
+      if (m.id === id) {
+        const currentResults = m.subagent_results || []
+        const newResults = updater(currentResults)
+        return { ...m, subagent_results: newResults }
+      }
+      return m
+    })
+    messagesRef.current = updated
+    setMessages(updated)
+  }, [])
 
   const sendMessage = useCallback((content: string): Message[] => {
     const trimmed = content.trim()
@@ -118,24 +124,24 @@ export function useConversation(): UseConversationReturn {
   }, [])
 
   const addSubAgentStart = useCallback((info: { span_id: string; agent_name: string; task: string }) => {
-    setSubagentResults(prev => {
+    updateCurrentMessageSubAgent(prev => {
       const existing = prev.find(r => r.span_id === info.span_id)
       if (existing) return prev
       return [...prev, { span_id: info.span_id, agent_name: info.agent_name, task: info.task, content: '', status: 'running' }]
     })
-  }, [])
+  }, [updateCurrentMessageSubAgent])
 
   const appendSubAgentChunk = useCallback((span_id: string, chunk: string) => {
-    setSubagentResults(prev => prev.map(r =>
+    updateCurrentMessageSubAgent(prev => prev.map(r =>
       r.span_id === span_id ? { ...r, content: r.content + chunk } : r
     ))
-  }, [])
+  }, [updateCurrentMessageSubAgent])
 
   const finalizeSubAgent = useCallback((span_id: string, result: string) => {
-    setSubagentResults(prev => prev.map(r =>
+    updateCurrentMessageSubAgent(prev => prev.map(r =>
       r.span_id === span_id ? { ...r, content: r.content || result, status: 'done' } : r
     ))
-  }, [])
+  }, [updateCurrentMessageSubAgent])
 
   const addAssistantToolCalls = useCallback((toolCalls: ToolCall[]) => {
     const lastMsg = messagesRef.current[messagesRef.current.length - 1]
@@ -180,5 +186,5 @@ export function useConversation(): UseConversationReturn {
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, streamingContent, subagentResults, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
+  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
 }
