@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -12,49 +12,10 @@ interface AssistantMessageProps {
   streamingContent?: string
 }
 
-function renderMathInElement(element: HTMLElement) {
-  // 行间公式：<pre><code class="language-math math-display">
-  element.querySelectorAll('pre > code.language-math.math-display').forEach((code) => {
-    const pre = code.parentElement
-    if (!pre) return
-    const text = code.textContent || ''
-    try {
-      const html = katex.renderToString(text, { displayMode: true, throwOnError: false })
-      const wrapper = document.createElement('div')
-      wrapper.className = 'katex-block'
-      wrapper.innerHTML = html
-      pre.replaceWith(wrapper)
-    } catch {
-      // 渲染失败时保持原样
-    }
-  })
-
-  // 行内公式：<code class="language-math math-inline">
-  element.querySelectorAll('code.language-math.math-inline').forEach((code) => {
-    const text = code.textContent || ''
-    try {
-      const html = katex.renderToString(text, { displayMode: false, throwOnError: false })
-      const wrapper = document.createElement('span')
-      wrapper.className = 'katex-inline'
-      wrapper.innerHTML = html
-      code.replaceWith(wrapper)
-    } catch {
-      // 渲染失败时保持原样
-    }
-  })
-}
-
 export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
   const isStreaming = message.status === 'streaming'
   const content = isStreaming && streamingContent ? streamingContent : message.content
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (containerRef.current) {
-      renderMathInElement(containerRef.current)
-    }
-  }, [content])
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault()
@@ -66,7 +27,7 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     <div className="flex justify-start">
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
-        <div ref={containerRef} className="text-sm text-neutral-800 prose prose-sm max-w-none">
+        <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
           <Markdown
             remarkPlugins={[remarkGfm, remarkMath]}
             components={{
@@ -79,12 +40,36 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
                   className="text-blue-600 hover:underline"
                 />
               ),
+              pre: (props) => {
+                const { children } = props as { children?: React.ReactNode; [key: string]: unknown }
+                // 检查是否是行间公式的 <pre><code class="math-display">
+                const child = children as { props?: { className?: string; children?: React.ReactNode } } | undefined
+                if (child?.props?.className?.includes('math-display')) {
+                  const text = String(child.props.children || '')
+                  try {
+                    const html = katex.renderToString(text, { displayMode: true, throwOnError: false })
+                    return <div className="katex-block" dangerouslySetInnerHTML={{ __html: html }} />
+                  } catch {
+                    return <pre {...props} />
+                  }
+                }
+                return <pre {...props} />
+              },
               code: (props) => {
                 const { inline, className, children, ...rest } = props as { inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown }
-                // 数学公式保持原样，由 renderMathInElement 后处理
-                if (className && (className.includes('math-display') || className.includes('math-inline'))) {
-                  return <code className={className} {...rest}>{children}</code>
+                const text = String(children || '')
+
+                // 行内公式（$...$）
+                if (className && className.includes('math-inline')) {
+                  try {
+                    const html = katex.renderToString(text, { displayMode: false, throwOnError: false })
+                    return <span className="katex-inline" dangerouslySetInnerHTML={{ __html: html }} />
+                  } catch {
+                    return <code className={className} {...rest}>{children}</code>
+                  }
                 }
+
+                // 普通代码
                 const hasLanguage = /language-(\w+)/.exec(className || '')
                 if (inline || !hasLanguage) {
                   return (
