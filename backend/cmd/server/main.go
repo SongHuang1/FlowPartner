@@ -125,7 +125,7 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, sna
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
 	snapshotHandler := handler.NewSnapshotHandler(snapshotMgr)
-	agentDefHandler := handler.NewAgentDefHandler(mgr)
+	agentDefHandler := handler.NewAgentDefHandler(mgr, wsHandler.BroadcastEvent)
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)

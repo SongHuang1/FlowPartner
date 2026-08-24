@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { Settings, AgentMeta } from '@/types'
 import { ChatInput } from './ChatArea'
 import { AgentSelector } from './AgentSelector'
@@ -13,20 +13,29 @@ interface WelcomeViewProps {
   loading?: boolean
   executorAgentId?: string
   onExecutorChange?: (agentId: string) => void
+  onAgentsChanged?: (cb: () => void) => () => void
 }
 
-export function WelcomeView({ settings, inputValue, onInputChange, onSend, disabled, loading, executorAgentId, onExecutorChange }: WelcomeViewProps) {
+export function WelcomeView({ settings, inputValue, onInputChange, onSend, disabled, loading, executorAgentId, onExecutorChange, onAgentsChanged }: WelcomeViewProps) {
   const [agents, setAgents] = useState<AgentMeta[]>([])
 
-  useEffect(() => {
-    let cancelled = false
+  const refreshAgents = useCallback(() => {
     listAgents()
-      .then((items) => {
-        if (!cancelled) setAgents(items)
-      })
+      .then((items) => setAgents(items))
       .catch(() => {})
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    refreshAgents()
+  }, [refreshAgents])
+
+  // 监听外部 agents 变更通知
+  useEffect(() => {
+    if (onAgentsChanged) {
+      const unregister = onAgentsChanged(refreshAgents)
+      return unregister
+    }
+  }, [onAgentsChanged, refreshAgents])
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4">

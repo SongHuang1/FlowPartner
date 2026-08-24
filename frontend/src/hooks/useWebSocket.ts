@@ -25,6 +25,7 @@ const KNOWN_EVENT_TYPES = [
   'error', 'permission_request', 'iteration_start', 'llm_chunk',
   'loop_terminated', 'snapshot_status', 'snapshot_message',
   'subagent_start', 'subagent_step', 'subagent_end', 'subagent_error',
+  'agents_changed',
 ] as const
 
 function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
@@ -52,6 +53,7 @@ export interface UseWebSocketReturn {
   onSubAgentStart: (cb: (info: { span_id: string; agent_name: string; task: string }) => void) => () => void
   onSubAgentStreamChunk: (cb: (span_id: string, chunk: string) => void) => () => void
   onSubAgentEnd: (cb: (span_id: string, result: string) => void) => () => void
+  onAgentsChanged: (cb: () => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
   onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
@@ -210,6 +212,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const subAgentStartCallbacksRef = useRef<Set<(info: { span_id: string; agent_name: string; task: string }) => void>>(new Set())
   const subAgentStreamChunkCallbacksRef = useRef<Set<(span_id: string, chunk: string) => void>>(new Set())
   const subAgentEndCallbacksRef = useRef<Set<(span_id: string, result: string) => void>>(new Set())
+  const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
@@ -409,6 +412,13 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
+        if (raw.event_type === 'agents_changed') {
+          agentsChangedCallbacksRef.current.forEach((cb) => {
+            try { cb() } catch (e) { console.error('onAgentsChanged callback error:', e) }
+          })
+          return
+        }
+
         if (raw.event_type === 'error') {
           setEvents((prev) => [...prev, raw])
           let message: string
@@ -476,6 +486,7 @@ export function useWebSocket(): UseWebSocketReturn {
     const subAgentStartCbs = subAgentStartCallbacksRef.current
     const subAgentStreamChunkCbs = subAgentStreamChunkCallbacksRef.current
     const subAgentEndCbs = subAgentEndCallbacksRef.current
+    const agentsChangedCbs = agentsChangedCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
     const permissionCbs = permissionRequestCallbacksRef.current
@@ -495,6 +506,7 @@ export function useWebSocket(): UseWebSocketReturn {
       subAgentStartCbs.clear()
       subAgentStreamChunkCbs.clear()
       subAgentEndCbs.clear()
+      agentsChangedCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
       permissionCbs.clear()
@@ -625,6 +637,11 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { subAgentEndCallbacksRef.current.delete(cb) }
   }, [])
 
+  const onAgentsChanged = useCallback((cb: () => void) => {
+    agentsChangedCallbacksRef.current.add(cb)
+    return () => { agentsChangedCallbacksRef.current.delete(cb) }
+  }, [])
+
   const onError = useCallback((cb: (message: string) => void) => {
     errorCallbacksRef.current.add(cb)
     return () => { errorCallbacksRef.current.delete(cb) }
@@ -671,6 +688,7 @@ export function useWebSocket(): UseWebSocketReturn {
     onSubAgentStart,
     onSubAgentStreamChunk,
     onSubAgentEnd,
+    onAgentsChanged,
     onError,
     onSecurityEvent,
     onPermissionRequest,

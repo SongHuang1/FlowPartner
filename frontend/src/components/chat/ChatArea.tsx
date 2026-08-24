@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, useEffect } from 'react'
+import { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -159,6 +159,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     onSubAgentStart,
     onSubAgentStreamChunk,
     onSubAgentEnd,
+    onAgentsChanged,
     onError,
     onSecurityEvent,
     onPermissionRequest,
@@ -171,15 +172,23 @@ export function ChatArea({ conversation }: ChatAreaProps) {
   const [agents, setAgents] = useState<AgentMeta[]>([])
   const [executorAgentId, setExecutorAgentId] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
+  const refreshAgents = useCallback(() => {
     listAgents()
-      .then((items) => {
-        if (!cancelled) setAgents(items)
-      })
+      .then((items) => setAgents(items))
       .catch(() => {})
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    refreshAgents()
+  }, [refreshAgents])
+
+  // 监听 agents_changed 事件，自动刷新智能体列表
+  useEffect(() => {
+    const unregister = onAgentsChanged(() => {
+      refreshAgents()
+    })
+    return unregister
+  }, [onAgentsChanged, refreshAgents])
 
   const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
   const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
@@ -309,6 +318,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           loading={processing}
           executorAgentId={executorAgentId}
           onExecutorChange={setExecutorAgentId}
+          onAgentsChanged={onAgentsChanged}
         />
       ) : (
         <>
