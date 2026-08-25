@@ -178,7 +178,7 @@ export function useConversation(): UseConversationReturn {
     let targetId = streamingIdRef.current
     if (!targetId) {
       for (let i = messagesRef.current.length - 1; i >= 0; i--) {
-        if (messagesRef.current[i].role === 'assistant') {
+        if (messagesRef.current[i].role === 'assistant' && messagesRef.current[i].status === 'streaming') {
           targetId = messagesRef.current[i].id
           break
         }

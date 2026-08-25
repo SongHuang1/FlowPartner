@@ -16,8 +16,9 @@ interface AssistantMessageProps {
 export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
   const isStreaming = message.status === 'streaming'
-  const content = isStreaming && streamingContent ? streamingContent : message.content
   const contentBlocks = message.content_blocks
+  const hasBlocks = contentBlocks && contentBlocks.length > 0
+  const displayContent = !hasBlocks && isStreaming && streamingContent ? streamingContent : message.content
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -105,8 +106,6 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     )
   }
 
-  const hasBlocks = contentBlocks && contentBlocks.length > 0
-
   return (
     <div className="flex justify-start">
       <div className="w-full min-w-0">
@@ -130,7 +129,7 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
         ) : (
           <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
             <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-              {content}
+              {displayContent}
             </Markdown>
           </div>
         )}
