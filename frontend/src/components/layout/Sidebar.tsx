@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,10 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadHistory()
+  }, [])
 
   const loadHistory = async () => {
     setHistoryLoading(true)
@@ -136,11 +140,6 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
               </div>
             ))}
 
-            {!historyLoading && !historyError && historyList.length === 0 && (
-              <Button variant="ghost" className="justify-start text-sm text-neutral-500" onClick={loadHistory}>
-                查看历史
-              </Button>
-            )}
             {!historyLoading && !historyError && historyList.length > 0 && (
               <Button variant="ghost" className="justify-start text-xs text-neutral-400 mt-1" onClick={loadHistory}>
                 刷新列表
