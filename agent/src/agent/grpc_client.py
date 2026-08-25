@@ -504,9 +504,6 @@ class FlowPartnerClient:
                     )
                     return
                 forced_tool_call = {"name": f"agent__{inject_agent_id}", "arguments": {"task": user_message}}
-                logging.info(f"[Chat] Forced sub-agent call: {inject_agent_id}")
-            else:
-                logging.info("[Chat] Normal mode: main agent will decide whether to call sub-agents")
 
             # 跟踪子智能体调用结果
             subagent_results = {}  # span_id -> {agent_name, task, content, status}
@@ -555,8 +552,6 @@ class FlowPartnerClient:
                 system_prompt=system_prompt,
                 forced_tool_call=forced_tool_call,
             )
-
-            logging.info(f"[Chat] final_answer length={len(final_answer) if final_answer else 0}, subagent_results={len(subagent_results)}")
 
             # 将子智能体结果附加到最后一条 assistant 消息
             results_list = list(subagent_results.values())

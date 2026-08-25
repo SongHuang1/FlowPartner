@@ -287,8 +287,6 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
-        console.log('[WS] Received event:', raw.event_type, raw.payload?.slice(0, 200))
-
         if (!raw.event_type || !isKnownEventType(raw.event_type)) {
           console.warn('Unknown event_type:', raw.event_type)
           return

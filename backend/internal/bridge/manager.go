@@ -85,8 +85,7 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 		"event_type": event.EventType,
 		"payload":    event.Payload, // event.Payload 已是 JSON 字符串，直接透传
 	}
-	log.Printf("[Bridge→WS] %s | session=%s | payload=%s", event.EventType, sessionId, truncate(event.Payload, 200))
-	if err := conn.WriteJSON(payload); err != nil {
+  if err := conn.WriteJSON(payload); err != nil {
 		log.Printf("Failed to send WebSocket message to frontend: %v", err)
 	}
 }

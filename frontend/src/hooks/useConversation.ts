@@ -23,6 +23,7 @@ export interface UseConversationReturn {
   addAssistantMessage: (content: string) => void
   appendStreamChunk: (chunk: string) => void
   finalizeStream: (finalContent?: string) => void
+  finalizeWithBlocks: (finalContent: string, blocks: ContentBlock[]) => void
   addSubAgentStart: (info: { span_id: string; agent_name: string; task: string }) => void
   appendSubAgentChunk: (span_id: string, chunk: string) => void
   finalizeSubAgent: (span_id: string, result: string) => void
@@ -113,7 +114,6 @@ export function useConversation(): UseConversationReturn {
     if (streamingIdRef.current) {
       const id = streamingIdRef.current
       const content = finalContent ?? streamingContentRef.current
-      console.log('[Conversation] finalizeStream:', id, 'contentLen:', content.length)
       const updated = messagesRef.current.map(m =>
         m.id === id ? { ...m, status: 'completed' as const, content: m.content || content } : m
       )
@@ -122,13 +122,24 @@ export function useConversation(): UseConversationReturn {
       setStreamingContent('')
       streamingContentRef.current = ''
       streamingIdRef.current = null
-    } else {
-      console.warn('[Conversation] finalizeStream called but no streamingIdRef!')
+    }
+  }, [])
+
+  const finalizeWithBlocks = useCallback((finalContent: string, blocks: ContentBlock[]) => {
+    if (streamingIdRef.current) {
+      const id = streamingIdRef.current
+      const updated = messagesRef.current.map(m =>
+        m.id === id ? { ...m, status: 'completed' as const, content: m.content || finalContent, content_blocks: blocks.length > 0 ? blocks : m.content_blocks } : m
+      )
+      messagesRef.current = updated
+      setMessages(updated)
+      setStreamingContent('')
+      streamingContentRef.current = ''
+      streamingIdRef.current = null
     }
   }, [])
 
   const addSubAgentStart = useCallback((info: { span_id: string; agent_name: string; task: string }) => {
-    console.log('[Conversation] addSubAgentStart:', info.agent_name, 'span:', info.span_id, 'hasStreaming:', !!streamingIdRef.current)
     if (!streamingIdRef.current) {
       const id = generateMessageId()
       streamingIdRef.current = id
@@ -143,7 +154,6 @@ export function useConversation(): UseConversationReturn {
       messagesRef.current = updated
       setMessages(updated)
       streamingContentRef.current = ''
-      console.log('[Conversation] Created new streaming message for subagent:', id)
     }
     updateCurrentMessageSubAgent(prev => {
       const existing = prev.find(r => r.span_id === info.span_id)
@@ -165,10 +175,18 @@ export function useConversation(): UseConversationReturn {
   }, [updateCurrentMessageSubAgent])
 
   const updateContentBlocks = useCallback((blocks: ContentBlock[]) => {
-    if (!streamingIdRef.current) return
-    const id = streamingIdRef.current
+    let targetId = streamingIdRef.current
+    if (!targetId) {
+      for (let i = messagesRef.current.length - 1; i >= 0; i--) {
+        if (messagesRef.current[i].role === 'assistant') {
+          targetId = messagesRef.current[i].id
+          break
+        }
+      }
+    }
+    if (!targetId) return
     const updated = messagesRef.current.map(m =>
-      m.id === id ? { ...m, content_blocks: blocks } : m
+      m.id === targetId ? { ...m, content_blocks: blocks } : m
     )
     messagesRef.current = updated
     setMessages(updated)
@@ -217,5 +235,5 @@ export function useConversation(): UseConversationReturn {
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, updateContentBlocks, startNewConversation, loadConversation }
+  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, finalizeWithBlocks, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, updateContentBlocks, startNewConversation, loadConversation }
 }

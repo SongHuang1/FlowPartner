@@ -35,6 +35,7 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
     addAssistantMessage: vi.fn(),
     appendStreamChunk: vi.fn(),
     finalizeStream: vi.fn(),
+    finalizeWithBlocks: vi.fn(),
     addSubAgentStart: vi.fn(),
     appendSubAgentChunk: vi.fn(),
     finalizeSubAgent: vi.fn(),

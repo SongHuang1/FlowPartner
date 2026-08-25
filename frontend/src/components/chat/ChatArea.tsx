@@ -139,7 +139,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation }: ChatAreaProps) {
-  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, updateContentBlocks } = conversation
+  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeWithBlocks, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, updateContentBlocks } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
   const {
@@ -209,7 +209,8 @@ export function ChatArea({ conversation }: ChatAreaProps) {
       appendStreamChunk(chunk)
     })
     unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
-      finalizeStream(answer)
+      const blocks = deriveContentBlocks(events)
+      finalizeWithBlocks(answer, blocks)
     })
     unregisterSubAgentStartRef.current = onSubAgentStart((info) => {
       addSubAgentStart(info)
@@ -240,7 +241,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
       unregisterSecurityRef.current?.()
       unregisterPermissionRef.current?.()
     }
-  }, [onStreamChunk, onFinalAnswer, onSubAgentStart, onSubAgentStreamChunk, onSubAgentEnd, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent])
+  }, [onStreamChunk, onFinalAnswer, onSubAgentStart, onSubAgentStreamChunk, onSubAgentEnd, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk, finalizeWithBlocks, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent])
 
   const handleSend = () => {
     const trimmed = inputValue.trim()

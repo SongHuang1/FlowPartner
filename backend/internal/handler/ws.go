@@ -277,9 +277,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					history = append(history, hm)
 				}
 
-			log.Printf("[WS→gRPC] start_chat: session=%s executor=%q inject=%q content=%q history_len=%d",
-				sessionId, msg.ExecutorAgentID, msg.InjectAgentID, msg.Content, len(history))
-
 			payloadBytes, err := json.Marshal(map[string]interface{}{
 				"user_message":      msg.Content,
 				"history":           history,

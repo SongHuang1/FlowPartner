@@ -224,7 +224,7 @@ class ReactAgent:
                     recorded_messages.append(assistant_msg)
 
                     tool_names = [tc["function"]["name"] for tc in llm_resp["tool_calls"]]
-                    logging.info(f"[ReAct] tool_calls detected (finish_reason={finish_reason!r}), tools={tool_names}, content_len={len(llm_resp.get('content', ''))}")
+                    logging.info(f"[ReAct] tool_calls: {tool_names}, content_len={len(llm_resp.get('content', ''))}")
 
                     for tool_call in llm_resp["tool_calls"]:
                         func_name = tool_call["function"]["name"]
@@ -273,7 +273,7 @@ class ReactAgent:
 
                 final_answer = llm_resp.get("content", "")
                 if finish_reason == "stop" or final_answer:
-                    logging.info(f"[ReAct] finish_reason={finish_reason}, final_answer length={len(final_answer)}")
+                    logging.info(f"[ReAct] final_answer length={len(final_answer)}")
                     await self._emit("final_answer", {
                         "text": final_answer,
                         "iteration": iteration + 1,
@@ -282,7 +282,7 @@ class ReactAgent:
                     return final_answer, recorded_messages
 
                 if not final_answer and not finish_reason:
-                    logging.warning(f"[ReAct] No content and no finish_reason! LLM response keys: {list(llm_resp.keys())}")
+                    logging.warning(f"[ReAct] Empty LLM response, keys: {list(llm_resp.keys())}")
                     await self._emit("final_answer", {
                         "text": final_answer or "",
                         "iteration": iteration + 1,

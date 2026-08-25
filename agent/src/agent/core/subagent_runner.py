@@ -91,7 +91,6 @@ class SubAgentRunner:
 
     async def run(self) -> str:
         """执行子 ReAct 循环，返回最终文本结果。"""
-        logging.info(f"[SubAgent] Starting: agent={self.agent_name} ({self.agent_id}), depth={self.depth}, task={self.task[:100]}")
         try:
             await self._emit(
                 "subagent_start",
@@ -113,7 +112,6 @@ class SubAgentRunner:
                 send_event_func=self._forward,
             )
 
-            logging.info(f"[SubAgent] Completed: agent={self.agent_name}, result_len={len(result)}")
             await self._emit("subagent_end", {"status": "done", "result": result})
             return result
         except Exception as e:

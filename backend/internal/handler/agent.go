@@ -75,7 +75,6 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 			return status.Errorf(codes.Internal, "failed to receive event: %s", sanitize.Error(err))
 		}
 
-		log.Printf("[gRPC→WS] Event: %s | Session: %s | Payload: %s", event.EventType, event.SessionId, truncate(event.Payload, 300))
 		h.manager.SendToSession(event.SessionId, event)
 	}
 }
