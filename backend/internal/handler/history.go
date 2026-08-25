@@ -17,6 +17,8 @@ func (h *HistoryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		h.Get(w, r)
+	case http.MethodDelete:
+		h.Delete(w, r)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -49,8 +51,35 @@ func (h *HistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, http.StatusInternalServerError, response.Error(response.CodeInternalError, "Failed to read history"))
 		return
 	}
+	subagents, err := storage.ReadSubAgents(sessionID)
+	if err != nil {
+		subagents = map[string]storage.SubAgentRun{}
+	}
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]interface{}{
 		"session_id": sessionID,
 		"messages":   msgs,
+		"subagents":  subagents,
 	}))
+}
+
+// Delete 删除历史会话
+func (h *HistoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/history"), "/")
+	if sessionID == "" {
+		response.WriteJSON(w, http.StatusBadRequest, response.Error(response.CodeInvalidParam, "Missing session id"))
+		return
+	}
+	if !storage.ValidSessionID(sessionID) {
+		response.WriteJSON(w, http.StatusBadRequest, response.Error(response.CodeInvalidParam, "Invalid session id"))
+		return
+	}
+	if err := storage.DeleteHistory(sessionID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			response.WriteJSON(w, http.StatusNotFound, response.Error(response.CodeInvalidParam, "Session not found"))
+			return
+		}
+		response.WriteJSON(w, http.StatusInternalServerError, response.Error(response.CodeInternalError, "Failed to delete history"))
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.Success(nil))
 }

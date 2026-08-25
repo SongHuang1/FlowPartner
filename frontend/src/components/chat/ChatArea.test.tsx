@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ChatArea } from './ChatArea'
 import type { UseConversationReturn } from '@/hooks/useConversation'
+import type { SubAgentRun } from '@/types'
 
 const mockSendMessage = vi.fn()
 const mockUpdateSettings = vi.fn()
 const mockWsSendMessage = vi.fn()
-const mockOnFinalAnswer = vi.fn(() => () => {})
+const mockSendCancel = vi.fn()
+const mockSendPermissionResponse = vi.fn()
+const mockOnStreamChunk = vi.fn(() => () => {})
 const mockOnError = vi.fn(() => () => {})
 const mockOnSecurityEvent = vi.fn(() => () => {})
+const mockOnPermissionRequest = vi.fn(() => () => {})
+const mockListAgents = vi.fn()
+
+vi.mock('@/lib/api', () => ({
+  listAgents: () => mockListAgents(),
+}))
 
 const mockLockStatus = {
   locked: false,
@@ -20,8 +29,13 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
   return {
     messages: [],
     sessionId: 'sess_test_1',
+    streamingContent: '',
     sendMessage: mockSendMessage,
     addAssistantMessage: vi.fn(),
+    appendStreamChunk: vi.fn(),
+    finalizeStream: vi.fn(),
+    finalizeWithBlocks: vi.fn(),
+    updateContentBlocks: vi.fn(),
     startNewConversation: vi.fn(),
     loadConversation: vi.fn(),
     ...overrides,
@@ -55,20 +69,38 @@ vi.mock('@/hooks/useLock', () => ({
 }))
 
 vi.mock('@/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({
-    connected: true,
-    reconnecting: false,
-    reconnectAttempts: 0,
-    isReconnectExhausted: false,
-    processing: false,
-    sendMessage: mockWsSendMessage,
-    events: [],
-    manualReconnect: vi.fn(),
-    onFinalAnswer: mockOnFinalAnswer,
-    onError: mockOnError,
-    onSecurityEvent: mockOnSecurityEvent,
-  }),
+  useWebSocket: () => mockUseWebSocket(),
+  deriveContentBlocks: () => [],
 }))
+
+const mockUseWebSocket = vi.fn()
+
+const mockOnAgentsChanged = vi.fn(() => () => {})
+
+const baseWsReturn = {
+  connected: true,
+  reconnecting: false,
+  reconnectAttempts: 0,
+  isReconnectExhausted: false,
+  processing: false,
+  sendMessage: mockWsSendMessage,
+  sendCancel: mockSendCancel,
+  sendPermissionResponse: mockSendPermissionResponse,
+  events: [],
+  steps: [],
+  subagentRuns: [],
+  manualReconnect: vi.fn(),
+  onStreamChunk: mockOnStreamChunk,
+  onError: mockOnError,
+  onSecurityEvent: mockOnSecurityEvent,
+  onPermissionRequest: mockOnPermissionRequest,
+  onAgentsChanged: mockOnAgentsChanged,
+}
+
+const mockAgents = [
+  { id: 'main', name: '主智能体', description: '默认执行者' },
+  { id: 'agent-1', name: '翻译官', description: '翻译' },
+]
 
 describe('ChatArea empty state', () => {
   beforeEach(() => {
@@ -76,6 +108,8 @@ describe('ChatArea empty state', () => {
     mockLockStatus.locked = false
     mockWsSendMessage.mockReturnValue(true)
     mockSendMessage.mockReturnValue([])
+    mockListAgents.mockResolvedValue(mockAgents)
+    mockUseWebSocket.mockReturnValue(baseWsReturn)
   })
 
   it('renders welcome message when no messages', () => {
@@ -91,7 +125,6 @@ describe('ChatArea empty state', () => {
   it('renders bottom info bar with settings', () => {
     render(<ChatArea conversation={makeConversation()} />)
     expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
-    expect(screen.getByText(/智能体: default/)).toBeInTheDocument()
     expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
@@ -106,7 +139,7 @@ describe('ChatArea empty state', () => {
     expect(button).toBeDisabled()
   })
 
-  it('sends message when clicking send button with input', () => {
+  it('sends message when clicking send button with input', async () => {
     render(<ChatArea conversation={makeConversation()} />)
     const input = screen.getByPlaceholderText('输入消息...')
     fireEvent.change(input, { target: { value: 'hello' } })
@@ -114,7 +147,9 @@ describe('ChatArea empty state', () => {
     expect(button).toBeEnabled()
     fireEvent.click(button)
     expect(mockSendMessage).toHaveBeenCalledWith('hello')
-    expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [])
+    await waitFor(() => {
+      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'main')
+    })
   })
 
   it('disables input and send button when API key is locked', () => {
@@ -124,5 +159,96 @@ describe('ChatArea empty state', () => {
     expect(input.disabled).toBe(true)
     const button = screen.getByRole('button', { name: '发送' })
     expect(button).toBeDisabled()
+  })
+})
+
+describe('ChatArea multi-agent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockLockStatus.locked = false
+    mockWsSendMessage.mockReturnValue(true)
+    mockSendMessage.mockReturnValue([])
+    mockListAgents.mockResolvedValue(mockAgents)
+    mockUseWebSocket.mockReturnValue(baseWsReturn)
+  })
+
+  function renderWithMessages() {
+    render(
+      <ChatArea
+        conversation={makeConversation({
+          messages: [
+            { id: 'm1', role: 'user', content: '你好', timestamp: 1 },
+            { id: 'm2', role: 'assistant', content: '好的', timestamp: 1 },
+          ],
+        })}
+      />
+    )
+  }
+
+  it('sends full message with @mention as content', async () => {
+    renderWithMessages()
+    await screen.findByRole('option', { name: '主智能体' })
+    const input = screen.getByPlaceholderText('输入消息...')
+    fireEvent.change(input, { target: { value: '帮我 @翻译官 翻译这句话' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(mockSendMessage).toHaveBeenCalledWith('帮我 @翻译官 翻译这句话')
+    await waitFor(() => {
+      expect(mockWsSendMessage).toHaveBeenCalledWith('帮我 @翻译官 翻译这句话', 'sess_test_1', [], 'main')
+    })
+  })
+
+  it('passes selected executor agent id', async () => {
+    renderWithMessages()
+    await screen.findByRole('option', { name: '翻译官' })
+    fireEvent.change(screen.getByLabelText('会话执行者'), { target: { value: 'agent-1' } })
+    const input = screen.getByPlaceholderText('输入消息...')
+    fireEvent.change(input, { target: { value: 'hello' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => {
+      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'agent-1')
+    })
+  })
+})
+
+describe('ChatArea subagent cards', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockLockStatus.locked = false
+    mockWsSendMessage.mockReturnValue(true)
+    mockSendMessage.mockReturnValue([])
+    mockListAgents.mockResolvedValue(mockAgents)
+    mockUseWebSocket.mockReturnValue(baseWsReturn)
+  })
+
+  const run: SubAgentRun = {
+    agent_id: 'agent-1',
+    agent_name: '翻译官',
+    depth: 2,
+    span_id: 'span-1',
+    trace_id: 'trace-1',
+    parent_span_id: 'span-root',
+    status: 'done',
+    task: '翻译这句话',
+    result: '译文',
+    steps: [
+      { step_type: 'thinking', content: '先理解原文' },
+      { step_type: 'tool_call', tool: 'read_file', args: { path: 'a.txt' } },
+      { step_type: 'final_answer', content: '译文' },
+    ],
+  }
+
+  it('does not render subagent bar at top', () => {
+    mockUseWebSocket.mockReturnValue({ ...baseWsReturn, subagentRuns: [run] })
+    const conversation = makeConversation({
+      messages: [
+        { id: 'm1', role: 'user', content: '你好', timestamp: 1 },
+        { id: 'm2', role: 'assistant', content: '好的', timestamp: 1 },
+      ],
+    })
+    render(<ChatArea conversation={conversation} />)
+
+    expect(screen.queryByText('子智能体')).not.toBeInTheDocument()
   })
 })

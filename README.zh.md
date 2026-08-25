@@ -33,26 +33,32 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 FlowPartner/
 ├── .github/workflows/    # CI: ci.yml, release.yml
 ├── agent/                # Python Agent 层
-│   ├── proto/            # proto 文件（与 backend/proto/ 同步）
-│   ├── src/agent/        # main.py, grpc_client.py, core/, tools/
+│   ├── proto/            # proto 文件（与 backend/proto/ 逐字节相同）
+│   ├── src/agent/        # main.py, grpc_client.py, core/（react_agent、subagent_runner、agent_registry）, tools/
+│   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go 后端
 │   ├── cmd/server/main.go
 │   ├── internal/
 │   │   ├── bridge/       # WebSocket ↔ gRPC 桥接
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
+│   │   ├── tools/        # 工具执行层（read/write/bash/edit/trash/purge）
+│   │   ├── snapshot/     # 工作区快照子系统（自动捕获 + 还原）
+│   │   ├── config/       # 环境配置
 │   │   ├── crypto/       # API Key 加密/零化
 │   │   ├── keystore/     # API Key 内存管理
 │   │   ├── llm/          # LLM HTTP 流式客户端（SSE）
+│   │   ├── response/     # 标准响应格式
 │   │   ├── sanitize/     # 错误信息净化
 │   │   ├── server/       # 端口发现
-│   │   └── storage/      # 原子 JSON 写入
+│   │   ├── static/       # 前端静态文件服务
+│   │   └── storage/      # 原子 JSON 写入（历史、智能体定义）
 │   └── proto/            # proto 定义 + 生成的 .pb.go
 ├── frontend/             # Electron + React + TypeScript + Tailwind
 │   ├── electron/
 │   │   ├── main.cjs      # Electron 主进程（启动 Go + Python）
 │   │   └── preload.cjs   # IPC 桥接到渲染进程
-│   ├── src/              # React UI
+│   ├── src/              # React UI（聊天、设置：含智能体管理/快照）
 │   ├── electron-builder.yml
 │   └── package.json
 ├── Makefile

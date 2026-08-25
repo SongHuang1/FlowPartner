@@ -1,11 +1,13 @@
 syntax = "proto3";
-
+option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
 package flowpartner;
 
 // --- 1. Python 发给 Go 的事件 (实时汇报) ---
 message AgentEvent {
     string session_id = 1;
-    string event_type = 2; // 例如: "status_update", "tool_call", "llm_chunk", "final_answer", "error"
+    string event_type = 2; // 例如: "iteration_start", "llm_chunk", "tool_call", "tool_result",
+                           // "final_answer", "loop_terminated", "error", "permission_request",
+                           // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
     string payload = 3;    // JSON 格式的具体内容
 }
 
@@ -16,7 +18,7 @@ message ServerCommand {
     string payload = 3;      // JSON 格式，包含用户提问、历史上下文等
 }
 
-// --- 3. Agent 请求 Go 代为调用大模型 (保持同步调用，方便 Go 控制 API Key 和计费) ---
+// --- 3. Agent 请求 Go 代为调用大模型（服务端流式，方便 Go 控制 API Key 和计费） ---
 message LLMRequest {
     string session_id = 1;
     string json_payload = 2; // Python 组装好的完整请求体
@@ -28,11 +30,56 @@ message LLMResponse {
     string message_id = 3;     // 消息唯一标识，用于前端追踪
 }
 
-// --- 4. 核心服务定义 ---
+// --- 4. 工具执行代理 ---
+message ToolRequest {
+    string session_id = 1;
+    string tool_name = 2;    // 工具名称：read, write, bash, edit, trash, purge
+    string arguments = 3;    // JSON 格式的工具参数
+    string approval_id = 4;  // 越权审批通过后携带的审批 ID（一次性）
+}
+
+message ToolResponse {
+    bool success = 1;        // 是否执行成功
+    string result = 2;       // 成功时的结果文本 / 失败时的中文错误文案
+    string error_code = 3;   // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
+    bool needs_permission = 4; // true = 需用户审批（路径越权，或 purge 这类按策略强制审批的操作）
+    string request_id = 5;   // 越权申请的唯一 ID（needs_permission=true 时返回）
+}
+
+// --- 5. 智能体定义（多 Agent） ---
+message Empty {}
+
+message AgentDef {
+    string id = 1;             // UUID v4；内置主智能体固定为 "main"
+    string name = 2;
+    string description = 3;    // 对外描述，暴露给其他 agent 判断是否调用
+    string system_prompt = 4;  // 私有，仅 Python（可信后端）与编辑界面可见
+    int64 created_at = 5;
+    int64 updated_at = 6;
+}
+
+message AgentId {
+    string id = 1;
+}
+
+message AgentDefList {
+    repeated AgentDef agents = 1;
+}
+
+// --- 6. 核心服务定义 ---
 service FlowPartnerService {
     // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
     rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
 
     // 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
     rpc CallLLM (LLMRequest) returns (stream LLMResponse);
+
+    // 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+    rpc ExecuteTool (ToolRequest) returns (ToolResponse);
+
+    // 拉取全部智能体定义（含 system_prompt，Python 为可信后端）
+    rpc ListAgents (Empty) returns (AgentDefList);
+
+    // 按 ID 获取单个智能体定义
+    rpc GetAgent (AgentId) returns (AgentDef);
 }

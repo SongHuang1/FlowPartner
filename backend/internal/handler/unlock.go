@@ -9,6 +9,7 @@ import (
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/response"
+	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
 type UnlockRequest struct {
@@ -57,9 +58,9 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	ks := keystore.Instance()
 	status := ks.GetLockStatus()
 	if status.Locked && time.Now().Before(status.LockedUntil) {
+		remaining := int(time.Until(status.LockedUntil).Seconds() + 0.5)
 		response.WriteJSON(w, http.StatusTooManyRequests,
-			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %v 后重试",
-				time.Until(status.LockedUntil))))
+			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %d 秒后重试", remaining)))
 		return
 	}
 
@@ -70,15 +71,25 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings := LoadSettings()
-	if settings.EncryptedAPIKey == "" {
+	encryptedKey := settings.EncryptedAPIKey
+	activatedID := ""
+	if encryptedKey == "" {
+		for _, cfg := range settings.ModelConfigs {
+			if cfg.EncryptedAPIKey != "" {
+				encryptedKey = cfg.EncryptedAPIKey
+				activatedID = cfg.ID
+				break
+			}
+		}
+	}
+	if encryptedKey == "" {
 		response.WriteJSON(w, http.StatusBadRequest,
 			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
 		return
 	}
 
-	apiKey, err := flowcrypto.Decrypt(settings.EncryptedAPIKey, []byte(req.Password))
+	apiKey, err := flowcrypto.Decrypt(encryptedKey, []byte(req.Password))
 	if err != nil {
-		// 解密已失败，直接计数即可；无需调用 VerifyPassword 重复昂贵的 Argon2id 解密
 		ks.RecordFailedAttempt()
 		response.WriteJSON(w, http.StatusUnauthorized,
 			response.Error(response.CodeWrongPassword, "密码错误"))
@@ -86,6 +97,16 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ks.Unlock([]byte(apiKey))
+
+	if settings.ActiveConfigID == "" && activatedID != "" {
+		settings.ActiveConfigID = activatedID
+		settings.deriveFlatFields()
+		if err := storage.WriteJSON("settings.json", settings); err != nil {
+			response.WriteJSON(w, http.StatusInternalServerError,
+				response.Error(response.CodeInternalError, "Failed to save active config"))
+			return
+		}
+	}
 
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
 		"message": "已解锁",

@@ -8,8 +8,16 @@ import (
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 )
 
-func TestKeyStore_Singleton(t *testing.T) {
+// newTestKeyStore 返回一个全新的 KeyStore（等价于进程启动时的单例初始状态）。
+func newTestKeyStore() *KeyStore {
 	Reset()
+	return Instance()
+}
+
+// --- 生命周期 ---
+
+func TestKeyStore_Singleton(t *testing.T) {
+	newTestKeyStore()
 	ks1 := Instance()
 	ks2 := Instance()
 	if ks1 != ks2 {
@@ -18,7 +26,7 @@ func TestKeyStore_Singleton(t *testing.T) {
 }
 
 func TestKeyStore_Reset(t *testing.T) {
-	Reset()
+	newTestKeyStore()
 	ks1 := Instance()
 	Reset()
 	ks2 := Instance()
@@ -27,9 +35,35 @@ func TestKeyStore_Reset(t *testing.T) {
 	}
 }
 
+// --- 初始状态 ---
+
+func TestKeyStore_IsUnlocked_InitialState(t *testing.T) {
+	ks := newTestKeyStore()
+
+	if ks.IsUnlocked() {
+		t.Fatal("initial state should be locked")
+	}
+}
+
+func TestKeyStore_GetLockStatus_InitialState(t *testing.T) {
+	ks := newTestKeyStore()
+
+	status := ks.GetLockStatus()
+	if !status.Locked {
+		t.Fatal("initial state should be locked")
+	}
+	if status.HasAPIKey {
+		t.Fatal("initial state should not have API key")
+	}
+	if status.FailedAttempts != 0 {
+		t.Fatal("initial FailedAttempts should be 0")
+	}
+}
+
+// --- Unlock / Lock / GetKey ---
+
 func TestKeyStore_UnlockAndLock(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	apiKey := []byte("sk-test-api-key")
 	err := ks.Unlock(apiKey)
@@ -60,53 +94,145 @@ func TestKeyStore_UnlockAndLock(t *testing.T) {
 	}
 }
 
-func TestKeyStore_UnlockEmptyKey(t *testing.T) {
-	Reset()
-	ks := Instance()
-
-	err := ks.Unlock([]byte{})
-	if err == nil {
-		t.Fatal("Unlock with empty key should fail")
+func TestKeyStore_Unlock_EmptyOrNilKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  []byte
+	}{
+		{"nil key", nil},
+		{"empty byte slice", []byte{}},
 	}
-}
-
-func TestKeyStore_GetKeyReturnsCopy(t *testing.T) {
-	Reset()
-	ks := Instance()
-
-	apiKey := []byte("sk-test-api-key")
-	ks.Unlock(apiKey)
-
-	key1, _ := ks.GetKey()
-	key2, _ := ks.GetKey()
-
-	key1[0] = 'X'
-	if key2[0] == 'X' {
-		t.Fatal("GetKey should return a copy, not a reference")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ks := newTestKeyStore()
+			if err := ks.Unlock(tt.key); err == nil {
+				t.Fatalf("Unlock with %s should fail", tt.name)
+			}
+		})
 	}
 }
 
 func TestKeyStore_LockClearsMemory(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
-	apiKey := []byte("sk-sensitive-api-key")
-	ks.Unlock(apiKey)
-	ks.Lock()
-
-	key, ok := ks.GetKey()
-	if ok {
-		t.Fatal("GetKey should return false after Lock()")
+	originalKey := []byte("sk-original-key-12345")
+	if err := ks.Unlock(originalKey); err != nil {
+		t.Fatalf("Unlock failed: %v", err)
 	}
-	if key != nil {
-		t.Fatal("key should be nil after Lock()")
+
+	copy1, ok := ks.GetKey()
+	if !ok || copy1 == nil {
+		t.Fatal("GetKey should return valid key when unlocked")
+	}
+
+	ks.Lock()
+	key, ok := ks.GetKey()
+	if ok || key != nil {
+		t.Fatal("GetKey should return nil, false after Lock()")
+	}
+	if len(copy1) != len(originalKey) {
+		t.Fatalf("copy length changed: got %d, want %d", len(copy1), len(originalKey))
 	}
 }
 
-func TestKeyStore_RateLimit(t *testing.T) {
-	once = sync.Once{}
-	instance = &KeyStore{}
-	ks := instance
+func TestKeyStore_Lock_Idempotent(t *testing.T) {
+	ks := newTestKeyStore()
+
+	ks.Lock()
+	ks.Lock()
+	ks.Lock()
+
+	if ks.IsUnlocked() {
+		t.Fatal("should remain locked after multiple Lock() calls")
+	}
+}
+
+func TestKeyStore_GetKey_ModifyCopyDoesNotAffectOriginal(t *testing.T) {
+	ks := newTestKeyStore()
+
+	originalKey := []byte("sk-original-key-12345")
+	ks.Unlock(originalKey)
+
+	copy1, _ := ks.GetKey()
+	copy2, _ := ks.GetKey()
+
+	for i := range copy1 {
+		copy1[i] = 0
+	}
+
+	if string(copy2) != string(originalKey) {
+		t.Errorf("modifying copy1 should not affect copy2, got %q", copy2)
+	}
+
+	internalKey, _ := ks.GetKey()
+	if string(internalKey) != string(originalKey) {
+		t.Errorf("modifying copy should not affect internal key, got %q", internalKey)
+	}
+}
+
+// --- 速率限制 ---
+
+func TestKeyStore_RateLimit_Exactly5Attempts(t *testing.T) {
+	ks := newTestKeyStore()
+	ks.SetAPIKeyConfigured(true)
+
+	password := []byte("WrongPass123")
+	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
+
+	// 4 次失败不应触发速率限制
+	for i := 0; i < 4; i++ {
+		ks.VerifyPassword(password, encrypted)
+	}
+	status := ks.GetLockStatus()
+	if !status.LockedUntil.IsZero() {
+		t.Fatal("rate limit should not be active after 4 failed attempts")
+	}
+
+	// 第 5 次失败触发速率限制
+	ks.VerifyPassword(password, encrypted)
+	status = ks.GetLockStatus()
+	if !status.Locked {
+		t.Fatal("should be locked after 5 failed attempts")
+	}
+	if status.LockedUntil.IsZero() {
+		t.Fatal("LockedUntil should be set after 5 failed attempts")
+	}
+	if time.Now().After(status.LockedUntil) {
+		t.Fatal("LockedUntil should be in the future")
+	}
+	if status.FailedAttempts != 5 {
+		t.Errorf("FailedAttempts should be 5, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_RateLimit_ResetOnCorrectPassword(t *testing.T) {
+	ks := newTestKeyStore()
+
+	correctPassword := []byte("CorrectPass123")
+	encrypted, _ := flowcrypto.Encrypt("test-key", correctPassword)
+
+	for i := 0; i < 4; i++ {
+		ks.VerifyPassword([]byte("WrongPass123"), encrypted)
+	}
+
+	status := ks.GetLockStatus()
+	if status.FailedAttempts != 4 {
+		t.Errorf("FailedAttempts should be 4, got %d", status.FailedAttempts)
+	}
+
+	ok := ks.VerifyPassword(correctPassword, encrypted)
+	if !ok {
+		t.Fatal("correct password should succeed")
+	}
+
+	status = ks.GetLockStatus()
+	if status.FailedAttempts != 0 {
+		t.Errorf("FailedAttempts should be 0 after correct password, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_RateLimit_LockedUntilDuration(t *testing.T) {
+	ks := newTestKeyStore()
 	ks.SetAPIKeyConfigured(true)
 
 	password := []byte("WrongPass123")
@@ -117,24 +243,143 @@ func TestKeyStore_RateLimit(t *testing.T) {
 	}
 
 	status := ks.GetLockStatus()
-	if !status.Locked {
-		t.Fatal("should be locked after 5 failed attempts")
-	}
-	if status.LockedUntil.IsZero() {
-		t.Fatal("LockedUntil should be set")
-	}
-	if time.Now().After(status.LockedUntil) {
-		t.Fatal("LockedUntil should be in the future")
-	}
-	if status.FailedAttempts != 5 {
-		t.Errorf("FailedAttempts should be 5, got %d", status.FailedAttempts)
+	expectedUnlock := time.Now().Add(30 * time.Second)
+
+	diff := status.LockedUntil.Sub(expectedUnlock)
+	if diff < -time.Second || diff > time.Second {
+		t.Errorf("LockedUntil should be ~30s from now, got %v (expected ~%v)", status.LockedUntil, expectedUnlock)
 	}
 }
 
+// TestKeyStore_RateLimit_6Attempts 验证超过阈值后第 6 次调用被速率限制阻止，计数保持为 5。
+func TestKeyStore_RateLimit_6Attempts(t *testing.T) {
+	ks := newTestKeyStore()
+	ks.SetAPIKeyConfigured(true)
+
+	password := []byte("WrongPass123")
+	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
+
+	for i := 0; i < 6; i++ {
+		ks.VerifyPassword(password, encrypted)
+	}
+
+	status := ks.GetLockStatus()
+	if status.LockedUntil.IsZero() {
+		t.Fatal("rate limit should still be active after 6 failed attempts")
+	}
+	if status.FailedAttempts != 5 {
+		t.Errorf("FailedAttempts should be 5 (6th attempt blocked by rate limit), got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_RateLimit_ExpireAndRetry(t *testing.T) {
+	ks := newTestKeyStore()
+	ks.SetAPIKeyConfigured(true)
+
+	ks.lockedUntil = time.Now().Add(-1 * time.Second)
+
+	err := ks.Unlock([]byte("sk-test-key"))
+	if err != nil {
+		t.Fatalf("Unlock should succeed after rate limit expires: %v", err)
+	}
+	if !ks.IsUnlocked() {
+		t.Fatal("should be unlocked after rate limit expires")
+	}
+}
+
+func TestKeyStore_RecordFailedAttempt_Increment(t *testing.T) {
+	ks := newTestKeyStore()
+
+	status := ks.GetLockStatus()
+	if status.FailedAttempts != 0 {
+		t.Fatalf("initial FailedAttempts should be 0, got %d", status.FailedAttempts)
+	}
+
+	ks.RecordFailedAttempt()
+	status = ks.GetLockStatus()
+	if status.FailedAttempts != 1 {
+		t.Errorf("after 1 attempt: FailedAttempts should be 1, got %d", status.FailedAttempts)
+	}
+
+	ks.RecordFailedAttempt()
+	status = ks.GetLockStatus()
+	if status.FailedAttempts != 2 {
+		t.Errorf("after 2 attempts: FailedAttempts should be 2, got %d", status.FailedAttempts)
+	}
+}
+
+func TestKeyStore_RecordFailedAttempt_TriggersRateLimit(t *testing.T) {
+	ks := newTestKeyStore()
+
+	// 4 次不触发
+	for i := 0; i < 4; i++ {
+		ks.RecordFailedAttempt()
+	}
+	status := ks.GetLockStatus()
+	if !status.LockedUntil.IsZero() {
+		t.Fatal("rate limit should not be active after 4 attempts")
+	}
+
+	// 第 5 次触发
+	ks.RecordFailedAttempt()
+	status = ks.GetLockStatus()
+	if status.LockedUntil.IsZero() {
+		t.Fatal("rate limit should be active after 5 attempts")
+	}
+
+	expectedUnlock := time.Now().Add(30 * time.Second)
+	diff := status.LockedUntil.Sub(expectedUnlock)
+	if diff < -time.Second || diff > time.Second {
+		t.Errorf("LockedUntil should be ~30s from now, got %v (expected ~%v)", status.LockedUntil, expectedUnlock)
+	}
+}
+
+func TestKeyStore_RecordFailedAttempt_BlocksVerifyPassword(t *testing.T) {
+	ks := newTestKeyStore()
+
+	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
+
+	for i := 0; i < 5; i++ {
+		ks.RecordFailedAttempt()
+	}
+
+	ok := ks.VerifyPassword([]byte("CorrectPass123"), encrypted)
+	if ok {
+		t.Fatal("VerifyPassword should return false during rate limit period")
+	}
+}
+
+func TestKeyStore_RecordFailedAttempt_UnlockBlocked(t *testing.T) {
+	ks := newTestKeyStore()
+
+	for i := 0; i < 5; i++ {
+		ks.RecordFailedAttempt()
+	}
+
+	err := ks.Unlock([]byte("sk-test-key"))
+	if err == nil {
+		t.Fatal("Unlock should fail during rate limit period")
+	}
+}
+
+func TestKeyStore_VerifyPassword_BlockedDuringRateLimit_ExpiredRecovers(t *testing.T) {
+	ks := newTestKeyStore()
+
+	correctPassword := []byte("CorrectPass123")
+	encrypted, _ := flowcrypto.Encrypt("test-key", correctPassword)
+
+	ks.lockedUntil = time.Now().Add(-1 * time.Second)
+
+	ok := ks.VerifyPassword(correctPassword, encrypted)
+	if !ok {
+		t.Fatal("VerifyPassword should succeed once rate limit expired")
+	}
+}
+
+// --- VerifyPassword 基本行为 ---
+
 func TestKeyStore_VerifyPasswordCorrect(t *testing.T) {
-	once = sync.Once{}
-	instance = &KeyStore{}
-	ks := instance
+	ks := newTestKeyStore()
 
 	password := []byte("CorrectPass123")
 	encrypted, _ := flowcrypto.Encrypt("test-key", password)
@@ -151,9 +396,7 @@ func TestKeyStore_VerifyPasswordCorrect(t *testing.T) {
 }
 
 func TestKeyStore_VerifyPasswordWrong(t *testing.T) {
-	once = sync.Once{}
-	instance = &KeyStore{}
-	ks := instance
+	ks := newTestKeyStore()
 
 	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 
@@ -168,9 +411,10 @@ func TestKeyStore_VerifyPasswordWrong(t *testing.T) {
 	}
 }
 
+// --- 锁状态标志 ---
+
 func TestKeyStore_GetLockStatus_HasAPIKey(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	ks.SetAPIKeyConfigured(true)
 	status := ks.GetLockStatus()
@@ -185,9 +429,28 @@ func TestKeyStore_GetLockStatus_HasAPIKey(t *testing.T) {
 	}
 }
 
+func TestKeyStore_SetAPIKeyConfigured_Idempotent(t *testing.T) {
+	ks := newTestKeyStore()
+
+	ks.SetAPIKeyConfigured(true)
+	ks.SetAPIKeyConfigured(true)
+	status := ks.GetLockStatus()
+	if !status.HasAPIKey {
+		t.Fatal("HasAPIKey should be true")
+	}
+
+	ks.SetAPIKeyConfigured(false)
+	ks.SetAPIKeyConfigured(false)
+	status = ks.GetLockStatus()
+	if status.HasAPIKey {
+		t.Fatal("HasAPIKey should be false")
+	}
+}
+
+// --- 并发 ---
+
 func TestKeyStore_ConcurrentAccess(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	ks.Unlock([]byte("sk-test-key"))
 
@@ -206,23 +469,49 @@ func TestKeyStore_ConcurrentAccess(t *testing.T) {
 	}
 }
 
-func TestKeyStore_RateLimitExpired(t *testing.T) {
-	once = sync.Once{}
-	instance = &KeyStore{}
-	ks := instance
+// TestKeyStore_ConcurrentUnlockLock 验证并发 Unlock/Lock 不会死锁。
+func TestKeyStore_ConcurrentUnlockLock(t *testing.T) {
+	ks := newTestKeyStore()
 
-	ks.lockedUntil = time.Now().Add(-1 * time.Second)
-
-	apiKey := []byte("sk-test-key")
-	err := ks.Unlock(apiKey)
-	if err != nil {
-		t.Fatalf("Unlock should succeed after rate limit expires: %v", err)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			ks.Unlock([]byte("sk-test-key"))
+		}()
+		go func() {
+			defer wg.Done()
+			ks.Lock()
+		}()
 	}
+	wg.Wait()
 }
 
+func TestKeyStore_ConcurrentVerifyPassword(t *testing.T) {
+	ks := newTestKeyStore()
+
+	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if idx%2 == 0 {
+				ks.VerifyPassword([]byte("WrongPass123"), encrypted)
+			} else {
+				ks.VerifyPassword([]byte("CorrectPass123"), encrypted)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+// --- SwitchKey / TryActivate ---
+
 func TestKeyStore_SwitchKey(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	oldKey := []byte("sk-old-key")
 	if err := ks.Unlock(oldKey); err != nil {
@@ -250,8 +539,7 @@ func TestKeyStore_SwitchKey(t *testing.T) {
 }
 
 func TestKeyStore_TryActivate_Success(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	encrypted, err := flowcrypto.Encrypt("sk-activate-key", []byte("CorrectPass123"))
 	if err != nil {
@@ -277,8 +565,7 @@ func TestKeyStore_TryActivate_Success(t *testing.T) {
 }
 
 func TestKeyStore_TryActivate_WrongPassword(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	encrypted, err := flowcrypto.Encrypt("test-key", []byte("sk-activate-key"))
 	if err != nil {
@@ -304,8 +591,7 @@ func TestKeyStore_TryActivate_WrongPassword(t *testing.T) {
 }
 
 func TestKeyStore_TryActivate_RateLimited(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	encrypted, err := flowcrypto.Encrypt("test-key", []byte("sk-activate-key"))
 	if err != nil {
@@ -332,8 +618,7 @@ func TestKeyStore_TryActivate_RateLimited(t *testing.T) {
 }
 
 func TestKeyStore_TryActivate_SwitchZeroesOldKey(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	encrypted, err := flowcrypto.Encrypt("sk-new-after-switch", []byte("CorrectPass123"))
 	if err != nil {
@@ -356,9 +641,10 @@ func TestKeyStore_TryActivate_SwitchZeroesOldKey(t *testing.T) {
 	}
 }
 
+// --- LockedUntil 访问器 ---
+
 func TestKeyStore_LockedUntil(t *testing.T) {
-	Reset()
-	ks := Instance()
+	ks := newTestKeyStore()
 
 	if !ks.LockedUntil().IsZero() {
 		t.Fatal("LockedUntil should be zero initially")

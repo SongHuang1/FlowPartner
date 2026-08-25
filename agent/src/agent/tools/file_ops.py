@@ -1,47 +1,89 @@
+import json
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+from agent.tools.context import current_session_id
+
+if TYPE_CHECKING:
+    from agent.grpc_client import FlowPartnerClient
 
 
-async def read_file(path: str) -> str:
-    """读取本地文件内容"""
-    logging.info(f"[Tool] Reading file: {path}")
-    file_path = Path(path)
-    if not file_path.exists():
-        return f"找不到文件：{path}"
-    if not file_path.is_file():
-        return f"路径不是文件：{path}"
-    try:
-        content = file_path.read_text(encoding="utf-8")
-        # 防止文件过大撑爆上下文
-        if len(content) > 10000:
-            content = content[:10000] + "\n... [文件过长，已截断]"
-        return content
-    except Exception as e:
-        return f"读取文件失败：{str(e)}"
+def _format_result(result: dict) -> str:
+    """将 Go 端工具结果格式化为对 LLM 友好的 JSON（含错误码，供模型决策）。"""
+    return json.dumps({
+        "success": result.get("success", False),
+        "result": result.get("result", ""),
+        "error_code": result.get("error_code", ""),
+    }, ensure_ascii=False)
 
-async def write_file(path: str, content: str) -> str:
-    """写入内容到本地文件"""
-    logging.info(f"[Tool] Writing file: {path}")
-    try:
-        file_path = Path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(content, encoding="utf-8")
-        return f"成功向 {path} 写入 {len(content)} 个字符"
-    except Exception as e:
-        return f"写入文件失败：{str(e)}"
 
-async def list_directory(path: str) -> str:
-    """列出目录内容"""
-    logging.info(f"[Tool] Listing directory: {path}")
-    dir_path = Path(path)
-    if not dir_path.exists():
-        return f"找不到目录：{path}"
-    if not dir_path.is_dir():
-        return f"路径不是目录：{path}"
-    try:
-        items = []
-        for item in dir_path.iterdir():
-            items.append(f"{item.name}")
-        return "\n".join(items) if items else "（空目录）"
-    except Exception as e:
-        return f"列出目录失败：{str(e)}"
+def make_read_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 read 工具 handler。"""
+
+    async def read(path: str) -> str:
+        logging.info(f"[Tool] Read (via Go): {path}")
+        result = await client.execute_tool(current_session_id(), "read", {"path": path})
+        return result["result"]
+
+    return read
+
+
+def make_write_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 write 工具 handler。"""
+
+    async def write(path: str, content: str) -> str:
+        logging.info(f"[Tool] Write (via Go): {path}")
+        result = await client.execute_tool(current_session_id(), "write", {"path": path, "content": content})
+        return result["result"]
+
+    return write
+
+
+def make_bash_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 bash 工具 handler。"""
+
+    async def bash(command: str) -> str:
+        logging.info(f"[Tool] Bash (via Go): {command}")
+        result = await client.execute_tool(current_session_id(), "bash", {"command": command})
+        return _format_result(result)
+
+    return bash
+
+
+def make_edit_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 edit 工具 handler。"""
+
+    async def edit(path: str, old_string: str, new_string: str) -> str:
+        logging.info(f"[Tool] Edit (via Go): {path}")
+        result = await client.execute_tool(current_session_id(), "edit", {
+            "path": path,
+            "old_string": old_string,
+            "new_string": new_string,
+        })
+        return result["result"]
+
+    return edit
+
+
+def make_trash_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 trash 工具 handler（移入回收站，可恢复）。"""
+
+    async def trash(path: str = "", paths: list | None = None) -> str:
+        args = {"paths": paths} if paths else {"path": path}
+        logging.info(f"[Tool] Trash (via Go): {args}")
+        result = await client.execute_tool(current_session_id(), "trash", args)
+        return _format_result(result)
+
+    return trash
+
+
+def make_purge_handler(client: "FlowPartnerClient"):
+    """创建通过 Go 执行的 purge 工具 handler（永久删除，需显式审批）。"""
+
+    async def purge(entry: str = "") -> str:
+        args = {"entry": entry} if entry else {}
+        logging.info(f"[Tool] Purge (via Go): {args}")
+        result = await client.execute_tool(current_session_id(), "purge", args)
+        return _format_result(result)
+
+    return purge

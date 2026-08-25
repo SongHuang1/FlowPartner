@@ -1,7 +1,7 @@
 {
   "name": "flowpartner-frontend",
   "private": true,
-  "version": "0.0.4",
+  "version": "0.0.7",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "FlowPartner - AI Agent 桌面应用",
@@ -23,14 +23,20 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "katex": "^0.18.4",
     "lucide-react": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-markdown": "^9.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.2.0",

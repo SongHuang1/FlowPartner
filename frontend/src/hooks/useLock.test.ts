@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { useLock, LockProvider } from '@/hooks/useLock'
 
@@ -11,6 +11,17 @@ vi.mock('@/lib/api', () => ({
   getLockStatus: () => mockGetLockStatus(),
   unlock: (password: string) => mockUnlock(password),
   lock: () => mockLock(),
+}))
+
+vi.mock('@/hooks/useSettings', () => ({
+  useSettings: () => ({
+    settings: {},
+    loading: false,
+    error: null,
+    updateSettings: vi.fn(),
+    getCurrentSettings: vi.fn(),
+    refreshSettings: vi.fn(),
+  }),
 }))
 
 function lockWrapper({ children }: { children: ReactNode }) {
@@ -29,12 +40,12 @@ describe('useLock', () => {
     mockLock.mockResolvedValue(undefined)
   })
 
-  it('returns initial lock status', () => {
+  it('returns initial lock status', async () => {
     const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
+    await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.lockStatus.locked).toBe(true)
     expect(result.current.lockStatus.failed_attempts).toBe(0)
     expect(result.current.lockStatus.has_api_key).toBe(false)
-    expect(result.current.loading).toBe(false)
     expect(result.current.error).toBeNull()
   })
 
@@ -62,7 +73,6 @@ describe('useLock', () => {
       await result.current.unlock('TestPass123')
     })
 
-    // After successful unlock, status should be updated
     expect(result.current.lockStatus.locked).toBe(false)
     expect(result.current.error).toBeNull()
   })
@@ -101,7 +111,6 @@ describe('useLock', () => {
       }
     })
 
-    // Status should be refreshed even on failure
     expect(result.current.lockStatus.failed_attempts).toBe(1)
   })
 
@@ -172,7 +181,6 @@ describe('useLock', () => {
       await result.current.refreshStatus()
     })
 
-    // Error message comes from the Error object
     expect(result.current.error).toBe('Network error')
   })
 
@@ -185,7 +193,6 @@ describe('useLock', () => {
       await result.current.refreshStatus()
     })
 
-    // Non-Error exceptions get the default message
     expect(result.current.error).toBe('获取锁定状态失败')
   })
 
@@ -275,7 +282,6 @@ describe('useLock', () => {
   })
 
   it('clears error on successful unlock after failure', async () => {
-    // First fail
     mockUnlock.mockRejectedValueOnce(new Error('Wrong password'))
     const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
@@ -289,7 +295,6 @@ describe('useLock', () => {
 
     expect(result.current.error).toBe('Wrong password')
 
-    // Then succeed
     mockUnlock.mockResolvedValue(undefined)
     mockGetLockStatus.mockResolvedValue({
       locked: false,
@@ -313,12 +318,10 @@ describe('useLock', () => {
 
     renderHook(() => useLock(), { wrapper: lockWrapper })
 
-    // Dispatch system-lock event (simulating powerMonitor suspend/lock-screen)
     await act(async () => {
       window.dispatchEvent(new CustomEvent('system-lock'))
     })
 
-    // Verify lock API was called
     expect(mockLock).toHaveBeenCalled()
   })
 
@@ -332,12 +335,10 @@ describe('useLock', () => {
 
     const { result } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
-    // Dispatch system-lock event
     await act(async () => {
       window.dispatchEvent(new CustomEvent('system-lock'))
     })
 
-    // After system-lock, status should be refreshed
     expect(result.current.lockStatus.locked).toBe(true)
     expect(result.current.lockStatus.has_api_key).toBe(true)
   })
@@ -345,27 +346,22 @@ describe('useLock', () => {
   it('does not call lock() for other custom events', async () => {
     renderHook(() => useLock(), { wrapper: lockWrapper })
 
-    // Dispatch an unrelated custom event
     await act(async () => {
       window.dispatchEvent(new CustomEvent('some-other-event'))
     })
 
-    // lock should NOT be called
     expect(mockLock).not.toHaveBeenCalled()
   })
 
   it('cleans up event listener on unmount', async () => {
     const { unmount } = renderHook(() => useLock(), { wrapper: lockWrapper })
 
-    // Unmount the hook
     unmount()
 
-    // Dispatch system-lock event after unmount
     await act(async () => {
       window.dispatchEvent(new CustomEvent('system-lock'))
     })
 
-    // lock should NOT be called after unmount
     expect(mockLock).not.toHaveBeenCalled()
   })
 
@@ -374,12 +370,10 @@ describe('useLock', () => {
 
     renderHook(() => useLock(), { wrapper: lockWrapper })
 
-    // Dispatch system-lock event - should not throw
     await act(async () => {
       window.dispatchEvent(new CustomEvent('system-lock'))
     })
 
-    // lock was attempted
     expect(mockLock).toHaveBeenCalled()
   })
 })

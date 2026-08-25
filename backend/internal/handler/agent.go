@@ -1,31 +1,38 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
+	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
+	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type AgentHandler struct {
 	proto.UnimplementedFlowPartnerServiceServer
-	manager  *bridge.Manager
-	llmClient *llm.LLMClient
+	manager         *bridge.Manager
+	llmClient       *llm.LLMClient
+	approvalManager *tools.ApprovalManager
 }
 
-func NewAgentHandler(m *bridge.Manager) *AgentHandler {
+// NewAgentHandler 创建 AgentHandler。approvalManager 用于越权审批流程。
+func NewAgentHandler(m *bridge.Manager, am *tools.ApprovalManager) *AgentHandler {
 	return &AgentHandler{
-		manager:   m,
-		llmClient: llm.NewClient(),
+		manager:         m,
+		llmClient:       llm.NewClient(),
+		approvalManager: am,
 	}
 }
 
@@ -46,6 +53,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 						log.Printf("Failed to send command to Python: %s", sanitize.Error(err))
 						return
 					}
+					log.Printf("[SyncChannel] Sent command to Python: type=%s session=%s", cmd.CommandType, cmd.SessionId)
 				case <-stream.Context().Done():
 					return
 				case <-time.After(30 * time.Second):
@@ -158,9 +166,9 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 			continue
 		}
 		resp := &proto.LLMResponse{
-			IsError:     chunk.Done && chunk.Data != "",
+			IsError:      chunk.Done && chunk.Data != "",
 			JsonResponse: chunk.Data,
-			MessageId:   messageID,
+			MessageId:    messageID,
 		}
 		if err := stream.Send(resp); err != nil {
 			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
@@ -171,11 +179,157 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	return nil
 }
 
+func (h *AgentHandler) ListAgents(ctx context.Context, _ *proto.Empty) (*proto.AgentDefList, error) {
+	defs, err := storage.LoadAgents()
+	if err != nil {
+		log.Printf("[ListAgents] 读取智能体定义失败: %s", sanitize.Error(err))
+		return nil, status.Errorf(codes.Internal, "读取智能体定义失败")
+	}
+
+	main := BuiltinMainAgent()
+	result := []*proto.AgentDef{agentDefToProto(main)}
+	for _, d := range defs {
+		result = append(result, agentDefToProto(d))
+	}
+	return &proto.AgentDefList{Agents: result}, nil
+}
+
+func (h *AgentHandler) GetAgent(ctx context.Context, req *proto.AgentId) (*proto.AgentDef, error) {
+	if req == nil || req.Id == "" {
+		return nil, status.Error(codes.InvalidArgument, "智能体 ID 不能为空")
+	}
+	if req.Id == mainAgentID {
+		return agentDefToProto(BuiltinMainAgent()), nil
+	}
+
+	defs, err := storage.LoadAgents()
+	if err != nil {
+		log.Printf("[GetAgent] 读取智能体定义失败: %s", sanitize.Error(err))
+		return nil, status.Errorf(codes.Internal, "读取智能体定义失败")
+	}
+	for _, d := range defs {
+		if d.ID == req.Id {
+			return agentDefToProto(d), nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "智能体不存在: %s", req.Id)
+}
+
+// agentDefToProto 将存储层智能体定义转换为 proto 消息。
+func agentDefToProto(def storage.AgentDef) *proto.AgentDef {
+	return &proto.AgentDef{
+		Id:           def.ID,
+		Name:         def.Name,
+		Description:  def.Description,
+		SystemPrompt: def.SystemPrompt,
+		CreatedAt:    def.CreatedAt,
+		UpdatedAt:    def.UpdatedAt,
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, messageID string, llmErr *llm.LLMError) error {
 	data, _ := json.Marshal(llmErr)
 	return stream.Send(&proto.LLMResponse{
 		IsError:      true,
 		JsonResponse: string(data),
-		MessageId:   messageID,
+		MessageId:    messageID,
 	})
+}
+
+func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
+	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
+
+	// 空 session_id 无法关联审批弹窗，直接拒绝（防呆：避免工具永久挂起等待用户响应）
+	if req.SessionId == "" {
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    "工具请求缺少会话标识，已拒绝执行",
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
+	settings := LoadSettings()
+	workingDir := settings.WorkingDirectory
+
+	// 工作目录为空时回退到用户主目录
+	if workingDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("[ExecuteTool] 无法获取用户主目录: %v", err)
+			return &proto.ToolResponse{
+				Success:   false,
+				Result:    "无法获取工作目录：未设置工作目录且无法解析用户主目录",
+				ErrorCode: tools.ErrToolError,
+			}, nil
+		}
+		workingDir = homeDir
+		log.Printf("[ExecuteTool] 未设置工作目录，已回退到用户主目录: %s", workingDir)
+	}
+
+	executor, err := tools.NewToolExecutor(workingDir, tools.WithTrashDir(settings.TrashDir))
+	if err != nil {
+		log.Printf("[ExecuteTool] 创建工具执行器失败: %v", err)
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    "无法创建工具执行器: " + err.Error(),
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
+	// 审批流程：检查路径是否越权
+	needsPermission, rawPath, resolvedPath, checkErr := executor.CheckPath(req.ToolName, req.Arguments)
+	if checkErr != nil {
+		log.Printf("[ExecuteTool] 路径检查异常: %v", checkErr)
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    checkErr.Error(),
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
+	if needsPermission {
+		if req.ApprovalId == "" {
+			if req.ToolName != "purge" && h.approvalManager.IsTrusted(req.SessionId, req.ToolName, resolvedPath) {
+				log.Printf("[ExecuteTool] Session trust hit, skipping approval: tool=%s path=%s", req.ToolName, resolvedPath)
+			} else {
+				requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
+				log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
+				return &proto.ToolResponse{
+					NeedsPermission: true,
+					RequestId:       requestID,
+				}, nil
+			}
+		} else {
+			if !h.approvalManager.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
+				return &proto.ToolResponse{
+					Success:   false,
+					Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
+					ErrorCode: tools.ErrPathOutside,
+				}, nil
+			}
+			log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
+		}
+	}
+
+	// 正常执行（审批通过或路径在工作目录内）
+	// 审批通过时携带 WithApproval 标记，跳过工具内的二次路径校验
+	execCtx := ctx
+	if needsPermission {
+		execCtx = tools.WithApproval(ctx)
+		execCtx = tools.WithApprovalID(execCtx, req.ApprovalId)
+	}
+	result := executor.Execute(execCtx, req.SessionId, req.ToolName, req.Arguments)
+
+	return &proto.ToolResponse{
+		Success:   result.Success,
+		Result:    result.Result,
+		ErrorCode: result.ErrorCode,
+	}, nil
 }

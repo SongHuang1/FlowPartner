@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getApiPort, updateApiBase } from '@/lib/api'
-import type { Message } from '@/types'
+import { getApiPort } from '@/lib/api'
+import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep, ContentBlock } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -16,14 +16,20 @@ type ConnectionState =
 
 const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_INTERVAL_MS = 3000
-const PROCESSING_TIMEOUT_MS = 60000
+const PROCESSING_TIMEOUT_MS = 300000
 const MIN_PORT = 1024
 const MAX_PORT = 65535
 
-function isKnownEventType(
-  type: string,
-): type is 'status_update' | 'tool_call' | 'tool_result' | 'final_answer' | 'error' {
-  return ['status_update', 'tool_call', 'tool_result', 'final_answer', 'error'].includes(type)
+const KNOWN_EVENT_TYPES = [
+  'status_update', 'tool_call', 'tool_result', 'final_answer',
+  'error', 'permission_request', 'iteration_start', 'llm_chunk',
+  'loop_terminated', 'snapshot_status', 'snapshot_message',
+  'subagent_start', 'subagent_step', 'subagent_end', 'subagent_error',
+  'agents_changed',
+] as const
+
+function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
+  return (KNOWN_EVENT_TYPES as readonly string[]).includes(type)
 }
 
 export interface UseWebSocketReturn {
@@ -32,15 +38,158 @@ export interface UseWebSocketReturn {
   reconnectAttempts: number
   isReconnectExhausted: boolean
   processing: boolean
-  sendMessage: (content: string, sessionId: string, history: Message[]) => boolean
+  sendMessage: (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string) => boolean
+  sendCancel: (sessionId: string) => void
+  sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => void
+  sendManualSnapshot: () => void
+  sendRestore: (snapshotId: string, deleteExtras: boolean) => void
+  sendSystemLock: () => void
   events: ChatEvent[]
+  steps: IterationStep[]
+  subagentRuns: SubAgentRun[]
   manualReconnect: () => void
-  onFinalAnswer: (cb: (answer: string) => void) => () => void
+  onStreamChunk: (cb: (chunk: string) => void) => () => void
+  onAgentsChanged: (cb: () => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
+  onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
+  onSnapshotStatus: (cb: (status: SnapshotStatus) => void) => () => void
+  onSnapshotMessage: (cb: (message: SnapshotMessage) => void) => () => void
 }
 
+function buildSteps(events: ChatEvent[]): IterationStep[] {
+  const steps: IterationStep[] = []
+  let current: IterationStep | null = null
 
+  for (const evt of events) {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(evt.payload)
+    } catch {
+      continue
+    }
+
+    if (evt.event_type === 'iteration_start') {
+      current = {
+        iteration: (parsed.iteration as number) || steps.length + 1,
+        thinking: '',
+        toolCalls: [],
+      }
+      steps.push(current)
+      continue
+    }
+
+    if (evt.event_type === 'llm_chunk') {
+      if (!current) {
+        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
+        steps.push(current)
+      }
+      current.thinking += (parsed.content as string) || ''
+      continue
+    }
+
+    if (evt.event_type === 'tool_call') {
+      if (!current) {
+        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
+        steps.push(current)
+      }
+      current.toolCalls.push({
+        tool: (parsed.tool as string) || '',
+        args: (parsed.args as Record<string, unknown>) || {},
+        call_id: (parsed.call_id as string) || '',
+      })
+      continue
+    }
+
+    if (evt.event_type === 'tool_result') {
+      const callId = (parsed.call_id as string) || ''
+      for (const step of steps) {
+        const tc = step.toolCalls.find((t) => t.call_id === callId)
+        if (tc) {
+          tc.result = (parsed.result as string) || ''
+          tc.truncated = parsed.truncated as boolean | undefined
+          break
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'loop_terminated') {
+      if (!current) {
+        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
+        steps.push(current)
+      }
+      current.loopTerminated = { reason: (parsed.reason as string) || '' }
+    }
+  }
+
+  return steps
+}
+
+function buildSubagentRuns(events: ChatEvent[]): SubAgentRun[] {
+  const runs = new Map<string, SubAgentRun>()
+  const order: string[] = []
+
+  for (const evt of events) {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(evt.payload)
+    } catch {
+      continue
+    }
+
+    const spanId = (parsed.span_id as string) || ''
+    if (!spanId) continue
+
+    let run = runs.get(spanId)
+    if (evt.event_type === 'subagent_start') {
+      if (!run) {
+        run = {
+          agent_id: (parsed.agent_id as string) || '',
+          agent_name: (parsed.agent_name as string) || '',
+          depth: (parsed.depth as number) || 1,
+          span_id: spanId,
+          trace_id: (parsed.trace_id as string) || '',
+          parent_span_id: (parsed.parent_span_id as string) || undefined,
+          status: 'running',
+          task: (parsed.task as string) || '',
+          steps: [],
+        }
+        runs.set(spanId, run)
+        order.push(spanId)
+      }
+      continue
+    }
+
+    if (!run) continue
+
+    if (evt.event_type === 'subagent_step') {
+      const step: SubAgentStep = {
+        step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
+      }
+      if (typeof parsed.content === 'string') step.content = parsed.content
+      if (typeof parsed.tool === 'string') step.tool = parsed.tool
+      if (parsed.args && typeof parsed.args === 'object') step.args = parsed.args as Record<string, unknown>
+      if (typeof parsed.result === 'string') step.result = parsed.result
+      if (typeof parsed.truncated === 'boolean') step.truncated = parsed.truncated
+      run.steps.push(step)
+      continue
+    }
+
+    if (evt.event_type === 'subagent_end') {
+      run.status = 'done'
+      if (typeof parsed.result === 'string') run.result = parsed.result
+      continue
+    }
+
+    if (evt.event_type === 'subagent_error') {
+      run.status = 'error'
+      run.error = (parsed.message as string) || '未知错误'
+    }
+  }
+
+  return order.map((id) => runs.get(id)!).filter(Boolean)
+}
 
 export function useWebSocket(): UseWebSocketReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
@@ -54,14 +203,21 @@ export function useWebSocket(): UseWebSocketReturn {
   const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionEndedRef = useRef(false)
   const mountedRef = useRef(true)
-  const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
+  const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
+  const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
+  const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
+  const snapshotStatusCallbacksRef = useRef<Set<(status: SnapshotStatus) => void>>(new Set())
+  const snapshotMessageCallbacksRef = useRef<Set<(message: SnapshotMessage) => void>>(new Set())
   const connectRef = useRef<(port: number) => void>(() => {})
+  const sessionIdRef = useRef<string>('')
 
   const connected = connectionState === 'connected'
   const reconnecting = connectionState === 'reconnecting'
   const isReconnectExhausted = connectionState === 'reconnect_exhausted'
+  const steps = buildSteps(events)
+  const subagentRuns = buildSubagentRuns(events)
 
   const clearProcessingTimer = useCallback(() => {
     if (processingTimerRef.current) {
@@ -89,11 +245,7 @@ export function useWebSocket(): UseWebSocketReturn {
       if (port < MIN_PORT || port > MAX_PORT) {
         const msg = `端口 ${port} 不在安全范围（${MIN_PORT}-${MAX_PORT}），已拒绝连接`
         securityCallbacksRef.current.forEach((cb) => {
-          try {
-            cb(msg)
-          } catch (e) {
-            console.error('Security callback error:', e)
-          }
+          try { cb(msg) } catch (e) { console.error('Security callback error:', e) }
         })
         return
       }
@@ -110,10 +262,7 @@ export function useWebSocket(): UseWebSocketReturn {
       const ws = new WebSocket(`ws://localhost:${port}/ws`)
 
       ws.onopen = () => {
-        if (!mountedRef.current) {
-          ws.close()
-          return
-        }
+        if (!mountedRef.current) { ws.close(); return }
         reconnectAttemptsRef.current = 0
         setReconnectAttempts(0)
         setConnectionState('connected')
@@ -135,7 +284,44 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
-        if (sessionEndedRef.current) {
+        // 快照事件是全局事件（与对话无关），不进入会话事件流，也不受会话结束状态门控
+        if (raw.event_type === 'snapshot_status') {
+          try {
+            const parsed = JSON.parse(raw.payload) as SnapshotStatus
+            snapshotStatusCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onSnapshotStatus callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse snapshot_status payload:', raw.payload)
+          }
+          return
+        }
+
+        if (raw.event_type === 'snapshot_message') {
+          try {
+            const parsed = JSON.parse(raw.payload) as SnapshotMessage
+            snapshotMessageCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onSnapshotMessage callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse snapshot_message payload:', raw.payload)
+          }
+          return
+        }
+
+        if (sessionEndedRef.current) return
+
+        if (raw.event_type === 'llm_chunk') {
+          setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload)
+            const content = (parsed.content as string) || ''
+            streamChunkCallbacksRef.current.forEach((cb) => {
+              try { cb(content) } catch (e) { console.error('onStreamChunk callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse llm_chunk payload:', raw.payload)
+          }
           return
         }
 
@@ -144,31 +330,39 @@ export function useWebSocket(): UseWebSocketReturn {
           sessionEndedRef.current = true
         }
 
-        if (raw.event_type === 'status_update' || raw.event_type === 'tool_call' || raw.event_type === 'tool_result') {
+        if (raw.event_type === 'permission_request') {
           setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload) as PermissionRequestPayload
+            permissionRequestCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onPermissionRequest callback error:', e) }
+            })
+          } catch {
+            console.error('Failed to parse permission_request payload:', raw.payload)
+          }
           return
         }
 
         if (raw.event_type === 'final_answer') {
+          // 只入队；由事件流消费者检测到终态后统一定稿消息（避免闭包 events 过期）
           setEvents((prev) => [...prev, raw])
-          let answer: string
-          try {
-            const parsed = JSON.parse(raw.payload)
-            if (typeof parsed.text !== 'string') {
-              console.error('final_answer payload missing text field')
-              return
-            }
-            answer = parsed.text
-          } catch {
-            console.error('Failed to parse final_answer payload:', raw.payload)
-            return
-          }
-          finalAnswerCallbacksRef.current.forEach((cb) => {
-            try {
-              cb(answer)
-            } catch (e) {
-              console.error('onFinalAnswer callback error:', e)
-            }
+          return
+        }
+
+        // 子智能体事件只进入事件流，由 deriveContentBlocks 统一构建内容块
+        if (raw.event_type === 'subagent_start' || raw.event_type === 'subagent_step' || raw.event_type === 'subagent_error') {
+          setEvents((prev) => [...prev, raw])
+          return
+        }
+
+        if (raw.event_type === 'subagent_end') {
+          setEvents((prev) => [...prev, raw])
+          return
+        }
+
+        if (raw.event_type === 'agents_changed') {
+          agentsChangedCallbacksRef.current.forEach((cb) => {
+            try { cb() } catch (e) { console.error('onAgentsChanged callback error:', e) }
           })
           return
         }
@@ -188,14 +382,12 @@ export function useWebSocket(): UseWebSocketReturn {
             return
           }
           errorCallbacksRef.current.forEach((cb) => {
-            try {
-              cb(message)
-            } catch (e) {
-              console.error('onError callback error:', e)
-            }
+            try { cb(message) } catch (e) { console.error('onError callback error:', e) }
           })
           return
         }
+
+        setEvents((prev) => [...prev, raw])
       }
 
       ws.onclose = () => {
@@ -218,20 +410,15 @@ export function useWebSocket(): UseWebSocketReturn {
         }, RECONNECT_INTERVAL_MS)
       }
 
-      ws.onerror = () => {
-        ws.close()
-      }
+      ws.onerror = () => { ws.close() }
 
       wsRef.current = ws
     },
     [clearReconnectTimer, resetProcessing],
   )
 
-  const processingRef = useRef(processing)
-
   useEffect(() => {
     connectRef.current = connect
-    processingRef.current = processing
   })
 
   useEffect(() => {
@@ -242,53 +429,41 @@ export function useWebSocket(): UseWebSocketReturn {
       connectRef.current(port)
     }
 
-    const handlePortChanged = (newPort: number) => {
-      if (processingRef.current) {
-        resetProcessing()
-        errorCallbacksRef.current.forEach((cb) => {
-          try {
-            cb('连接已断开，请重试')
-          } catch (e) {
-            console.error('onError callback error:', e)
-          }
-        })
-      }
-      updateApiBase(newPort)
-      connectRef.current(newPort)
-    }
-
-    let unsubscribePortChanged: (() => void) | undefined
-    if (window.flowPartner?.onBackendPortChanged) {
-      unsubscribePortChanged = window.flowPartner.onBackendPortChanged(handlePortChanged)
-    }
-
-    const finalAnswerCbs = finalAnswerCallbacksRef.current
+    const streamChunkCbs = streamChunkCallbacksRef.current
+    const agentsChangedCbs = agentsChangedCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
+    const permissionCbs = permissionRequestCallbacksRef.current
+    const snapshotStatusCbs = snapshotStatusCallbacksRef.current
+    const snapshotMessageCbs = snapshotMessageCallbacksRef.current
 
     return () => {
       mountedRef.current = false
       clearReconnectTimer()
       clearProcessingTimer()
-      unsubscribePortChanged?.()
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
       }
-      finalAnswerCbs.clear()
+      streamChunkCbs.clear()
+      agentsChangedCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
+      permissionCbs.clear()
+      snapshotStatusCbs.clear()
+      snapshotMessageCbs.clear()
       setEvents([])
     }
   }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
 
   const sendMessage = useCallback(
-    (content: string, sessionId: string, history: Message[]): boolean => {
+    (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string): boolean => {
       const trimmed = content.trim()
       if (!trimmed) return false
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
       if (processing) return false
 
+      sessionIdRef.current = sessionId
       setEvents([])
       sessionEndedRef.current = false
       setProcessing(true)
@@ -297,25 +472,78 @@ export function useWebSocket(): UseWebSocketReturn {
         resetProcessing()
         sessionEndedRef.current = true
         errorCallbacksRef.current.forEach((cb) => {
-          try {
-            cb('请求超时，请重试')
-          } catch (e) {
-            console.error('onError callback error:', e)
-          }
+          try { cb('请求超时，请重试') } catch (e) { console.error('onError callback error:', e) }
         })
       }, PROCESSING_TIMEOUT_MS)
+
+      const historyPayload = history.map((m) => {
+        const entry: Record<string, unknown> = { role: m.role, content: m.content }
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          entry.tool_calls = m.tool_calls
+        }
+        if (m.tool_call_id) {
+          entry.tool_call_id = m.tool_call_id
+        }
+        if (m.name) {
+          entry.name = m.name
+        }
+        return entry
+      })
 
       const msg = JSON.stringify({
         action: 'start_chat',
         content: trimmed,
         session_id: sessionId,
-        history: history.map((m) => ({ role: m.role, content: m.content })),
+        history: historyPayload,
+        executor_agent_id: executorAgentId || '',
+        inject_agent_id: injectAgentId || '',
       })
       wsRef.current.send(msg)
       return true
     },
     [processing, clearProcessingTimer, resetProcessing],
   )
+
+  const sendCancel = useCallback((sessionId: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'cancel_task',
+      session_id: sessionId,
+    }))
+  }, [])
+
+  const sendPermissionResponse = useCallback((sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    const payload: Record<string, string> = {
+      action: 'permission_response',
+      session_id: sessionId,
+      request_id: requestId,
+      decision,
+    }
+    if (decision === 'allow' && scope) {
+      payload.scope = scope
+    }
+    wsRef.current.send(JSON.stringify(payload))
+  }, [])
+
+  const sendManualSnapshot = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({ action: 'manual_snapshot' }))
+  }, [])
+
+  const sendRestore = useCallback((snapshotId: string, deleteExtras: boolean) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'restore',
+      snapshot_id: snapshotId,
+      delete_extras: deleteExtras,
+    }))
+  }, [])
+
+  const sendSystemLock = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({ action: 'system_lock' }))
+  }, [])
 
   const manualReconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
@@ -324,25 +552,39 @@ export function useWebSocket(): UseWebSocketReturn {
     if (port) connectRef.current(port)
   }, [])
 
-  const onFinalAnswer = useCallback((cb: (answer: string) => void) => {
-    finalAnswerCallbacksRef.current.add(cb)
-    return () => {
-      finalAnswerCallbacksRef.current.delete(cb)
-    }
+  const onStreamChunk = useCallback((cb: (chunk: string) => void) => {
+    streamChunkCallbacksRef.current.add(cb)
+    return () => { streamChunkCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onAgentsChanged = useCallback((cb: () => void) => {
+    agentsChangedCallbacksRef.current.add(cb)
+    return () => { agentsChangedCallbacksRef.current.delete(cb) }
   }, [])
 
   const onError = useCallback((cb: (message: string) => void) => {
     errorCallbacksRef.current.add(cb)
-    return () => {
-      errorCallbacksRef.current.delete(cb)
-    }
+    return () => { errorCallbacksRef.current.delete(cb) }
   }, [])
 
   const onSecurityEvent = useCallback((cb: (message: string) => void) => {
     securityCallbacksRef.current.add(cb)
-    return () => {
-      securityCallbacksRef.current.delete(cb)
-    }
+    return () => { securityCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onPermissionRequest = useCallback((cb: (payload: PermissionRequestPayload) => void) => {
+    permissionRequestCallbacksRef.current.add(cb)
+    return () => { permissionRequestCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onSnapshotStatus = useCallback((cb: (status: SnapshotStatus) => void) => {
+    snapshotStatusCallbacksRef.current.add(cb)
+    return () => { snapshotStatusCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onSnapshotMessage = useCallback((cb: (message: SnapshotMessage) => void) => {
+    snapshotMessageCallbacksRef.current.add(cb)
+    return () => { snapshotMessageCallbacksRef.current.delete(cb) }
   }, [])
 
   return {
@@ -352,10 +594,142 @@ export function useWebSocket(): UseWebSocketReturn {
     isReconnectExhausted,
     processing,
     sendMessage,
+    sendCancel,
+    sendPermissionResponse,
+    sendManualSnapshot,
+    sendRestore,
+    sendSystemLock,
     events,
+    steps,
+    subagentRuns,
     manualReconnect,
-    onFinalAnswer,
+    onStreamChunk,
+    onAgentsChanged,
     onError,
     onSecurityEvent,
+    onPermissionRequest,
+    onSnapshotStatus,
+    onSnapshotMessage,
   }
+}
+
+export function deriveContentBlocks(events: ChatEvent[]): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  let textBuf = ''
+  const spanToIndex = new Map<string, number>()
+  const pendingAgentCalls: Array<{ callId: string; blockIdx: number }> = []
+
+  const flushText = () => {
+    if (textBuf.trim()) {
+      blocks.push({ type: 'text', content: textBuf })
+      textBuf = ''
+    }
+  }
+
+  for (const evt of events) {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(evt.payload)
+    } catch {
+      continue
+    }
+
+    if (evt.event_type === 'llm_chunk') {
+      textBuf += (parsed.content as string) || ''
+      continue
+    }
+
+    if (evt.event_type === 'tool_call') {
+      const toolName = (parsed.tool as string) || ''
+      if (toolName.startsWith('agent__')) {
+        flushText()
+        const blockIdx = blocks.length
+        blocks.push({
+          type: 'subagent',
+          span_id: '',
+          agent_name: toolName,
+          task: ((parsed.args as Record<string, unknown>)?.task as string) || '',
+          status: 'running',
+          steps: [],
+        })
+        pendingAgentCalls.push({ callId: (parsed.call_id as string) || '', blockIdx })
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_start') {
+      const spanId = (parsed.span_id as string) || ''
+      const pending = pendingAgentCalls.shift()
+      if (pending) {
+        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.span_id = spanId
+        block.agent_name = (parsed.agent_name as string) || block.agent_name
+        block.task = (parsed.task as string) || ''
+        spanToIndex.set(spanId, pending.blockIdx)
+      }
+      continue
+    }
+
+    if (evt.event_type === 'tool_result') {
+      const callId = (parsed.call_id as string) || ''
+      const pendingIdx = pendingAgentCalls.findIndex((p) => p.callId === callId)
+      if (pendingIdx !== -1) {
+        const pending = pendingAgentCalls[pendingIdx]
+        pendingAgentCalls.splice(pendingIdx, 1)
+        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
+        if (!block.span_id) {
+          block.status = 'done'
+          if (typeof parsed.result === 'string') block.result = parsed.result
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_step') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.steps.push({
+          step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
+          content: parsed.content as string | undefined,
+          tool: parsed.tool as string | undefined,
+          args: parsed.args as Record<string, unknown> | undefined,
+          result: parsed.result as string | undefined,
+          truncated: parsed.truncated as boolean | undefined,
+        })
+        if (parsed.step_type === 'final_answer' && parsed.content) {
+          block.result = parsed.content as string
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_end') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.status = 'done'
+        if (!block.result && typeof parsed.result === 'string') {
+          block.result = parsed.result
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_error') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.status = 'error'
+        block.error = (parsed.message as string) || '未知错误'
+      }
+      continue
+    }
+  }
+
+  flushText()
+  return blocks
 }

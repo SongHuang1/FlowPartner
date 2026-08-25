@@ -26,7 +26,9 @@ build = [
 ]
 
 [tool.uv]
-index-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+# 不在此处配置 index-url：镜像属个人网络环境偏好，写入仓库会导致任何不带 --frozen 的
+# uv 命令把 uv.lock 的源改写为镜像，破坏 GitHub CI。本机提速请用用户级
+# %APPDATA%\uv\uv.toml 或 UV_INDEX_URL（且日常命令仍须 --frozen / --no-sync）。
 # 本地 `uv sync` 默认安装 dev + build 组；CI 打包用
 # `uv sync --frozen --no-default-groups --group build` 跳过 dev 组
 default-groups = ["dev", "build"]

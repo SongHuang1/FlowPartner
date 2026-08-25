@@ -71,6 +71,7 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 	m.mu.RUnlock()
 
 	if !ok || writeMu == nil {
+		log.Printf("[Bridge] Session %s not found, dropping event: %s", sessionId, event.EventType)
 		return
 	}
 
@@ -84,7 +85,7 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 		"event_type": event.EventType,
 		"payload":    event.Payload, // event.Payload 已是 JSON 字符串，直接透传
 	}
-	if err := conn.WriteJSON(payload); err != nil {
+  if err := conn.WriteJSON(payload); err != nil {
 		log.Printf("Failed to send WebSocket message to frontend: %v", err)
 	}
 }
@@ -104,6 +105,13 @@ func (m *Manager) CloseAllSessions() {
 	for _, conn := range conns {
 		conn.Close()
 	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // SessionCount 返回当前活跃的 session 数量

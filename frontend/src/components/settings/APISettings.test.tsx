@@ -8,6 +8,7 @@ const mockSettings = {
   agent_id: 'default',
   context_window: 8192,
   working_directory: '',
+  trash_dir: '',
   language: 'zh-CN',
   base_url: 'https://api.openai.com/v1',
   encrypted_api_key: '',
@@ -271,7 +272,7 @@ describe('APISettings - Mode C: unlocked with API key', () => {
     fireEvent.click(screen.getByText('修改并重新加密'))
 
     await waitFor(() => {
-      expect(screen.getByText('密码至少 8 位，且需包含大写字母和数字')).toBeInTheDocument()
+      expect(screen.getByText('密码至少 8 位，且需包含大写字母、小写字母和数字')).toBeInTheDocument()
     })
     expect(mockSaveSettings).not.toHaveBeenCalled()
   })

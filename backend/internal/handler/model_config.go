@@ -235,8 +235,12 @@ func (h *ModelConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	settings.ModelConfigs = newConfigs
 	if settings.ActiveConfigID == id {
-		settings.ActiveConfigID = ""
 		keystore.Instance().Lock()
+		if len(newConfigs) > 0 {
+			settings.ActiveConfigID = newConfigs[0].ID
+		} else {
+			settings.ActiveConfigID = ""
+		}
 	}
 	settings.deriveFlatFields()
 
@@ -348,7 +352,7 @@ func ensureUniqueName(name string, configs []ModelConfig, excludeID string) (str
 	if !existingNames[name] {
 		return name, nil
 	}
-	for i := 2; i < 1000; i++ {
+	for i := 1; i < 1000; i++ {
 		candidate := fmt.Sprintf("%s (%d)", name, i)
 		if !existingNames[candidate] {
 			return candidate, nil

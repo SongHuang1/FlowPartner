@@ -115,6 +115,10 @@ function startPythonAgent(grpcPort) {
   console.log(`[main.cjs] Starting Python Agent, gRPC port: ${grpcPort || 'not set (will use default 50051)'}`)
 
   if (isDev) {
+    // main.py 使用 "from agent.xxx import ..." 包导入，必须把 src 与 src/agent 都加入 PYTHONPATH
+    const agentSrcDir = path.join(__dirname, '..', '..', 'agent', 'src')
+    const pyPathSep = process.platform === 'win32' ? ';' : ':'
+    safeEnv.PYTHONPATH = `${agentSrcDir}${pyPathSep}${path.join(agentSrcDir, 'agent')}`
     pythonProcess = spawn('python', ['agent/src/agent/main.py'], {
       cwd: path.join(__dirname, '..', '..'),
       env: safeEnv,
@@ -159,13 +163,25 @@ function startPythonAgent(grpcPort) {
   })
 }
 
-// TODO: Windows 下 SIGTERM 无法保证优雅退出，需平台相关的进程终止方案
+// 终止整个进程树。Windows 上必须用 taskkill /T：PyInstaller onefile 的 agent 是
+// 引导进程+实际子进程两个 PID，process.kill 只杀前者会留下孤儿进程抢占 gRPC 命令通道。
+function killProcessTree(pid) {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch { /* already dead */ }
+  } else {
+    try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+  }
+}
+
 function stopPythonAgent() {
   if (!pythonProcess) return Promise.resolve()
   return new Promise((resolve) => {
     const pid = pythonProcess.pid
     const timeout = setTimeout(() => {
-      try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+      killProcessTree(pid)
       pythonProcess = null
       resolve()
     }, 3000)
@@ -176,7 +192,7 @@ function stopPythonAgent() {
       resolve()
     })
 
-    try { process.kill(pid, 'SIGTERM') } catch { /* already dead */ }
+    killProcessTree(pid)
   })
 }
 
@@ -205,14 +221,13 @@ function waitForReady(timeoutMs) {
   })
 }
 
-// TODO: 退出流程需与 Python Agent 的关闭机制一起设计
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
   return new Promise((resolve) => {
     const pid = goProcess.pid
     const timeout = setTimeout(() => {
-      try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+      killProcessTree(pid)
       goProcess = null
       resolve()
     }, 3000)
@@ -223,7 +238,7 @@ function stopGoProcess() {
       resolve()
     })
 
-    try { process.kill(pid, 'SIGTERM') } catch { /* already dead */ }
+    killProcessTree(pid)
   })
 }
 
@@ -233,8 +248,7 @@ function getDataPath() {
 }
 
 function getWindowState() {
-  const configPath = path.join(getDataPath(), 'config')
-  const settingsPath = path.join(configPath, 'settings.json')
+  const settingsPath = path.join(getDataPath(), 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -251,8 +265,7 @@ function getWindowState() {
 
 function saveWindowState(state) {
   try {
-    const configPath = path.join(getDataPath(), 'config')
-    const settingsPath = path.join(configPath, 'settings.json')
+    const settingsPath = path.join(getDataPath(), 'settings.json')
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
     if (state.window_x !== undefined) settings.window_x = state.window_x
@@ -270,8 +283,7 @@ function saveWindowState(state) {
 }
 
 function getCloseBehavior() {
-  const configPath = path.join(getDataPath(), 'config')
-  const settingsPath = path.join(configPath, 'settings.json')
+  const settingsPath = path.join(getDataPath(), 'settings.json')
   try {
     const data = fs.readFileSync(settingsPath, 'utf-8')
     const settings = JSON.parse(data)
@@ -305,8 +317,7 @@ async function quitAppWithCleanup() {
     const [width, height] = mainWindow.getSize()
 
     try {
-      const configPath = path.join(getDataPath(), 'config')
-      const settingsPath = path.join(configPath, 'settings.json')
+      const settingsPath = path.join(getDataPath(), 'settings.json')
       const data = fs.readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(data)
       settings.window_x = x
@@ -376,6 +387,10 @@ function createWindow(port) {
     }, 500)
   })
 
+  mainWindow.on('focus', () => {
+    mainWindow.webContents.send('system-focus')
+  })
+
   mainWindow.on('closed', () => {
     if (moveSaveTimer) clearTimeout(moveSaveTimer)
     if (resizeSaveTimer) clearTimeout(resizeSaveTimer)
@@ -385,6 +400,12 @@ function createWindow(port) {
   mainWindow.on('close', (event) => {
     if (!isQuiting) {
       event.preventDefault()
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const [x, y] = mainWindow.getPosition()
+        const [width, height] = mainWindow.getSize()
+        saveWindowState({ window_x: x, window_y: y, window_width: width, window_height: height })
+      }
 
       const { behavior, remembered } = closeBehaviorCache || getCloseBehavior()
 
@@ -413,8 +434,7 @@ function createWindow(port) {
   ipcMain.on('update-close-behavior', (_, behavior, remembered) => {
     closeBehaviorCache = { behavior, remembered }
     try {
-      const configPath = path.join(getDataPath(), 'config')
-      const settingsPath = path.join(configPath, 'settings.json')
+      const settingsPath = path.join(getDataPath(), 'settings.json')
       const data = fs.readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(data)
       settings.close_behavior = behavior
@@ -513,14 +533,35 @@ function createApplicationMenu() {
   Menu.setApplicationMenu(menu)
 }
 
+function lockAPIKey() {
+  if (!backendPort) return
+  const req = http.request({
+    hostname: 'localhost',
+    port: backendPort,
+    path: '/api/lock',
+    method: 'POST',
+  }, (res) => {
+    res.resume()
+    console.log(`[lockAPIKey] status=${res.statusCode}`)
+  })
+  req.on('error', (err) => {
+    console.error('[lockAPIKey] error:', err.message)
+  })
+  req.end()
+}
+
 function setupPowerMonitor() {
   powerMonitor.on('suspend', () => {
+    console.log('[powerMonitor] suspend')
+    lockAPIKey()
     if (mainWindow) {
       mainWindow.webContents.send('system-lock')
     }
   })
 
   powerMonitor.on('lock-screen', () => {
+    console.log('[powerMonitor] lock-screen')
+    lockAPIKey()
     if (mainWindow) {
       mainWindow.webContents.send('system-lock')
     }
@@ -533,6 +574,26 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.handle('get-backend-port', () => {
   return backendPort
+})
+
+ipcMain.handle('open-external', (_, url) => {
+  if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+    const { shell } = require('electron')
+    return shell.openExternal(url)
+  }
+  return Promise.reject(new Error('Invalid URL: only http/https allowed'))
+})
+
+ipcMain.handle('select-folder', async () => {
+  const { dialog } = require('electron')
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    title: '选择工作文件夹',
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+  return result.filePaths[0]
 })
 
 app.whenReady().then(async () => {

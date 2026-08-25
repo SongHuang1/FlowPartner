@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useWebSocket, type ChatEvent } from '@/hooks/useWebSocket'
+import { useWebSocket, deriveContentBlocks, type ChatEvent } from '@/hooks/useWebSocket'
 
 const mockGetApiPort = vi.fn()
-const mockUpdateApiBase = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   getApiPort: () => mockGetApiPort(),
-  updateApiBase: (port: number) => mockUpdateApiBase(port),
 }))
 
 class MockWebSocket {
@@ -43,7 +41,6 @@ class MockWebSocket {
 let mockWebSocketInstance: MockWebSocket | null = null
 
 const mockFetchBackendPort = vi.fn()
-const mockOnBackendPortChanged = vi.fn().mockReturnValue(() => {})
 
 describe('useWebSocket', () => {
   beforeEach(() => {
@@ -56,11 +53,13 @@ describe('useWebSocket', () => {
       platform: 'win32',
       getVersion: vi.fn().mockResolvedValue('1.0.0'),
       onSystemLock: vi.fn(),
+      onSystemFocus: vi.fn(),
       fetchBackendPort: mockFetchBackendPort,
-      onBackendPortChanged: mockOnBackendPortChanged,
       onCloseAction: vi.fn(),
       sendCloseAction: vi.fn(),
       updateCloseBehavior: vi.fn(),
+      openExternal: vi.fn(),
+      selectFolder: vi.fn(),
     }
 
     mockFetchBackendPort.mockResolvedValue(8080)
@@ -355,7 +354,7 @@ describe('useWebSocket', () => {
       expect(result.current.processing).toBe(true)
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60000)
+        await vi.advanceTimersByTimeAsync(300000)
       })
 
       expect(result.current.processing).toBe(false)
@@ -380,7 +379,7 @@ describe('useWebSocket', () => {
       expect(result.current.processing).toBe(true)
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60000)
+        await vi.advanceTimersByTimeAsync(300000)
       })
 
       expect(result.current.processing).toBe(false)
@@ -410,19 +409,15 @@ describe('useWebSocket', () => {
   })
 
   describe('callbacks', () => {
-    it('calls onFinalAnswer when final_answer received', async () => {
+    it('records final_answer into event stream', async () => {
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 
-      const cb = vi.fn()
-      act(() => {
-        result.current.onFinalAnswer(cb)
-      })
-
       sendEvent({ event_type: 'final_answer', payload: '{"text":"the answer"}' })
 
-      expect(cb).toHaveBeenCalledWith('the answer')
+      const finals = result.current.events.filter((e) => e.event_type === 'final_answer')
+      expect(finals).toHaveLength(1)
     })
 
     it('calls onError when error received', async () => {
@@ -438,45 +433,6 @@ describe('useWebSocket', () => {
       sendEvent({ event_type: 'error', payload: '{"message":"something failed"}' })
 
       expect(cb).toHaveBeenCalledWith('something failed')
-    })
-
-    it('returns unregister function from onFinalAnswer', async () => {
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      const cb = vi.fn()
-      let unregister: () => void
-      act(() => {
-        unregister = result.current.onFinalAnswer(cb)
-      })
-
-      act(() => {
-        unregister!()
-      })
-
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"the answer"}' })
-
-      expect(cb).not.toHaveBeenCalled()
-    })
-
-    it('callback exception does not affect other callbacks', async () => {
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      const cb1 = vi.fn().mockImplementation(() => { throw new Error('cb1 error') })
-      const cb2 = vi.fn()
-
-      act(() => {
-        result.current.onFinalAnswer(cb1)
-        result.current.onFinalAnswer(cb2)
-      })
-
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"answer"}' })
-
-      expect(cb1).toHaveBeenCalled()
-      expect(cb2).toHaveBeenCalled()
     })
   })
 
@@ -547,7 +503,7 @@ describe('useWebSocket', () => {
 
       sendEvent({ event_type: 'llm_chunk', payload: '{}' })
 
-      expect(warnSpy).toHaveBeenCalledWith('Unknown event_type:', 'llm_chunk')
+      expect(warnSpy).not.toHaveBeenCalled()
       warnSpy.mockRestore()
     })
 
@@ -594,59 +550,6 @@ describe('useWebSocket', () => {
     })
   })
 
-  describe('port change', () => {
-    it('reconnects on port change', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
-      renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      expect(portChangeHandler).not.toBeNull()
-
-      act(() => {
-        portChangeHandler!(9090)
-      })
-
-      expect(mockUpdateApiBase).toHaveBeenCalledWith(9090)
-    })
-
-    it('resets processing and notifies on port change during processing', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      act(() => {
-        result.current.sendMessage('hello', 'sess_test_1', [])
-      })
-      expect(result.current.processing).toBe(true)
-
-      const errorCb = vi.fn()
-      act(() => {
-        result.current.onError(errorCb)
-      })
-
-      expect(portChangeHandler).not.toBeNull()
-
-      act(() => {
-        portChangeHandler!(9090)
-      })
-
-      expect(result.current.processing).toBe(false)
-      expect(errorCb).toHaveBeenCalledWith('连接已断开，请重试')
-    })
-  })
-
   describe('cleanup on unmount', () => {
     it('closes WebSocket on unmount', async () => {
       const { unmount } = renderHook(() => useWebSocket())
@@ -665,15 +568,15 @@ describe('useWebSocket', () => {
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 
-      const finalAnswerCb = vi.fn()
+      const streamChunkCb = vi.fn()
       act(() => {
-        result.current.onFinalAnswer(finalAnswerCb)
+        result.current.onStreamChunk(streamChunkCb)
       })
 
       unmount()
 
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"should not fire"}' })
-      expect(finalAnswerCb).not.toHaveBeenCalled()
+      sendEvent({ event_type: 'llm_chunk', payload: '{"content":"should not fire"}' })
+      expect(streamChunkCb).not.toHaveBeenCalled()
     })
   })
 
@@ -759,12 +662,6 @@ describe('useWebSocket', () => {
 
   describe('security events', () => {
     it('triggers security callback for invalid port', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
@@ -774,22 +671,15 @@ describe('useWebSocket', () => {
         result.current.onSecurityEvent(securityCb)
       })
 
-      expect(portChangeHandler).not.toBeNull()
-
+      mockGetApiPort.mockReturnValue(100)
       act(() => {
-        portChangeHandler!(100)
+        result.current.manualReconnect()
       })
 
       await waitFor(() => expect(securityCb).toHaveBeenCalled())
     })
 
     it('does not trigger onError for security events', async () => {
-      let portChangeHandler: ((port: number) => void) | null = null
-      mockOnBackendPortChanged.mockImplementation((cb: (port: number) => void) => {
-        portChangeHandler = cb
-        return () => {}
-      })
-
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
@@ -799,13 +689,251 @@ describe('useWebSocket', () => {
         result.current.onError(errorCb)
       })
 
-      expect(portChangeHandler).not.toBeNull()
-
+      mockGetApiPort.mockReturnValue(100)
       act(() => {
-        portChangeHandler!(100)
+        result.current.manualReconnect()
       })
 
       expect(errorCb).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('subagent events', () => {
+    it('builds subagentRuns from start/step/end events', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({
+        event_type: 'subagent_start',
+        payload: JSON.stringify({
+          event_type: 'subagent_start',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          parent_span_id: 'span-root',
+          task: '翻译这段话',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_step',
+        payload: JSON.stringify({
+          event_type: 'subagent_step',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          step_type: 'thinking',
+          content: '先理解原文',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_step',
+        payload: JSON.stringify({
+          event_type: 'subagent_step',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          step_type: 'tool_call',
+          tool: 'read_file',
+          args: { path: 'a.txt' },
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_end',
+        payload: JSON.stringify({
+          event_type: 'subagent_end',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          result: '译文',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toMatchObject({
+        agent_id: 'agent-1',
+        agent_name: '翻译官',
+        depth: 2,
+        span_id: 'span-1',
+        trace_id: 'trace-1',
+        parent_span_id: 'span-root',
+        status: 'done',
+        task: '翻译这段话',
+        result: '译文',
+      })
+      expect(runs[0].steps).toHaveLength(2)
+      expect(runs[0].steps[0]).toMatchObject({ step_type: 'thinking', content: '先理解原文' })
+      expect(runs[0].steps[1]).toMatchObject({ step_type: 'tool_call', tool: 'read_file', args: { path: 'a.txt' } })
+    })
+
+    it('marks run as error on subagent_error event', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({
+        event_type: 'subagent_start',
+        payload: JSON.stringify({
+          event_type: 'subagent_start',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          task: '翻译',
+        }),
+      })
+      sendEvent({
+        event_type: 'subagent_error',
+        payload: JSON.stringify({
+          event_type: 'subagent_error',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          message: '调用失败',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(1)
+      expect(runs[0].status).toBe('error')
+      expect(runs[0].error).toBe('调用失败')
+    })
+
+    it('keeps multiple subagent runs independent by span_id', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      for (const span of ['span-1', 'span-2']) {
+        sendEvent({
+          event_type: 'subagent_start',
+          payload: JSON.stringify({
+            event_type: 'subagent_start',
+            agent_id: 'agent-1',
+            agent_name: '翻译官',
+            depth: 2,
+            span_id: span,
+            trace_id: 'trace-1',
+            task: `任务 ${span}`,
+          }),
+        })
+      }
+      sendEvent({
+        event_type: 'subagent_end',
+        payload: JSON.stringify({
+          event_type: 'subagent_end',
+          agent_id: 'agent-1',
+          agent_name: '翻译官',
+          depth: 2,
+          span_id: 'span-1',
+          trace_id: 'trace-1',
+          result: '译文 1',
+        }),
+      })
+
+      const runs = result.current.subagentRuns
+      expect(runs).toHaveLength(2)
+      expect(runs[0].status).toBe('done')
+      expect(runs[1].status).toBe('running')
+    })
+
+    it('sends executor_agent_id and inject_agent_id in start_chat payload', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      const sent = result.current.sendMessage('hello', 'sess_test_1', [], 'agent-2', 'agent-1')
+      expect(sent).toBe(true)
+
+      const parsed = JSON.parse(mockWebSocketInstance!.sentMessages[0])
+      expect(parsed.executor_agent_id).toBe('agent-2')
+      expect(parsed.inject_agent_id).toBe('agent-1')
+    })
+  })
+
+  describe('deriveContentBlocks', () => {
+    const evt = (event_type: string, payload: Record<string, unknown>): ChatEvent => ({
+      event_type,
+      payload: JSON.stringify(payload),
+    })
+
+    it('interleaves text and subagent cards in chronological order', () => {
+      const blocks = deriveContentBlocks([
+        evt('llm_chunk', { content: '让我调用子智能体。' }),
+        evt('tool_call', { tool: 'agent__a', args: { task: '任务A' }, call_id: 'c1' }),
+        evt('subagent_start', { span_id: 'span-1', agent_name: '测试A', task: '任务A' }),
+        evt('subagent_step', { span_id: 'span-1', step_type: 'final_answer', content: 'A 的回答' }),
+        evt('subagent_end', { span_id: 'span-1', result: 'A 的回答' }),
+        evt('tool_result', { tool: 'agent__a', call_id: 'c1', result: 'A 的回答' }),
+        evt('llm_chunk', { content: '我是FlowPartner。' }),
+        evt('tool_call', { tool: 'agent__b', args: { task: '任务B' }, call_id: 'c2' }),
+        evt('subagent_start', { span_id: 'span-2', agent_name: '测试B', task: '任务B' }),
+        evt('subagent_end', { span_id: 'span-2', result: 'B 的回答' }),
+        evt('tool_result', { tool: 'agent__b', call_id: 'c2', result: 'B 的回答' }),
+        evt('llm_chunk', { content: '以上是两次调用的结果。' }),
+      ])
+
+      expect(blocks).toHaveLength(5)
+      expect(blocks[0]).toEqual({ type: 'text', content: '让我调用子智能体。' })
+      const card1 = blocks[1] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card1.span_id).toBe('span-1')
+      expect(card1.status).toBe('done')
+      expect(card1.result).toBe('A 的回答')
+      expect(blocks[2]).toEqual({ type: 'text', content: '我是FlowPartner。' })
+      const card2 = blocks[3] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card2.span_id).toBe('span-2')
+      expect(blocks[4]).toEqual({ type: 'text', content: '以上是两次调用的结果。' })
+    })
+
+    it('closes unpaired agent card via tool_result fallback', () => {
+      const blocks = deriveContentBlocks([
+        evt('tool_call', { tool: 'agent__missing', args: { task: 'x' }, call_id: 'c9' }),
+        evt('tool_result', { tool: 'agent__missing', call_id: 'c9', result: '子智能体调用失败：不存在' }),
+      ])
+
+      expect(blocks).toHaveLength(1)
+      const card = blocks[0] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card.status).toBe('done')
+      expect(card.result).toBe('子智能体调用失败：不存在')
+    })
+
+    it('does not overwrite a paired card when tool_result arrives', () => {
+      const blocks = deriveContentBlocks([
+        evt('tool_call', { tool: 'agent__a', args: {}, call_id: 'c1' }),
+        evt('subagent_start', { span_id: 'span-1', agent_name: '测试A', task: '' }),
+        evt('subagent_end', { span_id: 'span-1', result: '正确结果' }),
+        evt('tool_result', { tool: 'agent__a', call_id: 'c1', result: '正确结果' }),
+      ])
+
+      const card = blocks[0] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card.result).toBe('正确结果')
+      expect(card.status).toBe('done')
+    })
+  })
+
+  describe('llm_chunk in event stream', () => {
+    it('records llm_chunk events so content blocks can be derived', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({ event_type: 'llm_chunk', payload: JSON.stringify({ content: '你好' }) })
+      sendEvent({ event_type: 'llm_chunk', payload: JSON.stringify({ content: '，世界' }) })
+
+      const chunks = result.current.events.filter((e) => e.event_type === 'llm_chunk')
+      expect(chunks).toHaveLength(2)
     })
   })
 })

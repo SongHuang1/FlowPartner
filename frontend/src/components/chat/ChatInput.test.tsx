@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChatInput } from './ChatArea'
 
-function renderChatInput(onSend: () => void, initialValue = '') {
+function renderChatInput(onSend: () => void, initialValue = '', extraProps = {}) {
   function Wrapper() {
     const [value, setValue] = useState(initialValue)
     return (
@@ -13,6 +13,7 @@ function renderChatInput(onSend: () => void, initialValue = '') {
           onSend()
           setValue('')
         }}
+        {...extraProps}
       />
     )
   }
@@ -144,5 +145,77 @@ describe('ChatInput', () => {
 
     fireEvent.change(input, { target: { value: '' } })
     expect(button).toBeDisabled()
+  })
+
+  // --- 停止按钮测试 ---
+
+  it('shows stop button when loading', () => {
+    renderChatInput(() => '', 'hello', { loading: true })
+
+    expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument()
+  })
+
+  it('shows send button when not loading', () => {
+    renderChatInput(() => '', 'hello', { loading: false })
+
+    expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()
+  })
+
+  it('calls onStop when stop button is clicked', () => {
+    const onStop = vi.fn()
+    renderChatInput(() => '', 'hello', { loading: true, onStop })
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop button becomes disabled after first click', () => {
+    const onStop = vi.fn()
+    renderChatInput(() => '', 'hello', { loading: true, onStop })
+
+    const stopButton = screen.getByRole('button', { name: '停止' })
+    expect(stopButton).not.toBeDisabled()
+
+    fireEvent.click(stopButton)
+    expect(stopButton).toBeDisabled()
+  })
+
+  it('stop button resets after new send', () => {
+    const onStop = vi.fn()
+
+    function Wrapper() {
+      const [value, setValue] = useState('hello')
+      const [loading, setLoading] = useState(true)
+      return (
+        <ChatInput
+          value={value}
+          onChange={setValue}
+          onSend={() => {
+            setLoading(true)
+          }}
+          onStop={() => {
+            onStop()
+            setLoading(false)
+          }}
+          loading={loading}
+        />
+      )
+    }
+    render(<Wrapper />)
+
+    // 点击停止 → loading 变 false
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect(onStop).toHaveBeenCalled()
+    // 现在应该显示发送按钮
+    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()
+  })
+
+  it('input is disabled when disabled prop is true', () => {
+    renderChatInput(() => '', 'hello', { disabled: true })
+
+    const input = screen.getByPlaceholderText('输入消息...')
+    expect(input).toBeDisabled()
   })
 })

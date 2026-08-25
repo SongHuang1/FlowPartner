@@ -27,6 +27,7 @@ describe('api', () => {
         agent_id: 'default',
         context_window: 8192,
         working_directory: '/test',
+        trash_dir: '',
         language: 'zh-CN',
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
@@ -41,6 +42,9 @@ describe('api', () => {
         window_height: 800,
         sidebar_visible: true,
         sidebar_view: 'conversation',
+        snapshot_dir: '',
+        snapshot_enabled: false,
+        snapshot_include_secrets: false,
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: mockSettings, timestamp: 123, request_id: 'uuid' })
@@ -77,6 +81,7 @@ describe('api', () => {
         agent_id: 'test-agent',
         context_window: 4096,
         working_directory: '',
+        trash_dir: '',
         language: 'en-US',
         base_url: 'https://api.openai.com/v1',
         encrypted_api_key: '',
@@ -91,6 +96,9 @@ describe('api', () => {
         window_height: 800,
         sidebar_visible: true,
         sidebar_view: 'conversation',
+        snapshot_dir: '',
+        snapshot_enabled: false,
+        snapshot_include_secrets: false,
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: null, timestamp: 123, request_id: 'uuid' })
@@ -235,3 +243,4 @@ describe('api', () => {
     })
   })
 })
+

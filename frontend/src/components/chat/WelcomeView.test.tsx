@@ -9,6 +9,7 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     agent_id: 'default',
     context_window: 8192,
     working_directory: '',
+    trash_dir: '',
     language: 'zh-CN',
     base_url: 'https://api.openai.com/v1',
     encrypted_api_key: '',
@@ -23,6 +24,9 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     window_height: 800,
     sidebar_visible: true,
     sidebar_view: 'conversation',
+    snapshot_dir: '',
+    snapshot_enabled: false,
+    snapshot_include_secrets: false,
     ...overrides,
   }
 }
@@ -50,11 +54,6 @@ describe('WelcomeView', () => {
     expect(screen.getByText(/模型: gpt-3.5/)).toBeInTheDocument()
   })
 
-  it('displays agent_id from settings', () => {
-    render(<WelcomeView {...defaultProps} settings={createSettings({ agent_id: 'my-agent' })} />)
-    expect(screen.getByText(/智能体: my-agent/)).toBeInTheDocument()
-  })
-
   it('displays context_window from settings', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ context_window: 4096 })} />)
     expect(screen.getByText(/上下文: 4096/)).toBeInTheDocument()
@@ -62,7 +61,7 @@ describe('WelcomeView', () => {
 
   it('does not display working_directory when empty', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '' })} />)
-    expect(screen.queryByText(/路径:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^路径:/)).not.toBeInTheDocument()
   })
 
   it('displays working_directory when set', () => {
@@ -88,11 +87,10 @@ describe('WelcomeView', () => {
     expect(inputArea).toBeInTheDocument()
   })
 
-  it('displays info bar with separator', () => {
+  it('displays info bar with settings', () => {
     render(<WelcomeView {...defaultProps} />)
-    // The separator '|' appears between info items (2 separators for 3 info fields)
-    const separators = screen.getAllByText('|')
-    expect(separators.length).toBe(2)
+    expect(screen.getByText(/模型: gpt-4/)).toBeInTheDocument()
+    expect(screen.getByText(/上下文: 8192/)).toBeInTheDocument()
   })
 
   it('renders with different model names', () => {

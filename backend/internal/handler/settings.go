@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/response"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
@@ -28,11 +32,11 @@ type ModelConfig struct {
 }
 
 type Settings struct {
-	Model            string  `json:"model"`
-	AgentID          string  `json:"agent_id"`
-	ContextWindow    int     `json:"context_window"`
-	WorkingDirectory string  `json:"working_directory"`
-	Language         string  `json:"language"`
+	Model            string `json:"model"`
+	AgentID          string `json:"agent_id"`
+	ContextWindow    int    `json:"context_window"`
+	WorkingDirectory string `json:"working_directory"`
+	Language         string `json:"language"`
 
 	BaseURL         string `json:"base_url"`
 	EncryptedAPIKey string `json:"encrypted_api_key"`
@@ -53,6 +57,12 @@ type Settings struct {
 	WindowHeight   int    `json:"window_height"`
 	SidebarVisible bool   `json:"sidebar_visible"`
 	SidebarView    string `json:"sidebar_view"`
+
+	TrashDir string `json:"trash_dir"`
+
+	SnapshotDir            string `json:"snapshot_dir"`
+	SnapshotEnabled        bool   `json:"snapshot_enabled"`
+	SnapshotIncludeSecrets bool   `json:"snapshot_include_secrets"`
 }
 
 func DefaultSettings() Settings {
@@ -76,6 +86,8 @@ func DefaultSettings() Settings {
 		WindowHeight:     800,
 		SidebarVisible:   true,
 		SidebarView:      "conversation",
+		TrashDir:         "",
+		SnapshotEnabled:  false,
 	}
 }
 
@@ -125,6 +137,14 @@ func LoadSettings() Settings {
 
 	settings.deriveFlatFields()
 
+	// 自动修复：若 ActiveConfigID 无效或指向无密钥的配置，自动激活第一个有密钥的配置
+	if settings.ActiveConfigID == "" || settings.activeConfig() == nil {
+		if cfg := settings.firstConfigWithKey(); cfg != nil {
+			settings.ActiveConfigID = cfg.ID
+			settings.deriveFlatFields()
+		}
+	}
+
 	return settings
 }
 
@@ -157,23 +177,34 @@ func (s *Settings) migrateOldConfig() {
 func (s *Settings) deriveFlatFields() {
 	cfg := s.activeConfig()
 	if cfg == nil {
+		s.Model = ""
 		s.BaseURL = ""
 		s.ModelName = ""
 		s.EncryptedAPIKey = ""
 		return
 	}
+	s.Model = cfg.ModelName
 	s.BaseURL = cfg.BaseURL
 	s.ModelName = cfg.ModelName
 	s.EncryptedAPIKey = cfg.EncryptedAPIKey
 }
 
-// activeConfig 返回当前激活的配置
+// activeConfig 返回当前激活的配置（必须有加密密钥）
 func (s *Settings) activeConfig() *ModelConfig {
-	if s.ActiveConfigID == "" {
-		return nil
+	if s.ActiveConfigID != "" {
+		for i := range s.ModelConfigs {
+			if s.ModelConfigs[i].ID == s.ActiveConfigID && s.ModelConfigs[i].EncryptedAPIKey != "" {
+				return &s.ModelConfigs[i]
+			}
+		}
 	}
+	return nil
+}
+
+// firstConfigWithKey 返回第一个有加密密钥的配置
+func (s *Settings) firstConfigWithKey() *ModelConfig {
 	for i := range s.ModelConfigs {
-		if s.ModelConfigs[i].ID == s.ActiveConfigID {
+		if s.ModelConfigs[i].EncryptedAPIKey != "" {
 			return &s.ModelConfigs[i]
 		}
 	}
@@ -204,7 +235,150 @@ func ValidateBaseURL(rawURL string) error {
 	return nil
 }
 
-type SettingsHandler struct{}
+func validateTrashDir(trashDir, workingDir string) error {
+	if trashDir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(trashDir) {
+		return fmt.Errorf("回收站目录必须是绝对路径")
+	}
+	clean := filepath.Clean(trashDir)
+
+	target := filepath.Dir(clean)
+	if fi, err := os.Stat(clean); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("回收站目录已存在但不是文件夹: %s", clean)
+		}
+		target = clean
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("无法检查回收站目录: %v", err)
+	}
+	if err := dirWritable(target); err != nil {
+		return fmt.Errorf("回收站目录不可写: %v", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("无法获取用户主目录: %v", err)
+	}
+	homeClean := filepath.Clean(homeDir)
+
+	// 防呆：不得是用户主目录或其祖先目录
+	if pathEqualFold(clean, homeClean) || pathHasPrefix(homeClean, clean) {
+		return fmt.Errorf("回收站目录不能是用户主目录或其祖先目录，否则 purge 清空回收站将造成灾难性数据丢失")
+	}
+
+	if workingDir != "" {
+		wd, absErr := filepath.Abs(workingDir)
+		if absErr != nil {
+			wd = workingDir
+		}
+		wd = filepath.Clean(wd)
+		if pathEqualFold(clean, wd) || pathHasPrefix(wd, clean) {
+			return fmt.Errorf("回收站目录不能是工作目录或其祖先目录，否则 purge 清空回收站将清空工作目录")
+		}
+	}
+	return nil
+}
+
+func dirWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".fp_write_test_*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Remove(name)
+}
+
+// pathEqualFold 大小写不敏感（Windows）的路径相等比较。
+func pathEqualFold(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func pathHasPrefix(child, parent string) bool {
+	sep := string(filepath.Separator)
+	parentWithSep := parent
+	if !strings.HasSuffix(parent, sep) {
+		parentWithSep = parent + sep
+	}
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(child), strings.ToLower(parentWithSep))
+	}
+	return strings.HasPrefix(child, parentWithSep)
+}
+
+type SettingsHandler struct {
+	snapshotMgr *snapshot.Manager
+}
+
+// NewSettingsHandler 创建设置处理器。snapshotMgr 用于在设置变更后重配快照管理器。
+func NewSettingsHandler(snapshotMgr *snapshot.Manager) *SettingsHandler {
+	return &SettingsHandler{snapshotMgr: snapshotMgr}
+}
+
+// ResolveWorkingDir 解析实际工作目录：未设置时回退到用户主目录（与 ExecuteTool 一致）。
+func ResolveWorkingDir(settings Settings) string {
+	if settings.WorkingDirectory != "" {
+		return settings.WorkingDirectory
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
+// validateSnapshotDir 校验快照储存目录（§3.8 双向嵌套 + 绝对路径 + 可写）。
+func validateSnapshotDir(snapshotDir, workingDir string) error {
+	if strings.TrimSpace(snapshotDir) == "" {
+		return fmt.Errorf("启用快照前必须指定快照储存目录")
+	}
+	if !filepath.IsAbs(snapshotDir) {
+		return fmt.Errorf("快照储存目录必须是绝对路径")
+	}
+	clean := filepath.Clean(snapshotDir)
+	target := filepath.Dir(clean)
+	if fi, err := os.Stat(clean); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("快照储存目录已存在但不是文件夹: %s", clean)
+		}
+		target = clean
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("无法检查快照储存目录: %v", err)
+	}
+	if err := dirWritable(target); err != nil {
+		return fmt.Errorf("快照储存目录不可写: %v", err)
+	}
+	if workingDir != "" {
+		if err := snapshot.ValidateNoNesting(workingDir, clean); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconfigSnapshot 将当前设置应用到快照管理器。
+func (h *SettingsHandler) reconfigSnapshot(settings Settings) {
+	if h.snapshotMgr == nil {
+		return
+	}
+	workingDir := ResolveWorkingDir(settings)
+	if workingDir == "" {
+		h.snapshotMgr.Configure("", "", false, false)
+		return
+	}
+	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+		// 配置失败（如工作区根不存在）时状态已置 error 并推送，不影响设置保存
+		log.Printf("[snapshot] 快照管理器配置失败: %v", err)
+	}
+}
 
 // Handle 根据 HTTP 方法分发到 Get/Put
 func (h *SettingsHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -257,10 +431,12 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	// 保留已有的 encrypted_api_key（当 api_key 为空或未提供时）
 	// 使用类型安全的值检查：api_key: null 和 api_key: "" 都视为"未提供"
 	apiKeyVal, _ := rawReq["api_key"].(string)
+	existing := LoadSettings()
 	if apiKeyVal == "" {
-		existing := LoadSettings()
 		settings.EncryptedAPIKey = existing.EncryptedAPIKey
 	}
+	// 合并 model_configs：保留前端未传回的 encrypted_api_key
+	settings.ModelConfigs = mergeModelConfigs(existing.ModelConfigs, settings.ModelConfigs)
 
 	if settings.BaseURL != "" {
 		if err := ValidateBaseURL(settings.BaseURL); err != nil {
@@ -279,6 +455,26 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 		if !containsString(validBehaviors, settings.CloseBehavior) {
 			response.WriteJSON(w, http.StatusBadRequest,
 				response.Error(response.CodeInvalidParam, "close_behavior 必须是 minimize、quit 或 ask"))
+			return
+		}
+	}
+
+	// 回收站目录校验（仅非空时校验；空串表示未配置，属合法状态）
+	workDir := settings.WorkingDirectory
+	if workDir == "" {
+		workDir = existing.WorkingDirectory
+	}
+	if err := validateTrashDir(settings.TrashDir, workDir); err != nil {
+		response.WriteJSON(w, http.StatusBadRequest,
+			response.Error(response.CodeInvalidParam, err.Error()))
+		return
+	}
+	// 快照目录校验（启用时必须合法；未启用时仅存字段，不做约束）
+	if settings.SnapshotEnabled {
+		workDirForSnapshot := ResolveWorkingDir(existing)
+		if err := validateSnapshotDir(settings.SnapshotDir, workDirForSnapshot); err != nil {
+			response.WriteJSON(w, http.StatusBadRequest,
+				response.Error(response.CodeInvalidParam, err.Error()))
 			return
 		}
 	}
@@ -347,6 +543,9 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 			response.Error(response.CodeInternalError, "Failed to save settings"))
 		return
 	}
+
+	// 设置保存成功后重配快照管理器。
+	h.reconfigSnapshot(settings)
 
 	response.WriteJSON(w, http.StatusOK, response.Success(settings))
 }

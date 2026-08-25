@@ -12,19 +12,18 @@ import (
 )
 
 var (
-	// ErrNotFound 表示文件不存在
-	ErrNotFound = errors.New("file not found")
-	// ErrInvalidFilename 表示文件名包含非法字符（路径遍历风险）
+	ErrNotFound        = errors.New("file not found")
 	ErrInvalidFilename = errors.New("invalid filename: must not contain path separators or '..'")
 )
 
-// dataDirCache 缓存 DataDir 结果，避免重复 syscall
-var dataDirCache string
+// IsNotFound 判断错误是否为文件不存在。
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
 
-// testDataDir 测试期间指定的数据目录（仅测试使用），ResetDataDirCache 后仍生效
+var dataDirCache string
 var testDataDir string
 
-// DataDir 返回用户数据目录路径，若不存在则创建。结果缓存，首次调用后后续直接返回缓存值。
 func DataDir() (string, error) {
 	if dataDirCache != "" {
 		return dataDirCache, nil
@@ -41,18 +40,15 @@ func DataDir() (string, error) {
 	return dir, nil
 }
 
-// ResetDataDirCache 重置缓存（仅测试使用）。若已通过 SetDataDirForTest 指定目录，重置后回到该目录。
 func ResetDataDirCache() {
 	dataDirCache = testDataDir
 }
 
-// SetDataDirForTest 指定数据目录，避免测试污染真实用户目录（仅测试使用）
 func SetDataDirForTest(dir string) {
 	testDataDir = dir
 	dataDirCache = dir
 }
 
-// validateFilename 校验文件名安全性，防止路径遍历
 func validateFilename(filename string) error {
 	if filename == "" {
 		return ErrInvalidFilename
@@ -63,7 +59,6 @@ func validateFilename(filename string) error {
 	return nil
 }
 
-// ReadJSON 读取 JSON 文件并反序列化到 dest（dest 必须为指针）
 func ReadJSON(filename string, dest interface{}) error {
 	if err := validateFilename(filename); err != nil {
 		return err
@@ -86,7 +81,6 @@ func ReadJSON(filename string, dest interface{}) error {
 	return nil
 }
 
-// WriteJSON 将数据序列化为 JSON 并原子写入文件（temp file + rename），权限 0600
 func WriteJSON(filename string, src interface{}) error {
 	if err := validateFilename(filename); err != nil {
 		return err
@@ -113,10 +107,75 @@ func WriteJSON(filename string, src interface{}) error {
 	return nil
 }
 
-// HistoryMessage 历史会话中的单条消息（由 Python Agent 写入，仅含 role/content）
+// ToolCallFunction LLM 返回的工具调用信息（工具名 + JSON 参数字符串）。
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolCall 单个工具调用。
+type ToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function ToolCallFunction   `json:"function"`
+}
+
+// SubAgentResult 子智能体调用结果（旧格式，仅最终结果摘要）
+type SubAgentResult struct {
+	SpanID    string `json:"span_id"`
+	AgentName string `json:"agent_name"`
+	Task      string `json:"task"`
+	Content   string `json:"content"`
+	Status    string `json:"status"`
+}
+
+// SubAgentRef 主记录中对子智能体运行的引用（call_id 关联 tool_calls，span_id 关联详情文件）
+type SubAgentRef struct {
+	CallID string `json:"call_id"`
+	SpanID string `json:"span_id"`
+}
+
+// SubAgentStep 子智能体执行过程步骤
+type SubAgentStep struct {
+	StepType  string                 `json:"step_type,omitempty"`
+	Content   string                 `json:"content,omitempty"`
+	Tool      string                 `json:"tool,omitempty"`
+	Args      map[string]interface{} `json:"args,omitempty"`
+	Result    string                 `json:"result,omitempty"`
+	Truncated bool                   `json:"truncated,omitempty"`
+}
+
+// SubAgentRun 子智能体单次运行的完整详情
+type SubAgentRun struct {
+	SpanID       string         `json:"span_id"`
+	TraceID      string         `json:"trace_id,omitempty"`
+	ParentSpanID string         `json:"parent_span_id,omitempty"`
+	AgentID      string         `json:"agent_id,omitempty"`
+	AgentName    string         `json:"agent_name"`
+	Task         string         `json:"task,omitempty"`
+	Depth        int            `json:"depth,omitempty"`
+	Status       string         `json:"status"`
+	Result       string         `json:"result,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	Steps        []SubAgentStep `json:"steps,omitempty"`
+}
+
+// HistoryMessage 历史会话中的单条消息，支持结构化工具上下文。
 type HistoryMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role            string           `json:"role"`
+	Content         string           `json:"content"`
+	ToolCalls       []ToolCall       `json:"tool_calls,omitempty"`
+	ToolCallID      string           `json:"tool_call_id,omitempty"`
+	Name            string           `json:"name,omitempty"`
+	SubAgentResults []SubAgentResult `json:"subagent_results,omitempty"`
+	SubAgentRefs    []SubAgentRef    `json:"subagent_refs,omitempty"`
+}
+
+// SubAgentsFile 子智能体运行详情文件（{session_id}.subagents.json）
+type SubAgentsFile struct {
+	Version   int                    `json:"version"`
+	SessionID string                 `json:"session_id"`
+	Runs      map[string]SubAgentRun `json:"runs"`
 }
 
 // HistoryEntry 历史会话列表条目
@@ -127,7 +186,6 @@ type HistoryEntry struct {
 	MessageCount int    `json:"message_count"`
 }
 
-// ValidSessionID 校验会话 ID 是否安全（仅允许字母数字、下划线、连字符，防止路径遍历）
 func ValidSessionID(sessionID string) bool {
 	if len(sessionID) == 0 || len(sessionID) > 128 {
 		return false
@@ -140,7 +198,19 @@ func ValidSessionID(sessionID string) bool {
 	return true
 }
 
-// HistoryDir 返回历史记录目录路径，若不存在则创建
+// ValidSnapshotID 校验快照 id 格式（YYYYMMDD-HHMMSS，可带 -N 后缀）。
+func ValidSnapshotID(snapshotID string) bool {
+	if len(snapshotID) < 15 || len(snapshotID) > 20 {
+		return false
+	}
+	for _, r := range snapshotID {
+		if !(r >= '0' && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func HistoryDir() (string, error) {
 	dir, err := DataDir()
 	if err != nil {
@@ -153,7 +223,6 @@ func HistoryDir() (string, error) {
 	return historyDir, nil
 }
 
-// ListHistory 列出全部历史会话，按更新时间倒序排列
 func ListHistory() ([]HistoryEntry, error) {
 	historyDir, err := HistoryDir()
 	if err != nil {
@@ -198,7 +267,8 @@ func ListHistory() ([]HistoryEntry, error) {
 	return result, nil
 }
 
-// ReadHistory 读取历史会话的全部消息（JSONL：每行一个 [user, assistant] 数组）
+// ReadHistory 读取历史会话的全部消息。
+// 兼容两种格式：旧"成对 [user,assistant] 数组"与新"单条消息对象"（JSONL）。
 func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 	if !ValidSessionID(sessionID) {
 		return nil, ErrInvalidFilename
@@ -215,23 +285,93 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 		}
 		return nil, fmt.Errorf("failed to read history %s: %w", sessionID, err)
 	}
+
 	result := make([]HistoryMessage, 0)
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
+		// 先尝试旧格式：成对 [user,assistant] 数组
 		var pair []HistoryMessage
-		if err := json.Unmarshal([]byte(line), &pair); err != nil {
-			// 跳过损坏行，保证部分损坏不影响整体读取
+		if err := json.Unmarshal([]byte(line), &pair); err == nil && len(pair) > 0 {
+			valid := true
+			for _, m := range pair {
+				if m.Role != "user" && m.Role != "assistant" {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				result = append(result, pair...)
+				continue
+			}
+		}
+
+		// 再尝试新格式：单条消息对象
+		var msg HistoryMessage
+		if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
+			result = append(result, msg)
 			continue
 		}
-		result = append(result, pair...)
+
+		// 两种格式都失败，跳过损坏行
+		log.Printf("[Storage] Skipping malformed history line in %s", sessionID)
 	}
 	return result, nil
 }
 
-// truncateRunes 按字符数截断字符串（避免按字节截断破坏 UTF-8）
+// ReadSubAgents 读取会话的子智能体运行详情。文件不存在时返回空 runs（可选数据）。
+func ReadSubAgents(sessionID string) (map[string]SubAgentRun, error) {
+	if !ValidSessionID(sessionID) {
+		return nil, ErrInvalidFilename
+	}
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(historyDir, sessionID+".subagents.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]SubAgentRun{}, nil
+		}
+		return nil, fmt.Errorf("failed to read subagents %s: %w", sessionID, err)
+	}
+	var file SubAgentsFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("failed to parse subagents %s: %w", sessionID, err)
+	}
+	if file.Runs == nil {
+		file.Runs = map[string]SubAgentRun{}
+	}
+	return file.Runs, nil
+}
+
+// DeleteHistory 删除历史会话文件（含子智能体详情文件）。
+func DeleteHistory(sessionID string) error {
+	if !ValidSessionID(sessionID) {
+		return ErrInvalidFilename
+	}
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(historyDir, sessionID+".json")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to delete history %s: %w", sessionID, err)
+	}
+	subPath := filepath.Join(historyDir, sessionID+".subagents.json")
+	if err := os.Remove(subPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete subagents %s: %w", sessionID, err)
+	}
+	return nil
+}
+
 func truncateRunes(s string, max int) string {
 	runes := []rune(s)
 	if len(runes) <= max {

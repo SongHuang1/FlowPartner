@@ -8,12 +8,15 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 )
 
@@ -21,24 +24,112 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// maxHistoryMessages 单次请求携带的历史消息上限，防止超大 payload 拖垮后端
 const maxHistoryMessages = 100
 
-type WebSocketHandler struct {
-	manager *bridge.Manager
-	done    chan struct{}
+func validAgentID(id string) bool {
+	return id == "" || storage.ValidSessionID(id)
 }
 
-func NewWebSocketHandler(m *bridge.Manager) *WebSocketHandler {
+type WebSocketHandler struct {
+	manager         *bridge.Manager
+	approvalManager *tools.ApprovalManager
+	snapshotMgr     *snapshot.Manager
+	done            chan struct{}
+
+	// 所有已连接前端的连接集合（用于全局事件广播，如 snapshot_status）。
+	connsMu   sync.Mutex
+	conns     map[*websocket.Conn]struct{}
+	connLocks map[*websocket.Conn]*sync.Mutex
+}
+
+func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager, snapshotMgr *snapshot.Manager) *WebSocketHandler {
 	return &WebSocketHandler{
-		manager: m,
-		done:    make(chan struct{}),
+		manager:         m,
+		approvalManager: am,
+		snapshotMgr:     snapshotMgr,
+		done:            make(chan struct{}),
+		conns:           make(map[*websocket.Conn]struct{}),
+		connLocks:       make(map[*websocket.Conn]*sync.Mutex),
 	}
 }
 
-// Close 通知所有 HandleWS 循环退出
+// registerConn 注册新连接用于广播。
+func (h *WebSocketHandler) registerConn(conn *websocket.Conn) {
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	h.conns[conn] = struct{}{}
+	h.connLocks[conn] = &sync.Mutex{}
+}
+
+// unregisterConn 注销连接。
+func (h *WebSocketHandler) unregisterConn(conn *websocket.Conn) {
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	delete(h.conns, conn)
+	delete(h.connLocks, conn)
+}
+
+// Close 关闭 handler：停止广播并断开所有连接。
 func (h *WebSocketHandler) Close() {
 	close(h.done)
+	h.connsMu.Lock()
+	conns := make([]*websocket.Conn, 0, len(h.conns))
+	for c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.conns = make(map[*websocket.Conn]struct{})
+	h.connLocks = make(map[*websocket.Conn]*sync.Mutex)
+	h.connsMu.Unlock()
+	for _, c := range conns {
+		c.Close()
+	}
+}
+
+// BroadcastEvent 向所有已连接前端广播一条 {event_type, payload} 事件。
+// 每个连接使用互斥写串行化，避免并发写同一连接。
+func (h *WebSocketHandler) BroadcastEvent(eventType, payload string) {
+	h.connsMu.Lock()
+	conns := make([]*websocket.Conn, 0, len(h.conns))
+	for c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.connsMu.Unlock()
+
+	msg := map[string]string{"event_type": eventType, "payload": payload}
+	for _, c := range conns {
+		h.connsMu.Lock()
+		mu := h.connLocks[c]
+		h.connsMu.Unlock()
+		if mu == nil {
+			continue
+		}
+		mu.Lock()
+		err := c.WriteJSON(msg)
+		mu.Unlock()
+		if err != nil {
+			log.Printf("WebSocket broadcast failed: %v", err)
+		}
+	}
+}
+
+// snapshotStatusSink 将快照状态事件转发给所有前端。
+func (h *WebSocketHandler) snapshotStatusSink(status snapshot.Status) {
+	data, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("序列化 snapshot_status 失败: %v", err)
+		return
+	}
+	h.BroadcastEvent("snapshot_status", string(data))
+}
+
+// snapshotMessageSink 将快照消息（还原结果等）转发给所有前端。
+func (h *WebSocketHandler) snapshotMessageSink(msg snapshot.Message) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("序列化 snapshot_message 失败: %v", err)
+		return
+	}
+	h.BroadcastEvent("snapshot_message", string(data))
 }
 
 func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -49,27 +140,49 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// 历史上下文可能较大，放宽默认 4096 字节的读限制
 	conn.SetReadLimit(4 << 20) // 4MB
+	h.registerConn(conn)
+	defer h.unregisterConn(conn)
 
 	log.Println("Frontend WebSocket connected")
 
+	type wsHistoryToolCallFunction struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}
+
+	type wsHistoryToolCall struct {
+		ID       string                    `json:"id"`
+		Type     string                    `json:"type"`
+		Function wsHistoryToolCallFunction `json:"function"`
+	}
+
 	type wsHistoryMessage struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string              `json:"role"`
+		Content    string              `json:"content"`
+		ToolCalls  []wsHistoryToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string              `json:"tool_call_id,omitempty"`
+		Name       string              `json:"name,omitempty"`
 	}
 
 	type wsMessage struct {
-		Action    string             `json:"action"`
-		Content   string             `json:"content"`
-		SessionID string             `json:"session_id"`
-		History   []wsHistoryMessage `json:"history"`
+		Action          string             `json:"action"`
+		Content         string             `json:"content"`
+		SessionID       string             `json:"session_id"`
+		History         []wsHistoryMessage `json:"history"`
+		RequestID       string             `json:"request_id"`
+		Decision        string             `json:"decision"`
+		Scope           string             `json:"scope"`
+		SnapshotID      string             `json:"snapshot_id"`
+		DeleteExtras    bool               `json:"delete_extras"`
+		ExecutorAgentID string             `json:"executor_agent_id"`
+		InjectAgentID   string             `json:"inject_agent_id"`
 	}
 
-	// 记录本连接注册的 session，退出时逐一注销，防止 sessions map 无限增长
 	var sessionIDs []string
 	defer func() {
 		for _, id := range sessionIDs {
+			h.approvalManager.CancelSession(id)
 			h.manager.UnregisterSession(id)
 		}
 	}()
@@ -77,8 +190,6 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	readChan := make(chan wsMessage, 1)
 	errChan := make(chan error, 1)
 
-	// 读取 goroutine：将 ReadJSON 结果发送到 channel
-	// 发送端 select 监听 h.done，确保消息在途时 Close() 也能退出，避免 goroutine 泄漏
 	go func() {
 		for {
 			var msg wsMessage
@@ -105,8 +216,30 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		case msg := <-readChan:
-			if msg.Action == "start_chat" {
-				// 会话 ID：前端在同一会话内复用；缺失时由后端生成（兼容旧客户端）
+			switch msg.Action {
+			case "manual_snapshot":
+				if h.snapshotMgr != nil {
+					log.Println("[Snapshot] 手动快照触发")
+					h.snapshotMgr.TriggerManual()
+				}
+
+			case "system_lock":
+				if h.snapshotMgr != nil {
+					log.Println("[Snapshot] 系统锁屏，触发 flush 快照")
+					h.snapshotMgr.TriggerLock()
+				}
+
+			case "restore":
+				if h.snapshotMgr != nil {
+					log.Printf("[Snapshot] 还原指令: snapshot_id=%q delete_extras=%v", msg.SnapshotID, msg.DeleteExtras)
+					if msg.SnapshotID != "" && storage.ValidSnapshotID(msg.SnapshotID) {
+						h.snapshotMgr.RestoreAsync(msg.SnapshotID, msg.DeleteExtras)
+					} else {
+						h.BroadcastEvent("snapshot_message", `{"type":"error","text":"还原失败：快照编号无效"}`)
+					}
+				}
+
+			case "start_chat":
 				sessionId := msg.SessionID
 				if sessionId == "" {
 					b := make([]byte, 16)
@@ -116,37 +249,40 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					}
 					sessionId = fmt.Sprintf("sess_%d_%s", time.Now().UnixNano(), hex.EncodeToString(b))
 				} else if !storage.ValidSessionID(sessionId) {
-					// 防御：非法 session_id 可能被 Python 用作文件名（路径遍历风险），直接丢弃
 					log.Printf("Rejecting start_chat with invalid session ID: %q", sessionId)
+					continue
+				}
+				if !validAgentID(msg.ExecutorAgentID) || !validAgentID(msg.InjectAgentID) {
+					log.Printf("Rejecting start_chat with invalid agent ids: executor=%q inject=%q", msg.ExecutorAgentID, msg.InjectAgentID)
 					continue
 				}
 				sessionIDs = append(sessionIDs, sessionId)
 
 				h.manager.RegisterSession(sessionId, conn)
 
-				// 校验并过滤历史消息：仅保留合法 role 与非空内容，限制条数
 				history := make([]wsHistoryMessage, 0, len(msg.History))
 				for _, hm := range msg.History {
 					if len(history) >= maxHistoryMessages {
 						break
 					}
-					if hm.Role != "user" && hm.Role != "assistant" {
+					if hm.Role != "user" && hm.Role != "assistant" && hm.Role != "tool" {
 						continue
 					}
-					if strings.TrimSpace(hm.Content) == "" {
+					if hm.Role != "tool" && strings.TrimSpace(hm.Content) == "" {
 						continue
 					}
-					if utf8.RuneCountInString(hm.Content) > 10000 {
+					if hm.Role != "tool" && utf8.RuneCountInString(hm.Content) > 10000 {
 						continue
 					}
 					history = append(history, hm)
 				}
 
-				// 使用 json.Marshal 对用户输入进行正确的 JSON 转义，防止注入
-				payloadBytes, err := json.Marshal(map[string]interface{}{
-					"user_message": msg.Content,
-					"history":      history,
-				})
+			payloadBytes, err := json.Marshal(map[string]interface{}{
+				"user_message":      msg.Content,
+				"history":           history,
+				"executor_agent_id": msg.ExecutorAgentID,
+				"inject_agent_id":   msg.InjectAgentID,
+			})
 				if err != nil {
 					log.Printf("JSON encoding failed: %v", err)
 					continue
@@ -157,19 +293,81 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					CommandType: "start_chat",
 					Payload:     string(payloadBytes),
 				}
-				// 非阻塞发送：Python Agent 未连接（无消费者）时不阻塞 WebSocket handler
 				select {
 				case h.manager.CmdChan <- cmd:
-					// 日志不记录聊天明文内容，仅记录长度（用户可能在消息中粘贴敏感信息）
 					log.Printf("[Chat started] Session: %s | Content length: %d", sessionId, utf8.RuneCountInString(msg.Content))
 				default:
 					log.Printf("CmdChan full, dropping command: session=%s", sessionId)
-					// 丢弃时必须通知前端，避免用户误以为消息已发送
 					h.manager.SendToSession(sessionId, &proto.AgentEvent{
 						EventType: "error",
 						Payload:   `{"message": "消息发送失败：系统繁忙，请稍后重试"}`,
 					})
 				}
+
+			case "permission_response":
+				sessionId := msg.SessionID
+				requestID := msg.RequestID
+				decision := msg.Decision
+
+				if !storage.ValidSessionID(sessionId) || requestID == "" {
+					log.Printf("Rejecting permission_response with invalid params: session=%q request_id=%q", sessionId, requestID)
+					continue
+				}
+				if decision != "allow" && decision != "deny" {
+					log.Printf("Rejecting permission_response with invalid decision: %q", decision)
+					continue
+				}
+
+				if !h.approvalManager.Resolve(sessionId, requestID, decision) {
+					log.Printf("permission_response resolve failed: session=%s request_id=%s", sessionId, requestID)
+					continue
+				}
+
+				if decision == "allow" && msg.Scope == "session" {
+					if toolName, resolvedPath, ok := h.approvalManager.GetApproval(sessionId, requestID); ok {
+						h.approvalManager.AddTrust(sessionId, toolName, resolvedPath)
+					} else {
+						log.Printf("permission_response: cannot get approval details for trust, request_id=%s", requestID)
+					}
+				}
+
+				payloadBytes, _ := json.Marshal(map[string]string{
+					"request_id": requestID,
+					"decision":   decision,
+				})
+				cmd := &proto.ServerCommand{
+					SessionId:   sessionId,
+					CommandType: "permission_response",
+					Payload:     string(payloadBytes),
+				}
+				select {
+				case h.manager.CmdChan <- cmd:
+					log.Printf("[Permission] %s request_id=%s session=%s scope=%s", decision, requestID, sessionId, msg.Scope)
+				default:
+					log.Printf("CmdChan full, dropping permission_response: session=%s request_id=%s", sessionId, requestID)
+				}
+
+			case "cancel_task":
+				sessionId := msg.SessionID
+				if !storage.ValidSessionID(sessionId) {
+					log.Printf("Rejecting cancel_task with invalid session ID: %q", sessionId)
+					continue
+				}
+
+				cmd := &proto.ServerCommand{
+					SessionId:   sessionId,
+					CommandType: "cancel_task",
+					Payload:     "{}",
+				}
+				select {
+				case h.manager.CmdChan <- cmd:
+					log.Printf("[Cancel] Task cancelled: session=%s", sessionId)
+				default:
+					log.Printf("CmdChan full, dropping cancel_task: session=%s", sessionId)
+				}
+
+			default:
+				log.Printf("Unknown action: %q, dropping", msg.Action)
 			}
 		}
 	}
