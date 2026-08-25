@@ -75,6 +75,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 			return status.Errorf(codes.Internal, "failed to receive event: %s", sanitize.Error(err))
 		}
 
+		log.Printf("[gRPC→WS] Event: %s | Session: %s | Payload: %s", event.EventType, event.SessionId, truncate(event.Payload, 300))
 		h.manager.SendToSession(event.SessionId, event)
 	}
 }
@@ -224,6 +225,13 @@ func agentDefToProto(def storage.AgentDef) *proto.AgentDef {
 		CreatedAt:    def.CreatedAt,
 		UpdatedAt:    def.UpdatedAt,
 	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, messageID string, llmErr *llm.LLMError) error {

@@ -15,6 +15,7 @@ import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
 import { AgentSelector } from './AgentSelector'
 
+
 export function MessageList({ messages, streamingContent }: { messages: Message[]; streamingContent: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -243,37 +244,15 @@ export function ChatArea({ conversation }: ChatAreaProps) {
       return
     }
 
-    let injectAgentId: string | undefined
-    const kept: string[] = []
-    for (const token of trimmed.split(/\s+/)) {
-      if (token.startsWith('@')) {
-        const agent = agents.find((a) => a.name === token.slice(1))
-        if (agent) {
-          injectAgentId = agent.id
-          continue
-        }
-      }
-      kept.push(token)
-    }
-    const content = kept.join(' ')
-    if (!content) {
-      setChatError('消息内容为空，请补充要交给智能体执行的任务')
-      return
-    }
-    const executor = executorAgentId || 'main'
-    if (injectAgentId && injectAgentId === executor) {
-      setChatError('不能强制调用会话执行者本身')
-      return
-    }
-
     setInputValue('')
     setChatError(null)
-    // 显示原始消息（包含 @mention），但发送剥离后的内容给后端
-    const displayContent = trimmed
-    const history = sendMessage(displayContent)
+    const history = sendMessage(trimmed)
 
-    const sent = wsSendMessage(content, sessionId, history, executor, injectAgentId)
+    const executor = executorAgentId || 'main'
+    console.log('[ChatArea] Sending message:', { content: trimmed, sessionId, executor, historyLen: history.length })
+    const sent = wsSendMessage(trimmed, sessionId, history, executor)
     if (!sent) {
+      console.error('[ChatArea] Failed to send message via WebSocket')
       if (!connected) {
         setChatError('网络连接中，请稍后重试')
       } else {
@@ -327,6 +306,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             reconnectExhausted={isReconnectExhausted}
             onManualReconnect={manualReconnect}
           />
+
           <MessageList messages={messages} streamingContent={streamingContent} />
           {processing && !streamingContent && (
             <ThinkingIndicator />
@@ -348,7 +328,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
               onChange={setExecutorAgentId}
               disabled={lockStatus.locked || processing}
             />
-            <span className="text-xs text-neutral-400">在消息中输入 @智能体名 可强制指定子智能体执行</span>
+            <span className="text-xs text-neutral-400">在消息中输入 @智能体名 可建议主智能体调用子智能体</span>
           </div>
           <ChatInput
             value={inputValue}

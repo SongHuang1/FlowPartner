@@ -78,6 +78,11 @@ vi.mock('@/hooks/useWebSocket', () => ({
 
 const mockUseWebSocket = vi.fn()
 
+const mockOnAgentsChanged = vi.fn(() => () => {})
+const mockOnSubAgentStart = vi.fn(() => () => {})
+const mockOnSubAgentStreamChunk = vi.fn(() => () => {})
+const mockOnSubAgentEnd = vi.fn(() => () => {})
+
 const baseWsReturn = {
   connected: true,
   reconnecting: false,
@@ -96,6 +101,10 @@ const baseWsReturn = {
   onError: mockOnError,
   onSecurityEvent: mockOnSecurityEvent,
   onPermissionRequest: mockOnPermissionRequest,
+  onAgentsChanged: mockOnAgentsChanged,
+  onSubAgentStart: mockOnSubAgentStart,
+  onSubAgentStreamChunk: mockOnSubAgentStreamChunk,
+  onSubAgentEnd: mockOnSubAgentEnd,
 }
 
 const mockAgents = [
@@ -149,7 +158,7 @@ describe('ChatArea empty state', () => {
     fireEvent.click(button)
     expect(mockSendMessage).toHaveBeenCalledWith('hello')
     await waitFor(() => {
-      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'main', undefined)
+      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'main')
     })
   })
 
@@ -186,42 +195,16 @@ describe('ChatArea multi-agent', () => {
     )
   }
 
-  it('strips @mention and passes inject_agent_id', async () => {
+  it('sends full message with @mention as content', async () => {
     renderWithMessages()
     await screen.findByRole('option', { name: '主智能体' })
     const input = screen.getByPlaceholderText('输入消息...')
     fireEvent.change(input, { target: { value: '帮我 @翻译官 翻译这句话' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
 
-    expect(mockSendMessage).toHaveBeenCalledWith('帮我 翻译这句话')
+    expect(mockSendMessage).toHaveBeenCalledWith('帮我 @翻译官 翻译这句话')
     await waitFor(() => {
-      expect(mockWsSendMessage).toHaveBeenCalledWith('帮我 翻译这句话', 'sess_test_1', [], 'main', 'agent-1')
-    })
-  })
-
-  it('rejects @mention targeting the executor itself', async () => {
-    renderWithMessages()
-    await screen.findByRole('option', { name: '主智能体' })
-    const input = screen.getByPlaceholderText('输入消息...')
-    fireEvent.change(input, { target: { value: '@主智能体 帮我' } })
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
-
-    expect(mockWsSendMessage).not.toHaveBeenCalled()
-    await waitFor(() => {
-      expect(screen.getByText(/不能强制调用会话执行者本身/)).toBeInTheDocument()
-    })
-  })
-
-  it('rejects empty message after stripping mention', async () => {
-    renderWithMessages()
-    await screen.findByRole('option', { name: '主智能体' })
-    const input = screen.getByPlaceholderText('输入消息...')
-    fireEvent.change(input, { target: { value: '@翻译官' } })
-    fireEvent.click(screen.getByRole('button', { name: '发送' }))
-
-    expect(mockWsSendMessage).not.toHaveBeenCalled()
-    await waitFor(() => {
-      expect(screen.getByText(/消息内容为空/)).toBeInTheDocument()
+      expect(mockWsSendMessage).toHaveBeenCalledWith('帮我 @翻译官 翻译这句话', 'sess_test_1', [], 'main')
     })
   })
 
@@ -234,7 +217,7 @@ describe('ChatArea multi-agent', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
 
     await waitFor(() => {
-      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'agent-1', undefined)
+      expect(mockWsSendMessage).toHaveBeenCalledWith('hello', 'sess_test_1', [], 'agent-1')
     })
   })
 })
@@ -266,7 +249,7 @@ describe('ChatArea subagent cards', () => {
     ],
   }
 
-  it('renders subagent card with status and opens drilldown on click', () => {
+  it('does not render subagent bar at top', () => {
     mockUseWebSocket.mockReturnValue({ ...baseWsReturn, subagentRuns: [run] })
     const conversation = makeConversation({
       messages: [
@@ -276,17 +259,6 @@ describe('ChatArea subagent cards', () => {
     })
     render(<ChatArea conversation={conversation} />)
 
-    expect(screen.getByText('子智能体任务')).toBeInTheDocument()
-    expect(screen.getByText('翻译官')).toBeInTheDocument()
-    expect(screen.getByText(/层级 2/)).toBeInTheDocument()
-    expect(screen.getByText('已完成')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByLabelText('查看子智能体 翻译官 的执行过程'))
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('先理解原文')).toBeInTheDocument()
-    expect(screen.getByText('read_file')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '返回主会话' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('子智能体')).not.toBeInTheDocument()
   })
 })

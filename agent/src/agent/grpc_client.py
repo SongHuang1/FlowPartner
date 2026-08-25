@@ -472,7 +472,7 @@ class FlowPartnerClient:
             executor_agent_id = payload.get("executor_agent_id") or "main"
             inject_agent_id = payload.get("inject_agent_id") or ""
 
-            logging.info(f"[Chat started] Session: {session_id} | User length: {len(user_message)} | Executor: {executor_agent_id}")
+            logging.info(f"[Chat started] Session: {session_id} | User: {user_message[:200]} | Executor: {executor_agent_id} | Inject: {inject_agent_id}")
 
             trace_id = str(uuid.uuid4())
 
@@ -487,6 +487,7 @@ class FlowPartnerClient:
             forced_tool_call = None
             if inject_agent_id:
                 if inject_agent_id == executor_agent_id:
+                    logging.warning(f"[Chat] Rejected: cannot inject into executor itself ({executor_agent_id})")
                     await self.send_event(
                         session_id, "error",
                         {"message": f"不能强制调用当前会话执行者自身（{executor_agent_id}），请选择其他智能体。"},
@@ -495,6 +496,7 @@ class FlowPartnerClient:
                     return
                 target_def = await self.agent_registry.get(inject_agent_id)
                 if target_def is None:
+                    logging.warning(f"[Chat] Rejected: inject target not found: {inject_agent_id}")
                     await self.send_event(
                         session_id, "error",
                         {"message": f"智能体不存在或已被删除，无法调用：{inject_agent_id}"},
@@ -502,7 +504,9 @@ class FlowPartnerClient:
                     )
                     return
                 forced_tool_call = {"name": f"agent__{inject_agent_id}", "arguments": {"task": user_message}}
-                logging.info(f"[Chat] 强制触发子智能体调用: {inject_agent_id}")
+                logging.info(f"[Chat] Forced sub-agent call: {inject_agent_id}")
+            else:
+                logging.info("[Chat] Normal mode: main agent will decide whether to call sub-agents")
 
             # 跟踪子智能体调用结果
             subagent_results = {}  # span_id -> {agent_name, task, content, status}
@@ -552,8 +556,7 @@ class FlowPartnerClient:
                 forced_tool_call=forced_tool_call,
             )
 
-            if final_answer:
-                await send_evt(session_id, "final_answer", {"text": final_answer})
+            logging.info(f"[Chat] final_answer length={len(final_answer) if final_answer else 0}, subagent_results={len(subagent_results)}")
 
             # 将子智能体结果附加到最后一条 assistant 消息
             results_list = list(subagent_results.values())

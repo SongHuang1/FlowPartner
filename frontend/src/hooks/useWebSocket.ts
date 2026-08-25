@@ -287,6 +287,8 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
+        console.log('[WS] Received event:', raw.event_type, raw.payload?.slice(0, 200))
+
         if (!raw.event_type || !isKnownEventType(raw.event_type)) {
           console.warn('Unknown event_type:', raw.event_type)
           return
@@ -372,6 +374,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
         // 子智能体事件处理
         if (raw.event_type === 'subagent_start') {
+          setEvents((prev) => [...prev, raw])
           try {
             const parsed = JSON.parse(raw.payload)
             subAgentStartCallbacksRef.current.forEach((cb) => {
@@ -384,9 +387,9 @@ export function useWebSocket(): UseWebSocketReturn {
         }
 
         if (raw.event_type === 'subagent_step') {
+          setEvents((prev) => [...prev, raw])
           try {
             const parsed = JSON.parse(raw.payload)
-            // 只流式输出 final_answer 内容
             if (parsed.step_type === 'final_answer' && parsed.content) {
               const spanId = parsed.span_id || ''
               subAgentStreamChunkCallbacksRef.current.forEach((cb) => {
@@ -400,6 +403,7 @@ export function useWebSocket(): UseWebSocketReturn {
         }
 
         if (raw.event_type === 'subagent_end') {
+          setEvents((prev) => [...prev, raw])
           try {
             const parsed = JSON.parse(raw.payload)
             const spanId = parsed.span_id || ''
@@ -409,6 +413,11 @@ export function useWebSocket(): UseWebSocketReturn {
           } catch {
             console.error('Failed to parse subagent_end payload:', raw.payload)
           }
+          return
+        }
+
+        if (raw.event_type === 'subagent_error') {
+          setEvents((prev) => [...prev, raw])
           return
         }
 

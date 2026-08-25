@@ -277,12 +277,15 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					history = append(history, hm)
 				}
 
-				payloadBytes, err := json.Marshal(map[string]interface{}{
-					"user_message":      msg.Content,
-					"history":           history,
-					"executor_agent_id": msg.ExecutorAgentID,
-					"inject_agent_id":   msg.InjectAgentID,
-				})
+			log.Printf("[WS→gRPC] start_chat: session=%s executor=%q inject=%q content=%q history_len=%d",
+				sessionId, msg.ExecutorAgentID, msg.InjectAgentID, msg.Content, len(history))
+
+			payloadBytes, err := json.Marshal(map[string]interface{}{
+				"user_message":      msg.Content,
+				"history":           history,
+				"executor_agent_id": msg.ExecutorAgentID,
+				"inject_agent_id":   msg.InjectAgentID,
+			})
 				if err != nil {
 					log.Printf("JSON encoding failed: %v", err)
 					continue

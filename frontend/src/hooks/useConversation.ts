@@ -112,6 +112,7 @@ export function useConversation(): UseConversationReturn {
     if (streamingIdRef.current) {
       const id = streamingIdRef.current
       const content = finalContent ?? streamingContentRef.current
+      console.log('[Conversation] finalizeStream:', id, 'contentLen:', content.length)
       const updated = messagesRef.current.map(m =>
         m.id === id ? { ...m, status: 'completed' as const, content: m.content || content } : m
       )
@@ -120,10 +121,29 @@ export function useConversation(): UseConversationReturn {
       setStreamingContent('')
       streamingContentRef.current = ''
       streamingIdRef.current = null
+    } else {
+      console.warn('[Conversation] finalizeStream called but no streamingIdRef!')
     }
   }, [])
 
   const addSubAgentStart = useCallback((info: { span_id: string; agent_name: string; task: string }) => {
+    console.log('[Conversation] addSubAgentStart:', info.agent_name, 'span:', info.span_id, 'hasStreaming:', !!streamingIdRef.current)
+    if (!streamingIdRef.current) {
+      const id = generateMessageId()
+      streamingIdRef.current = id
+      const newMessage: Message = {
+        id,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        status: 'streaming',
+      }
+      const updated = [...messagesRef.current, newMessage]
+      messagesRef.current = updated
+      setMessages(updated)
+      streamingContentRef.current = ''
+      console.log('[Conversation] Created new streaming message for subagent:', id)
+    }
     updateCurrentMessageSubAgent(prev => {
       const existing = prev.find(r => r.span_id === info.span_id)
       if (existing) return prev
