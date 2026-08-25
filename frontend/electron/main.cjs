@@ -163,13 +163,25 @@ function startPythonAgent(grpcPort) {
   })
 }
 
-// TODO: Windows 下 SIGTERM 无法保证优雅退出，需平台相关的进程终止方案
+// 终止整个进程树。Windows 上必须用 taskkill /T：PyInstaller onefile 的 agent 是
+// 引导进程+实际子进程两个 PID，process.kill 只杀前者会留下孤儿进程抢占 gRPC 命令通道。
+function killProcessTree(pid) {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch { /* already dead */ }
+  } else {
+    try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+  }
+}
+
 function stopPythonAgent() {
   if (!pythonProcess) return Promise.resolve()
   return new Promise((resolve) => {
     const pid = pythonProcess.pid
     const timeout = setTimeout(() => {
-      try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+      killProcessTree(pid)
       pythonProcess = null
       resolve()
     }, 3000)
@@ -180,7 +192,7 @@ function stopPythonAgent() {
       resolve()
     })
 
-    try { process.kill(pid, 'SIGTERM') } catch { /* already dead */ }
+    killProcessTree(pid)
   })
 }
 
@@ -209,14 +221,13 @@ function waitForReady(timeoutMs) {
   })
 }
 
-// TODO: Go 后端目前用 SIGTERM+3s 后 SIGKILL 兜底，未使用后端的优雅关闭信号；整体退出流程待统一设计
 function stopGoProcess() {
   if (!goProcess) return Promise.resolve()
 
   return new Promise((resolve) => {
     const pid = goProcess.pid
     const timeout = setTimeout(() => {
-      try { process.kill(pid, 'SIGKILL') } catch { /* already dead */ }
+      killProcessTree(pid)
       goProcess = null
       resolve()
     }, 3000)
@@ -227,7 +238,7 @@ function stopGoProcess() {
       resolve()
     })
 
-    try { process.kill(pid, 'SIGTERM') } catch { /* already dead */ }
+    killProcessTree(pid)
   })
 }
 

@@ -455,6 +455,24 @@ class FlowPartnerClient:
         except (json.JSONDecodeError, KeyError) as e:
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
+    async def _handle_permission_response(self, payload_str: str | None) -> None:
+        """处理 Go 转发的审批决定，唤醒等待中的 execute_tool。"""
+        try:
+            payload = json.loads(payload_str) if payload_str else {}
+            request_id = payload.get("request_id", "")
+            decision = payload.get("decision", "deny")
+
+            async with self._approval_lock:
+                future = self._pending_approvals.pop(request_id, None)
+
+            if future is not None and not future.done():
+                future.set_result(decision)
+                logging.info(f"[Permission] Resolved: request_id={request_id} decision={decision}")
+            elif future is None:
+                logging.warning(f"[Permission] Unknown request_id: {request_id}")
+        except Exception as e:
+            logging.error(f"[Permission] Failed to process response: {e}")
+
     async def connect_and_listen(self):
         logging.info(f"Preparing to connect to Go server: {self.server_address}")
         max_retries = 10
@@ -484,21 +502,7 @@ class FlowPartnerClient:
                         )
 
                     elif command.command_type == "permission_response":
-                        try:
-                            payload = json.loads(command.payload) if command.payload else {}
-                            request_id = payload.get("request_id", "")
-                            decision = payload.get("decision", "deny")
-
-                            async with self._approval_lock:
-                                future = self._pending_approvals.pop(request_id, None)
-
-                            if future is not None and not future.done():
-                                future.set_result(decision)
-                                logging.info(f"[Permission] Resolved: request_id={request_id} decision={decision}")
-                            elif future is None:
-                                logging.warning(f"[Permission] Unknown request_id: {request_id}")
-                        except Exception as e:
-                            logging.error(f"[Permission] Failed to process response: {e}")
+                        await self._handle_permission_response(command.payload)
 
                     elif command.command_type == "cancel_task":
                         session_id = command.session_id

@@ -53,6 +53,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 						log.Printf("Failed to send command to Python: %s", sanitize.Error(err))
 						return
 					}
+					log.Printf("[SyncChannel] Sent command to Python: type=%s session=%s", cmd.CommandType, cmd.SessionId)
 				case <-stream.Context().Done():
 					return
 				case <-time.After(30 * time.Second):

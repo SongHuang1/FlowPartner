@@ -726,3 +726,34 @@ class TestSubAgentRunTracker:
             (tmp_path / "history" / "sess-x.subagents.json").read_text(encoding="utf-8")
         )
         assert set(data["runs"].keys()) == {"s1", "s2"}
+
+
+class TestPermissionResponseHandling:
+    @pytest.mark.asyncio
+    async def test_resolves_pending_future(self, tmp_path: Path):
+        client = make_client(tmp_path)
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        async with client._approval_lock:
+            client._pending_approvals["req-1"] = future
+
+        await client._handle_permission_response(json.dumps({"request_id": "req-1", "decision": "allow"}))
+
+        assert future.result() == "allow"
+        assert "req-1" not in client._pending_approvals
+
+    @pytest.mark.asyncio
+    async def test_unknown_request_id_is_ignored(self, tmp_path: Path):
+        client = make_client(tmp_path)
+
+        await client._handle_permission_response(json.dumps({"request_id": "missing", "decision": "deny"}))
+
+        assert client._pending_approvals == {}
+
+    @pytest.mark.asyncio
+    async def test_malformed_payload_does_not_raise(self, tmp_path: Path):
+        client = make_client(tmp_path)
+
+        await client._handle_permission_response("{not json")
+
+        assert client._pending_approvals == {}
