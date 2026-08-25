@@ -19,6 +19,10 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   const contentBlocks = message.content_blocks
   const hasBlocks = contentBlocks && contentBlocks.length > 0
   const displayContent = !hasBlocks && isStreaming && streamingContent ? streamingContent : message.content
+  // 复制仅包含主智能体的文字（text 块），不包含子智能体卡片内容
+  const copyContent = hasBlocks
+    ? contentBlocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n').trim() || message.content
+    : message.content
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -72,8 +76,6 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
       )
     },
   }
-
-  console.log('[AssistantMessage] render:', { hasBlocks, blockCount: contentBlocks?.length, blocks: contentBlocks?.map(b => ({ type: b.type, len: b.type === 'text' ? b.content?.length : undefined })) })
 
   const renderSubagentBlock = (block: Extract<ContentBlock, { type: 'subagent' }>, idx: number) => {
     const isExpanded = expandedAgent === block.span_id
@@ -135,7 +137,7 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
             </Markdown>
           </div>
         )}
-        {isCompleted && <MessageToolbar content={message.content} />}
+        {isCompleted && <MessageToolbar content={copyContent} />}
       </div>
     </div>
   )

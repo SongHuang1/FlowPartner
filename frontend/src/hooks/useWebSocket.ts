@@ -50,9 +50,6 @@ export interface UseWebSocketReturn {
   manualReconnect: () => void
   onStreamChunk: (cb: (chunk: string) => void) => () => void
   onFinalAnswer: (cb: (answer: string) => void) => () => void
-  onSubAgentStart: (cb: (info: { span_id: string; agent_name: string; task: string }) => void) => () => void
-  onSubAgentStreamChunk: (cb: (span_id: string, chunk: string) => void) => () => void
-  onSubAgentEnd: (cb: (span_id: string, result: string) => void) => () => void
   onAgentsChanged: (cb: () => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
@@ -209,9 +206,6 @@ export function useWebSocket(): UseWebSocketReturn {
   const mountedRef = useRef(true)
   const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
   const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
-  const subAgentStartCallbacksRef = useRef<Set<(info: { span_id: string; agent_name: string; task: string }) => void>>(new Set())
-  const subAgentStreamChunkCallbacksRef = useRef<Set<(span_id: string, chunk: string) => void>>(new Set())
-  const subAgentEndCallbacksRef = useRef<Set<(span_id: string, result: string) => void>>(new Set())
   const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
@@ -320,6 +314,7 @@ export function useWebSocket(): UseWebSocketReturn {
         if (sessionEndedRef.current) return
 
         if (raw.event_type === 'llm_chunk') {
+          setEvents((prev) => [...prev, raw])
           try {
             const parsed = JSON.parse(raw.payload)
             const content = (parsed.content as string) || ''
@@ -370,51 +365,13 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
-        // 子智能体事件处理
-        if (raw.event_type === 'subagent_start') {
+        // 子智能体事件只进入事件流，由 deriveContentBlocks 统一构建内容块
+        if (raw.event_type === 'subagent_start' || raw.event_type === 'subagent_step' || raw.event_type === 'subagent_error') {
           setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            subAgentStartCallbacksRef.current.forEach((cb) => {
-              try { cb({ span_id: parsed.span_id || '', agent_name: parsed.agent_name || '', task: parsed.task || '' }) } catch (e) { console.error('onSubAgentStart callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse subagent_start payload:', raw.payload)
-          }
-          return
-        }
-
-        if (raw.event_type === 'subagent_step') {
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            if (parsed.step_type === 'final_answer' && parsed.content) {
-              const spanId = parsed.span_id || ''
-              subAgentStreamChunkCallbacksRef.current.forEach((cb) => {
-                try { cb(spanId, parsed.content) } catch (e) { console.error('onSubAgentStreamChunk callback error:', e) }
-              })
-            }
-          } catch {
-            console.error('Failed to parse subagent_step payload:', raw.payload)
-          }
           return
         }
 
         if (raw.event_type === 'subagent_end') {
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            const spanId = parsed.span_id || ''
-            subAgentEndCallbacksRef.current.forEach((cb) => {
-              try { cb(spanId, parsed.result || '') } catch (e) { console.error('onSubAgentEnd callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse subagent_end payload:', raw.payload)
-          }
-          return
-        }
-
-        if (raw.event_type === 'subagent_error') {
           setEvents((prev) => [...prev, raw])
           return
         }
@@ -490,9 +447,6 @@ export function useWebSocket(): UseWebSocketReturn {
 
     const finalAnswerCbs = finalAnswerCallbacksRef.current
     const streamChunkCbs = streamChunkCallbacksRef.current
-    const subAgentStartCbs = subAgentStartCallbacksRef.current
-    const subAgentStreamChunkCbs = subAgentStreamChunkCallbacksRef.current
-    const subAgentEndCbs = subAgentEndCallbacksRef.current
     const agentsChangedCbs = agentsChangedCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
@@ -510,9 +464,6 @@ export function useWebSocket(): UseWebSocketReturn {
       }
       finalAnswerCbs.clear()
       streamChunkCbs.clear()
-      subAgentStartCbs.clear()
-      subAgentStreamChunkCbs.clear()
-      subAgentEndCbs.clear()
       agentsChangedCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
@@ -629,21 +580,6 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { finalAnswerCallbacksRef.current.delete(cb) }
   }, [])
 
-  const onSubAgentStart = useCallback((cb: (info: { span_id: string; agent_name: string; task: string }) => void) => {
-    subAgentStartCallbacksRef.current.add(cb)
-    return () => { subAgentStartCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onSubAgentStreamChunk = useCallback((cb: (span_id: string, chunk: string) => void) => {
-    subAgentStreamChunkCallbacksRef.current.add(cb)
-    return () => { subAgentStreamChunkCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onSubAgentEnd = useCallback((cb: (span_id: string, result: string) => void) => {
-    subAgentEndCallbacksRef.current.add(cb)
-    return () => { subAgentEndCallbacksRef.current.delete(cb) }
-  }, [])
-
   const onAgentsChanged = useCallback((cb: () => void) => {
     agentsChangedCallbacksRef.current.add(cb)
     return () => { agentsChangedCallbacksRef.current.delete(cb) }
@@ -692,9 +628,6 @@ export function useWebSocket(): UseWebSocketReturn {
     manualReconnect,
     onStreamChunk,
     onFinalAnswer,
-    onSubAgentStart,
-    onSubAgentStreamChunk,
-    onSubAgentEnd,
     onAgentsChanged,
     onError,
     onSecurityEvent,
@@ -708,7 +641,7 @@ export function deriveContentBlocks(events: ChatEvent[]): ContentBlock[] {
   const blocks: ContentBlock[] = []
   let textBuf = ''
   const spanToIndex = new Map<string, number>()
-  const pendingToolCalls: Array<{ tool: string; args: Record<string, unknown>; blockIdx: number }> = []
+  const pendingAgentCalls: Array<{ callId: string; blockIdx: number }> = []
 
   const flushText = () => {
     if (textBuf.trim()) {
@@ -743,20 +676,35 @@ export function deriveContentBlocks(events: ChatEvent[]): ContentBlock[] {
           status: 'running',
           steps: [],
         })
-        pendingToolCalls.push({ tool: toolName, args: parsed.args as Record<string, unknown>, blockIdx })
+        pendingAgentCalls.push({ callId: (parsed.call_id as string) || '', blockIdx })
       }
       continue
     }
 
     if (evt.event_type === 'subagent_start') {
       const spanId = (parsed.span_id as string) || ''
-      const pending = pendingToolCalls.shift()
+      const pending = pendingAgentCalls.shift()
       if (pending) {
         const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
         block.span_id = spanId
-        block.agent_name = (parsed.agent_name as string) || pending.tool
-        block.task = (parsed.task as string) || (pending.args?.task as string) || ''
+        block.agent_name = (parsed.agent_name as string) || block.agent_name
+        block.task = (parsed.task as string) || ''
         spanToIndex.set(spanId, pending.blockIdx)
+      }
+      continue
+    }
+
+    if (evt.event_type === 'tool_result') {
+      const callId = (parsed.call_id as string) || ''
+      const pendingIdx = pendingAgentCalls.findIndex((p) => p.callId === callId)
+      if (pendingIdx !== -1) {
+        const pending = pendingAgentCalls[pendingIdx]
+        pendingAgentCalls.splice(pendingIdx, 1)
+        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
+        if (!block.span_id) {
+          block.status = 'done'
+          if (typeof parsed.result === 'string') block.result = parsed.result
+        }
       }
       continue
     }

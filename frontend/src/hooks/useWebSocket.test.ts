@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useWebSocket, type ChatEvent } from '@/hooks/useWebSocket'
+import { useWebSocket, deriveContentBlocks, type ChatEvent } from '@/hooks/useWebSocket'
 
 const mockGetApiPort = vi.fn()
 
@@ -903,6 +903,80 @@ describe('useWebSocket', () => {
       const parsed = JSON.parse(mockWebSocketInstance!.sentMessages[0])
       expect(parsed.executor_agent_id).toBe('agent-2')
       expect(parsed.inject_agent_id).toBe('agent-1')
+    })
+  })
+
+  describe('deriveContentBlocks', () => {
+    const evt = (event_type: string, payload: Record<string, unknown>): ChatEvent => ({
+      event_type,
+      payload: JSON.stringify(payload),
+    })
+
+    it('interleaves text and subagent cards in chronological order', () => {
+      const blocks = deriveContentBlocks([
+        evt('llm_chunk', { content: '让我调用子智能体。' }),
+        evt('tool_call', { tool: 'agent__a', args: { task: '任务A' }, call_id: 'c1' }),
+        evt('subagent_start', { span_id: 'span-1', agent_name: '测试A', task: '任务A' }),
+        evt('subagent_step', { span_id: 'span-1', step_type: 'final_answer', content: 'A 的回答' }),
+        evt('subagent_end', { span_id: 'span-1', result: 'A 的回答' }),
+        evt('tool_result', { tool: 'agent__a', call_id: 'c1', result: 'A 的回答' }),
+        evt('llm_chunk', { content: '我是FlowPartner。' }),
+        evt('tool_call', { tool: 'agent__b', args: { task: '任务B' }, call_id: 'c2' }),
+        evt('subagent_start', { span_id: 'span-2', agent_name: '测试B', task: '任务B' }),
+        evt('subagent_end', { span_id: 'span-2', result: 'B 的回答' }),
+        evt('tool_result', { tool: 'agent__b', call_id: 'c2', result: 'B 的回答' }),
+        evt('llm_chunk', { content: '以上是两次调用的结果。' }),
+      ])
+
+      expect(blocks).toHaveLength(5)
+      expect(blocks[0]).toEqual({ type: 'text', content: '让我调用子智能体。' })
+      const card1 = blocks[1] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card1.span_id).toBe('span-1')
+      expect(card1.status).toBe('done')
+      expect(card1.result).toBe('A 的回答')
+      expect(blocks[2]).toEqual({ type: 'text', content: '我是FlowPartner。' })
+      const card2 = blocks[3] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card2.span_id).toBe('span-2')
+      expect(blocks[4]).toEqual({ type: 'text', content: '以上是两次调用的结果。' })
+    })
+
+    it('closes unpaired agent card via tool_result fallback', () => {
+      const blocks = deriveContentBlocks([
+        evt('tool_call', { tool: 'agent__missing', args: { task: 'x' }, call_id: 'c9' }),
+        evt('tool_result', { tool: 'agent__missing', call_id: 'c9', result: '子智能体调用失败：不存在' }),
+      ])
+
+      expect(blocks).toHaveLength(1)
+      const card = blocks[0] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card.status).toBe('done')
+      expect(card.result).toBe('子智能体调用失败：不存在')
+    })
+
+    it('does not overwrite a paired card when tool_result arrives', () => {
+      const blocks = deriveContentBlocks([
+        evt('tool_call', { tool: 'agent__a', args: {}, call_id: 'c1' }),
+        evt('subagent_start', { span_id: 'span-1', agent_name: '测试A', task: '' }),
+        evt('subagent_end', { span_id: 'span-1', result: '正确结果' }),
+        evt('tool_result', { tool: 'agent__a', call_id: 'c1', result: '正确结果' }),
+      ])
+
+      const card = blocks[0] as Extract<(typeof blocks)[number], { type: 'subagent' }>
+      expect(card.result).toBe('正确结果')
+      expect(card.status).toBe('done')
+    })
+  })
+
+  describe('llm_chunk in event stream', () => {
+    it('records llm_chunk events so content blocks can be derived', async () => {
+      const { result } = renderHook(() => useWebSocket())
+      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
+      openConnection()
+
+      sendEvent({ event_type: 'llm_chunk', payload: JSON.stringify({ content: '你好' }) })
+      sendEvent({ event_type: 'llm_chunk', payload: JSON.stringify({ content: '，世界' }) })
+
+      const chunks = result.current.events.filter((e) => e.event_type === 'llm_chunk')
+      expect(chunks).toHaveLength(2)
     })
   })
 })

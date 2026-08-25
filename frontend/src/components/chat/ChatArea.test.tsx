@@ -36,11 +36,6 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
     appendStreamChunk: vi.fn(),
     finalizeStream: vi.fn(),
     finalizeWithBlocks: vi.fn(),
-    addSubAgentStart: vi.fn(),
-    appendSubAgentChunk: vi.fn(),
-    finalizeSubAgent: vi.fn(),
-    addToolMessage: vi.fn(),
-    addAssistantToolCalls: vi.fn(),
     updateContentBlocks: vi.fn(),
     startNewConversation: vi.fn(),
     loadConversation: vi.fn(),
@@ -82,9 +77,6 @@ vi.mock('@/hooks/useWebSocket', () => ({
 const mockUseWebSocket = vi.fn()
 
 const mockOnAgentsChanged = vi.fn(() => () => {})
-const mockOnSubAgentStart = vi.fn(() => () => {})
-const mockOnSubAgentStreamChunk = vi.fn(() => () => {})
-const mockOnSubAgentEnd = vi.fn(() => () => {})
 
 const baseWsReturn = {
   connected: true,
@@ -105,9 +97,6 @@ const baseWsReturn = {
   onSecurityEvent: mockOnSecurityEvent,
   onPermissionRequest: mockOnPermissionRequest,
   onAgentsChanged: mockOnAgentsChanged,
-  onSubAgentStart: mockOnSubAgentStart,
-  onSubAgentStreamChunk: mockOnSubAgentStreamChunk,
-  onSubAgentEnd: mockOnSubAgentEnd,
 }
 
 const mockAgents = [
