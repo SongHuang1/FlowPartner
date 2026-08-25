@@ -1,7 +1,6 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { Message, PermissionRequestPayload, AgentMeta } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
@@ -55,15 +54,29 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ value, onChange, onSend, onStop, disabled, loading }: ChatInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [cancelClicked, setCancelClicked] = useState(false)
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [])
+
+  useEffect(() => {
+    adjustHeight()
+  }, [value, adjustHeight])
 
   const handleSend = () => {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
     setCancelClicked(false)
     onSend()
-    inputRef.current?.focus()
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.focus()
+    }
   }
 
   const handleStop = () => {
@@ -79,37 +92,42 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading }
   }
 
   return (
-    <div className="border-t border-neutral-200 p-3 flex items-center gap-2 bg-white">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="输入消息..."
-        className="flex-1"
-        maxLength={10000}
-        disabled={disabled}
-      />
-      {loading ? (
-        <Button
-          size="icon"
-          variant="destructive"
-          onClick={handleStop}
-          disabled={cancelClicked}
-          aria-label="停止"
-        >
-          <Square className="w-4 h-4" />
-        </Button>
-      ) : (
-        <Button
-          size="icon"
-          disabled={!value.trim() || disabled}
-          onClick={handleSend}
-          aria-label="发送"
-        >
-          <Send className="w-4 h-4" />
-        </Button>
-      )}
+    <div className="border-t border-neutral-200 p-3 bg-white">
+      <div className="flex items-end gap-2">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="输入消息..."
+          maxLength={10000}
+          disabled={disabled}
+          rows={1}
+          className="flex-1 resize-none overflow-y-auto rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-300 disabled:opacity-50 min-h-[40px] max-h-[200px]"
+        />
+        {loading ? (
+          <Button
+            size="icon"
+            variant="destructive"
+            onClick={handleStop}
+            disabled={cancelClicked}
+            aria-label="停止"
+            className="shrink-0"
+          >
+            <Square className="w-4 h-4" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            disabled={!value.trim() || disabled}
+            onClick={handleSend}
+            aria-label="发送"
+            className="shrink-0"
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

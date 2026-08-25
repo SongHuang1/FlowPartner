@@ -108,10 +108,21 @@ export async function getHistoryList(): Promise<HistoryEntry[]> {
 }
 
 export async function getHistorySession(sessionId: string): Promise<HistorySession> {
-  await ensureReady()
-  const res = await fetchWithTimeout(`${BASE}/history/${encodeURIComponent(sessionId)}`)
-  const data: ApiResponse<HistorySession> = await res.json()
-  return data.data
+	await ensureReady()
+	const res = await fetchWithTimeout(`${BASE}/history/${encodeURIComponent(sessionId)}`)
+	const data: ApiResponse<HistorySession> = await res.json()
+	return data.data
+}
+
+export async function deleteHistory(sessionId: string): Promise<void> {
+	await ensureReady()
+	const res = await fetchWithTimeout(`${BASE}/history/${encodeURIComponent(sessionId)}`, {
+		method: 'DELETE',
+	})
+	const data: ApiResponse<unknown> = await res.json()
+	if (data.code !== 0) {
+		throw new Error(data.message || '删除失败')
+	}
 }
 
 export async function unlock(password: string): Promise<void> {

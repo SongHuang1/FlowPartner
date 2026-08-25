@@ -283,6 +283,25 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 	return result, nil
 }
 
+// DeleteHistory 删除历史会话文件。
+func DeleteHistory(sessionID string) error {
+	if !ValidSessionID(sessionID) {
+		return ErrInvalidFilename
+	}
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(historyDir, sessionID+".json")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to delete history %s: %w", sessionID, err)
+	}
+	return nil
+}
+
 func truncateRunes(s string, max int) string {
 	runes := []rune(s)
 	if len(runes) <= max {
