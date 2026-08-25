@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -181,4 +182,34 @@ func TestManager_WorkingDirMissing(t *testing.T) {
 
 func mkdirAll(dir string) error {
 	return os.MkdirAll(dir, 0o755)
+}
+
+func TestManager_PhaseReturnsToIdleAfterSnapshot(t *testing.T) {
+	workingDir, snapshotDir, _ := setup(t)
+	writeFile(t, filepath.Join(workingDir, "a.txt"), "a")
+
+	var mu sync.Mutex
+	var lastPhase string
+	mgr := NewManager(func(s Status) {
+		mu.Lock()
+		lastPhase = s.Phase
+		mu.Unlock()
+	}, nil)
+	if err := mgr.Configure(workingDir, snapshotDir, true, false); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Close()
+
+	mgr.TriggerManual()
+	waitFor(t, 5*time.Second, func() bool {
+		list, _ := ListSnapshots(snapshotDir, mgr.ProjectID())
+		return len(list) == 1
+	})
+
+	// 状态回调异步推送，等待最终状态落地。
+	waitFor(t, 2*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return lastPhase == "idle"
+	})
 }

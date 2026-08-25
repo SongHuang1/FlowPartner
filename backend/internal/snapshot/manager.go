@@ -325,6 +325,10 @@ func (m *Manager) finishSnapshot(reason Reason, snapshotDir, projectID string) {
 	count, size := countAndSize(projectDir)
 
 	m.mu.Lock()
+	if m.status.Phase != "error" {
+		// 成功路径：恢复空闲态（错误路径已在 runSnapshot 中置为 error，保持展示）
+		m.status.Phase = "idle"
+	}
 	m.snapshotting = false
 	m.status.Count = count
 	m.status.SizeBytes = size
