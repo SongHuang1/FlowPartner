@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import Markdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import katex from 'katex'
@@ -31,9 +32,8 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     window.flowPartner.openExternal(url)
   }, [])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mdComponents: any = {
-    a: (props: any) => (
+  const mdComponents: Components = {
+    a: (props) => (
       <a
         {...props}
         onClick={handleLinkClick}
@@ -42,7 +42,7 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
         className="text-blue-600 hover:underline"
       />
     ),
-    pre: (props: any) => {
+    pre: (props) => {
       const { children } = props
       const child = children as { props?: { className?: string; children?: React.ReactNode } } | undefined
       if (child?.props?.className?.includes('math-display')) {
@@ -56,10 +56,9 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
       }
       return <pre {...props} />
     },
-    code: (props: any) => {
-      const { inline, className, children, ...rest } = props
+    code: ({ className, children, ...rest }) => {
       const hasLanguage = /language-(\w+)/.exec(className || '')
-      if (inline || !hasLanguage) {
+      if (!hasLanguage) {
         return <code className="bg-neutral-100 px-1 py-0.5 rounded text-pink-600 text-[0.875em] font-mono" {...rest}>{children}</code>
       }
       return (

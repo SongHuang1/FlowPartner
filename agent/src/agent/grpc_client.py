@@ -455,6 +455,15 @@ class FlowPartnerClient:
         except (json.JSONDecodeError, KeyError) as e:
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
+    async def _cancel_task(self, session_id: str) -> None:
+        """取消指定会话的活跃任务；无活跃任务时静默忽略。"""
+        task = self._tasks.get(session_id)
+        if task is not None and not task.done():
+            task.cancel()
+            logging.info(f"[Cancel] Task cancelled: session={session_id}")
+        else:
+            logging.info(f"[Cancel] No active task for session={session_id}, ignoring")
+
     async def _handle_permission_response(self, payload_str: str | None) -> None:
         """处理 Go 转发的审批决定，唤醒等待中的 execute_tool。"""
         try:
@@ -505,13 +514,7 @@ class FlowPartnerClient:
                         await self._handle_permission_response(command.payload)
 
                     elif command.command_type == "cancel_task":
-                        session_id = command.session_id
-                        task = self._tasks.get(session_id)
-                        if task is not None and not task.done():
-                            task.cancel()
-                            logging.info(f"[Cancel] Task cancelled: session={session_id}")
-                        else:
-                            logging.info(f"[Cancel] No active task for session={session_id}, ignoring")
+                        await self._cancel_task(command.session_id)
 
                     elif command.command_type == "agents_changed":
                         self.agent_registry.invalidate()

@@ -36,7 +36,7 @@ export function buildHistoryContentBlocks(
       blocks.push(subagentCardFromRun(run))
       continue
     }
-    let task = ''
+    let task: string
     try {
       task = JSON.parse(tc.function?.arguments || '{}')?.task ?? ''
     } catch {

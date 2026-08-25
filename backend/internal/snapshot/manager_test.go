@@ -149,14 +149,24 @@ func TestManager_NestingRejected(t *testing.T) {
 	if err := mkdirAll(workingDir); err != nil {
 		t.Fatal(err)
 	}
+	// statusFunc 由 pushStatusLocked 在新 goroutine 中异步调用，须加锁保护 lastStatus。
+	var mu sync.Mutex
 	var lastStatus Status
-	mgr := NewManager(func(s Status) { lastStatus = s }, nil)
+	mgr := NewManager(func(s Status) {
+		mu.Lock()
+		defer mu.Unlock()
+		lastStatus = s
+	}, nil)
 	if err := mgr.Configure(workingDir, snapshotDir, true, false); err == nil {
 		t.Fatal("嵌套配置应被拒绝")
 	}
 	waitFor(t, 2*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
 		return lastStatus.Phase == "error" && lastStatus.Error != ""
 	})
+	mu.Lock()
+	defer mu.Unlock()
 	if lastStatus.Phase != "error" || lastStatus.Error == "" {
 		t.Errorf("状态应为 error，got %+v", lastStatus)
 	}

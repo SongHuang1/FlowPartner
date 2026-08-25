@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import grpc
 import pytest
@@ -586,7 +586,7 @@ class TestExecuteToolPermissionFlow:
 class TestHandleCommandCancelTask:
     @pytest.mark.asyncio
     async def test_cancel_task_cancels_active_task(self, tmp_path: Path):
-        """cancel_task 命令应取消对应 session 的活跃任务"""
+        """_cancel_task 应取消对应 session 的活跃任务"""
         client = make_client(tmp_path)
         cancel_called = asyncio.Event()
 
@@ -604,11 +604,7 @@ class TestHandleCommandCancelTask:
         # 让出事件循环，使 slow_task 进入 await asyncio.sleep(100)
         await asyncio.sleep(0)
 
-        # 模拟 cancel_task 命令的处理逻辑
-        session_id = "sess-cancel"
-        task_ref = client._tasks.get(session_id)
-        if task_ref is not None and not task_ref.done():
-            task_ref.cancel()
+        await client._cancel_task("sess-cancel")
 
         # 等待任务被取消
         await asyncio.wait_for(cancel_called.wait(), timeout=2.0)
@@ -616,51 +612,10 @@ class TestHandleCommandCancelTask:
 
     @pytest.mark.asyncio
     async def test_cancel_task_no_active_task(self, tmp_path: Path):
-        """cancel_task 无活跃任务时应静默忽略"""
+        """_cancel_task 无活跃任务时应静默忽略"""
         client = make_client(tmp_path)
-        # 不注册任何任务
-        session_id = "sess-no-task"
-        task = client._tasks.get(session_id)
-        # 应不报错
-        if task is not None and not task.done():
-            task.cancel()
-
-
-# --- react_agent CancelledError 事件序列测试 ---
-
-class TestReactAgentCancelledError:
-    @pytest.mark.asyncio
-    async def test_cancelled_error_sends_final_answer(self, tmp_path: Path):
-        """react_agent 抛 CancelledError 时应已发送 final_answer 事件"""
-        from agent.core.react_agent import ReactAgent
-
-        sent_events = []
-
-        async def fake_call_llm(session_id, json_payload, send_event_func=None, iteration=None):
-            raise asyncio.CancelledError()
-
-        async def fake_send_event(session_id, event_type, payload):
-            sent_events.append((event_type, payload))
-
-        # 创建 tool_registry mock，get_openai_tools_definition 返回空列表
-        mock_registry = MagicMock()
-        mock_registry.get_openai_tools_definition.return_value = []
-
-        # 创建会抛出 CancelledError 的 agent（fake_call_llm 直接抛 CancelledError）
-        agent = ReactAgent(
-            session_id="sess-cancel-test",
-            call_llm_func=fake_call_llm,
-            send_event_func=fake_send_event,
-            tool_registry=mock_registry,
-        )
-
-        with pytest.raises(asyncio.CancelledError):
-            await agent.run("test message")
-
-        # 验证 final_answer 已发送（带"已停止生成"文案）
-        final_answer_events = [e for e in sent_events if e[0] == "final_answer"]
-        assert len(final_answer_events) >= 1
-        assert "已停止" in final_answer_events[0][1].get("text", "")
+        await client._cancel_task("sess-no-task")
+        assert "sess-no-task" not in client._tasks
 
 
 class TestSubAgentRunTracker:

@@ -116,18 +116,15 @@ describe('App Integration', () => {
     expect(sidebar?.className).toContain('w-64')
   })
 
-  it('suggested action buttons are enabled and functional', async () => {
+  it('sidebar loads history directly and new chat resets to welcome view', async () => {
     vi.useRealTimers()
     renderApp()
 
     const newChatButton = screen.getByRole('button', { name: '开始新对话' })
-    const historyButton = screen.getByRole('button', { name: '查看历史' })
 
     expect(newChatButton).toBeEnabled()
-    expect(historyButton).toBeEnabled()
 
-    // 查看历史 → 显示历史列表
-    fireEvent.click(historyButton)
+    // 历史列表随侧栏挂载直接显示
     expect(await screen.findByText('历史对话')).toBeInTheDocument()
     expect(screen.getByText('测试对话')).toBeInTheDocument()
 

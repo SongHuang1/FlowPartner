@@ -419,3 +419,23 @@ class TestReactAgent:
         assert {"role": "tool", "tool_call_id": messages[1]["tool_calls"][0]["id"], "content": "echo: 帮我完成任务"} in messages
         tool_calls = get_tool_calls(send_event)
         assert tool_calls[0]["tool"] == "agent__sub-1"
+
+
+class TestReactAgentCancelledError:
+    @pytest.mark.asyncio
+    async def test_cancelled_error_sends_final_answer(self):
+        """react_agent 抛 CancelledError 时应已发送 final_answer 事件"""
+        import asyncio
+
+        async def fake_call_llm(session_id, json_payload, send_event_func=None, iteration=None):
+            raise asyncio.CancelledError()
+
+        agent, send_event = make_agent(fake_call_llm)
+
+        with pytest.raises(asyncio.CancelledError):
+            await agent.run("test message")
+
+        # 验证 final_answer 已发送（带"已停止生成"文案）
+        final_answer_calls = [c for c in send_event.await_args_list if c.args[1] == "final_answer"]
+        assert len(final_answer_calls) >= 1
+        assert "已停止" in final_answer_calls[0].args[2].get("text", "")

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -15,26 +15,28 @@ interface SidebarProps {
 
 export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarProps) {
   const [historyList, setHistoryList] = useState<HistoryEntry[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
+  // 挂载时即开始加载历史，初始状态直接为加载中，避免 effect 内同步 setState。
+  const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadHistory()
-  }, [])
-
-  const loadHistory = async () => {
-    setHistoryLoading(true)
-    setHistoryError(null)
+  const loadHistory = useCallback(async () => {
     try {
       const list = await getHistoryList()
       setHistoryList(list)
+      setHistoryError(null)
     } catch (e) {
       setHistoryError(e instanceof Error ? e.message : '加载历史失败')
     } finally {
       setHistoryLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    // 通过 timer 回调触发首次加载，避免 effect 同步链路中的 setState 级联渲染。
+    const timer = setTimeout(loadHistory, 0)
+    return () => clearTimeout(timer)
+  }, [loadHistory])
 
   const handleLoadSession = async (sessionId: string) => {
     setHistoryLoading(true)

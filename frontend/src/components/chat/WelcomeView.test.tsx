@@ -61,7 +61,7 @@ describe('WelcomeView', () => {
 
   it('does not display working_directory when empty', () => {
     render(<WelcomeView {...defaultProps} settings={createSettings({ working_directory: '' })} />)
-    expect(screen.queryByText(/工作路径:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^路径:/)).not.toBeInTheDocument()
   })
 
   it('displays working_directory when set', () => {
