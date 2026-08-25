@@ -120,7 +120,7 @@ type ToolCall struct {
 	Function ToolCallFunction   `json:"function"`
 }
 
-// SubAgentResult 子智能体调用结果
+// SubAgentResult 子智能体调用结果（旧格式，仅最终结果摘要）
 type SubAgentResult struct {
 	SpanID    string `json:"span_id"`
 	AgentName string `json:"agent_name"`
@@ -129,14 +129,53 @@ type SubAgentResult struct {
 	Status    string `json:"status"`
 }
 
+// SubAgentRef 主记录中对子智能体运行的引用（call_id 关联 tool_calls，span_id 关联详情文件）
+type SubAgentRef struct {
+	CallID string `json:"call_id"`
+	SpanID string `json:"span_id"`
+}
+
+// SubAgentStep 子智能体执行过程步骤
+type SubAgentStep struct {
+	StepType  string                 `json:"step_type,omitempty"`
+	Content   string                 `json:"content,omitempty"`
+	Tool      string                 `json:"tool,omitempty"`
+	Args      map[string]interface{} `json:"args,omitempty"`
+	Result    string                 `json:"result,omitempty"`
+	Truncated bool                   `json:"truncated,omitempty"`
+}
+
+// SubAgentRun 子智能体单次运行的完整详情
+type SubAgentRun struct {
+	SpanID       string         `json:"span_id"`
+	TraceID      string         `json:"trace_id,omitempty"`
+	ParentSpanID string         `json:"parent_span_id,omitempty"`
+	AgentID      string         `json:"agent_id,omitempty"`
+	AgentName    string         `json:"agent_name"`
+	Task         string         `json:"task,omitempty"`
+	Depth        int            `json:"depth,omitempty"`
+	Status       string         `json:"status"`
+	Result       string         `json:"result,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	Steps        []SubAgentStep `json:"steps,omitempty"`
+}
+
 // HistoryMessage 历史会话中的单条消息，支持结构化工具上下文。
 type HistoryMessage struct {
-	Role           string           `json:"role"`
-	Content        string           `json:"content"`
-	ToolCalls      []ToolCall       `json:"tool_calls,omitempty"`
-	ToolCallID     string           `json:"tool_call_id,omitempty"`
-	Name           string           `json:"name,omitempty"`
+	Role            string           `json:"role"`
+	Content         string           `json:"content"`
+	ToolCalls       []ToolCall       `json:"tool_calls,omitempty"`
+	ToolCallID      string           `json:"tool_call_id,omitempty"`
+	Name            string           `json:"name,omitempty"`
 	SubAgentResults []SubAgentResult `json:"subagent_results,omitempty"`
+	SubAgentRefs    []SubAgentRef    `json:"subagent_refs,omitempty"`
+}
+
+// SubAgentsFile 子智能体运行详情文件（{session_id}.subagents.json）
+type SubAgentsFile struct {
+	Version   int                    `json:"version"`
+	SessionID string                 `json:"session_id"`
+	Runs      map[string]SubAgentRun `json:"runs"`
 }
 
 // HistoryEntry 历史会话列表条目
@@ -283,7 +322,34 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 	return result, nil
 }
 
-// DeleteHistory 删除历史会话文件。
+// ReadSubAgents 读取会话的子智能体运行详情。文件不存在时返回空 runs（可选数据）。
+func ReadSubAgents(sessionID string) (map[string]SubAgentRun, error) {
+	if !ValidSessionID(sessionID) {
+		return nil, ErrInvalidFilename
+	}
+	historyDir, err := HistoryDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(historyDir, sessionID+".subagents.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]SubAgentRun{}, nil
+		}
+		return nil, fmt.Errorf("failed to read subagents %s: %w", sessionID, err)
+	}
+	var file SubAgentsFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("failed to parse subagents %s: %w", sessionID, err)
+	}
+	if file.Runs == nil {
+		file.Runs = map[string]SubAgentRun{}
+	}
+	return file.Runs, nil
+}
+
+// DeleteHistory 删除历史会话文件（含子智能体详情文件）。
 func DeleteHistory(sessionID string) error {
 	if !ValidSessionID(sessionID) {
 		return ErrInvalidFilename
@@ -298,6 +364,10 @@ func DeleteHistory(sessionID string) error {
 			return ErrNotFound
 		}
 		return fmt.Errorf("failed to delete history %s: %w", sessionID, err)
+	}
+	subPath := filepath.Join(historyDir, sessionID+".subagents.json")
+	if err := os.Remove(subPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete subagents %s: %w", sessionID, err)
 	}
 	return nil
 }

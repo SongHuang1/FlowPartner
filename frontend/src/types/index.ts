@@ -48,6 +48,11 @@ export interface HistoryEntry {
   message_count: number
 }
 
+export interface SubAgentRef {
+  call_id: string
+  span_id: string
+}
+
 export interface HistoryMessage {
   role: 'user' | 'assistant' | 'tool'
   content: string
@@ -55,11 +60,13 @@ export interface HistoryMessage {
   tool_call_id?: string
   name?: string
   subagent_results?: SubAgentResult[]
+  subagent_refs?: SubAgentRef[]
 }
 
 export interface HistorySession {
   session_id: string
   messages: HistoryMessage[]
+  subagents?: Record<string, SubAgentRun>
 }
 
 export interface Settings {

@@ -14,7 +14,7 @@ import (
 )
 
 func newTestAgentDefHandler() *AgentDefHandler {
-	return NewAgentDefHandler(bridge.NewManager())
+	return NewAgentDefHandler(bridge.NewManager(), nil)
 }
 
 func decodeAgentDefResponse(t *testing.T, rec *httptest.ResponseRecorder) storage.AgentDef {

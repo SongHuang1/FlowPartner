@@ -51,10 +51,15 @@ func (h *HistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, http.StatusInternalServerError, response.Error(response.CodeInternalError, "Failed to read history"))
 		return
 	}
+	subagents, err := storage.ReadSubAgents(sessionID)
+	if err != nil {
+		subagents = map[string]storage.SubAgentRun{}
+	}
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]interface{}{
 		"session_id": sessionID,
 		"messages":   msgs,
-		}))
+		"subagents":  subagents,
+	}))
 }
 
 // Delete 删除历史会话

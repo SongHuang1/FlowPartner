@@ -3,6 +3,7 @@ import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { getHistoryList, getHistorySession, deleteHistory } from '@/lib/api'
+import { buildHistoryContentBlocks, buildToolResultMap } from '@/lib/history'
 import type { HistoryEntry, Message } from '@/types'
 
 interface SidebarProps {
@@ -40,6 +41,8 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
     setHistoryError(null)
     try {
       const session = await getHistorySession(sessionId)
+      const subagents = session.subagents || {}
+      const toolResults = buildToolResultMap(session.messages)
       const msgs: Message[] = session.messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m, i) => ({
@@ -47,7 +50,8 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
           role: m.role as 'user' | 'assistant',
           content: m.content,
           timestamp: Date.now(),
-          subagent_results: m.subagent_results,
+          content_blocks:
+            m.role === 'assistant' ? buildHistoryContentBlocks(m, subagents, toolResults) : undefined,
         }))
       onLoadSession(sessionId, msgs)
     } catch (e) {

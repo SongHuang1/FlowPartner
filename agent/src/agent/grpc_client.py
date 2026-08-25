@@ -25,6 +25,79 @@ _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 _CANCELLED_ANSWER = "已停止生成"
 
 
+class SubAgentRunTracker:
+    """跟踪一轮对话中的子智能体调用。
+
+    配对 tool_call 的 call_id 与 subagent_start 的 span_id（工具串行执行，按顺序匹配），
+    收集运行详情（steps/result/error）供持久化到 {session_id}.subagents.json。
+    """
+
+    def __init__(self) -> None:
+        self._pending_calls: list[str] = []
+        self.refs: list[dict[str, str]] = []
+        self.runs: dict[str, dict] = {}
+
+    def observe(self, event_type: str, payload: dict) -> None:
+        """观察事件流（转发前调用），更新配对与运行详情。"""
+        if event_type == "tool_call" and str(payload.get("tool", "")).startswith("agent__"):
+            self._pending_calls.append(str(payload.get("call_id", "")))
+        elif event_type == "subagent_start":
+            span_id = payload.get("span_id", "")
+            if not span_id:
+                return
+            call_id = self._pending_calls.pop(0) if self._pending_calls else ""
+            self.refs.append({"call_id": call_id, "span_id": span_id})
+            self.runs[span_id] = {
+                "span_id": span_id,
+                "trace_id": payload.get("trace_id", ""),
+                "parent_span_id": payload.get("parent_span_id", ""),
+                "agent_id": payload.get("agent_id", ""),
+                "agent_name": payload.get("agent_name", ""),
+                "task": payload.get("task", ""),
+                "depth": payload.get("depth", 1),
+                "status": "running",
+                "result": "",
+                "error": "",
+                "steps": [],
+            }
+        elif event_type == "subagent_step":
+            run = self.runs.get(payload.get("span_id", ""))
+            if run is not None:
+                step: dict = {"step_type": payload.get("step_type", "thinking")}
+                for key in ("content", "tool", "result"):
+                    if key in payload:
+                        step[key] = payload[key]
+                if "args" in payload:
+                    step["args"] = payload["args"]
+                if "truncated" in payload:
+                    step["truncated"] = payload["truncated"]
+                run["steps"].append(step)
+        elif event_type == "subagent_end":
+            run = self.runs.get(payload.get("span_id", ""))
+            if run is not None:
+                run["status"] = "done"
+                run["result"] = payload.get("result", "")
+        elif event_type == "subagent_error":
+            run = self.runs.get(payload.get("span_id", ""))
+            if run is not None:
+                run["status"] = "error"
+                run["error"] = payload.get("message", "")
+
+    def attach_refs(self, messages: list[dict]) -> None:
+        """将 refs 挂回到产生调用的 assistant 消息上。"""
+        ref_by_call = {r["call_id"]: r for r in self.refs}
+        for msg in messages:
+            if msg.get("role") != "assistant" or not msg.get("tool_calls"):
+                continue
+            msg_refs = [
+                ref_by_call[tc["id"]]
+                for tc in msg["tool_calls"]
+                if tc.get("id") in ref_by_call
+            ]
+            if msg_refs:
+                msg["subagent_refs"] = msg_refs
+
+
 def _safe_session_id(session_id: str) -> str:
     if not session_id or not _SESSION_ID_RE.fullmatch(session_id):
         raise ValueError(f"Invalid session id: {session_id!r}")
@@ -449,6 +522,26 @@ class FlowPartnerClient:
             else:
                 logging.error("Max retries reached, giving up.")
 
+    async def _merge_subagents_file(self, session_id: str, new_runs: dict[str, dict]) -> None:
+        """将本轮子智能体运行详情合并写入 {session_id}.subagents.json（原子替换）。"""
+        path = self.history_dir / f"{session_id}.subagents.json"
+        runs: dict[str, dict] = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("runs"), dict):
+                    runs = data["runs"]
+            except (json.JSONDecodeError, OSError) as e:
+                logging.warning(f"[SubAgents] Failed to read existing file for {session_id}, rebuilding: {e}")
+        runs.update(new_runs)
+        payload = {"version": 1, "session_id": session_id, "runs": runs}
+        tmp_path = path.with_suffix(".json.tmp")
+        try:
+            tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp_path.replace(path)
+        except OSError as e:
+            logging.error(f"[SubAgents] Failed to write subagents file for {session_id}: {e}")
+
     async def handle_chat(self, command, queue):
         session_id = command.session_id
         try:
@@ -505,37 +598,12 @@ class FlowPartnerClient:
                     return
                 forced_tool_call = {"name": f"agent__{inject_agent_id}", "arguments": {"task": user_message}}
 
-            # 跟踪子智能体调用结果
-            subagent_results = {}  # span_id -> {agent_name, task, content, status}
+            # 跟踪子智能体调用：refs 记录 call_id→span_id 配对（挂回 assistant 消息），
+            # runs 记录完整执行详情（写入 {session_id}.subagents.json）
+            tracker = SubAgentRunTracker()
 
             async def tracking_send_evt(sid: str, etype: str, epayload: dict) -> None:
-                # 拦截子智能体事件，记录结果
-                if etype == "subagent_start":
-                    span_id = epayload.get("span_id", "")
-                    if span_id:
-                        subagent_results[span_id] = {
-                            "span_id": span_id,
-                            "agent_name": epayload.get("agent_name", ""),
-                            "task": epayload.get("task", ""),
-                            "content": "",
-                            "status": "running",
-                        }
-                elif etype == "subagent_step":
-                    span_id = epayload.get("span_id", "")
-                    if span_id and span_id in subagent_results:
-                        if epayload.get("step_type") == "final_answer":
-                            subagent_results[span_id]["content"] = epayload.get("content", "")
-                elif etype == "subagent_end":
-                    span_id = epayload.get("span_id", "")
-                    if span_id and span_id in subagent_results:
-                        subagent_results[span_id]["status"] = "done"
-                        if not subagent_results[span_id]["content"]:
-                            subagent_results[span_id]["content"] = epayload.get("result", "")
-                elif etype == "subagent_error":
-                    span_id = epayload.get("span_id", "")
-                    if span_id and span_id in subagent_results:
-                        subagent_results[span_id]["status"] = "error"
-                        subagent_results[span_id]["content"] = epayload.get("message", "")
+                tracker.observe(etype, epayload)
                 # 转发原始事件
                 await send_evt(sid, etype, epayload)
 
@@ -553,14 +621,13 @@ class FlowPartnerClient:
                 forced_tool_call=forced_tool_call,
             )
 
-            # 将子智能体结果附加到最后一条 assistant 消息
-            results_list = list(subagent_results.values())
-            if results_list and all_messages:
-                # 找到最后一条 assistant 消息
-                for i in range(len(all_messages) - 1, -1, -1):
-                    if all_messages[i].get("role") == "assistant":
-                        all_messages[i]["subagent_results"] = results_list
-                        break
+            # 将子智能体引用挂回产生调用的 assistant 消息
+            if tracker.refs and all_messages:
+                tracker.attach_refs(all_messages)
+
+            # 子智能体执行详情合并写入独立文件（同会话多轮累积）
+            if tracker.runs:
+                await self._merge_subagents_file(session_id, tracker.runs)
 
             history_file = self.history_dir / f"{session_id}.json"
             async with self._history_lock:

@@ -661,3 +661,68 @@ class TestReactAgentCancelledError:
         final_answer_events = [e for e in sent_events if e[0] == "final_answer"]
         assert len(final_answer_events) >= 1
         assert "已停止" in final_answer_events[0][1].get("text", "")
+
+
+class TestSubAgentRunTracker:
+    def test_pairs_call_ids_with_spans_in_order(self):
+        from agent.grpc_client import SubAgentRunTracker
+
+        tracker = SubAgentRunTracker()
+        tracker.observe("tool_call", {"tool": "agent__sub1", "call_id": "c1"})
+        tracker.observe("llm_chunk", {"content": "ignored"})
+        tracker.observe("tool_call", {"tool": "read", "call_id": "c-skip"})  # 非 agent 工具不配对
+        tracker.observe("subagent_start", {"span_id": "s1", "agent_name": "A", "task": "t1"})
+        tracker.observe("subagent_end", {"span_id": "s1", "result": "done-1"})
+
+        assert tracker.refs == [{"call_id": "c1", "span_id": "s1"}]
+        assert tracker.runs["s1"]["status"] == "done"
+        assert tracker.runs["s1"]["result"] == "done-1"
+
+    def test_collects_steps_and_error_status(self):
+        from agent.grpc_client import SubAgentRunTracker
+
+        tracker = SubAgentRunTracker()
+        tracker.observe("subagent_start", {"span_id": "s2", "agent_name": "B"})
+        tracker.observe("subagent_step", {"span_id": "s2", "step_type": "thinking", "content": "想"})
+        tracker.observe(
+            "subagent_step",
+            {"span_id": "s2", "step_type": "tool_call", "tool": "read", "args": {"path": "a"}, "truncated": False},
+        )
+        tracker.observe("subagent_error", {"span_id": "s2", "message": "boom"})
+
+        run = tracker.runs["s2"]
+        assert run["status"] == "error"
+        assert run["error"] == "boom"
+        assert [s["step_type"] for s in run["steps"]] == ["thinking", "tool_call"]
+        assert run["steps"][0] == {"step_type": "thinking", "content": "想"}
+        assert run["steps"][1]["args"] == {"path": "a"}
+
+    def test_attach_refs_targets_own_assistant_message(self):
+        from agent.grpc_client import SubAgentRunTracker
+
+        tracker = SubAgentRunTracker()
+        tracker.observe("tool_call", {"tool": "agent__sub1", "call_id": "c1"})
+        tracker.observe("subagent_start", {"span_id": "s1"})
+
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            {"role": "assistant", "content": "final"},
+        ]
+        tracker.attach_refs(messages)
+
+        assert messages[1]["subagent_refs"] == [{"call_id": "c1", "span_id": "s1"}]
+        assert "subagent_refs" not in messages[3]
+
+    def test_merge_subagents_file_accumulates_across_rounds(self, tmp_path: Path):
+        import asyncio
+
+        client = make_client(tmp_path)
+        asyncio.run(client._merge_subagents_file("sess-x", {"s1": {"span_id": "s1", "status": "done"}}))
+        asyncio.run(client._merge_subagents_file("sess-x", {"s2": {"span_id": "s2", "status": "error"}}))
+
+        data = json.loads(
+            (tmp_path / "history" / "sess-x.subagents.json").read_text(encoding="utf-8")
+        )
+        assert set(data["runs"].keys()) == {"s1", "s2"}
