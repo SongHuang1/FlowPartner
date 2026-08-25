@@ -224,7 +224,8 @@ class ReactAgent:
                     recorded_messages.append(assistant_msg)
 
                     tool_names = [tc["function"]["name"] for tc in llm_resp["tool_calls"]]
-                    logging.info(f"[ReAct] tool_calls: {tool_names}, content_len={len(llm_resp.get('content', ''))}")
+                    has_subagent = any(n.startswith("agent__") for n in tool_names)
+                    logging.info(f"[ReAct] iteration={iteration+1} decision={'CALL SUB-AGENT' if has_subagent else 'TEXT ONLY'}, tools={tool_names}, content_len={len(llm_resp.get('content', ''))}")
 
                     for tool_call in llm_resp["tool_calls"]:
                         func_name = tool_call["function"]["name"]
@@ -273,7 +274,7 @@ class ReactAgent:
 
                 final_answer = llm_resp.get("content", "")
                 if finish_reason == "stop" or final_answer:
-                    logging.info(f"[ReAct] final_answer length={len(final_answer)}")
+                    logging.info(f"[ReAct] iteration={iteration+1} decision=TEXT ONLY (no sub-agent), final_answer length={len(final_answer)}")
                     await self._emit("final_answer", {
                         "text": final_answer,
                         "iteration": iteration + 1,
