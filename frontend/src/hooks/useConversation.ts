@@ -126,6 +126,7 @@ export function useConversation(): UseConversationReturn {
   }, [])
 
   const finalizeWithBlocks = useCallback((finalContent: string, blocks: ContentBlock[]) => {
+    console.log('[finalizeWithBlocks]', { contentLen: finalContent.length, blocks: blocks.map(b => ({ type: b.type, len: b.type === 'text' ? b.content?.length : undefined })) })
     if (streamingIdRef.current) {
       const id = streamingIdRef.current
       const updated = messagesRef.current.map(m =>

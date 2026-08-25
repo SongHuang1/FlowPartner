@@ -210,6 +210,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     })
     unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
       const blocks = deriveContentBlocks(events)
+      console.log('[onFinalAnswer]', { answerLen: answer.length, blockCount: blocks.length, blocks: blocks.map(b => ({ type: b.type, len: b.type === 'text' ? b.content?.length : undefined })) })
       finalizeWithBlocks(answer, blocks)
     })
     unregisterSubAgentStartRef.current = onSubAgentStart((info) => {

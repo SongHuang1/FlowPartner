@@ -73,6 +73,8 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     },
   }
 
+  console.log('[AssistantMessage] render:', { hasBlocks, blockCount: contentBlocks?.length, blocks: contentBlocks?.map(b => ({ type: b.type, len: b.type === 'text' ? b.content?.length : undefined })) })
+
   const renderSubagentBlock = (block: Extract<ContentBlock, { type: 'subagent' }>, idx: number) => {
     const isExpanded = expandedAgent === block.span_id
     const key = block.span_id || `subagent_${idx}`
