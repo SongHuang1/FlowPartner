@@ -171,7 +171,6 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendPermissionResponse,
     manualReconnect,
     onStreamChunk,
-    onFinalAnswer,
     onAgentsChanged,
     onError,
     onSecurityEvent,
@@ -204,14 +203,27 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     return unregister
   }, [onAgentsChanged, refreshAgents])
 
-  // 从事件流按时间顺序构建内容块（文本 + 子智能体卡片穿插）
+  // 从事件流按时间顺序构建内容块（文本 + 子智能体卡片穿插）；
+  // 检测到终态事件（final_answer）时用当前完整事件流定稿消息，保证文本不缺尾
   useEffect(() => {
     const blocks = deriveContentBlocks(events)
     updateContentBlocks(blocks)
-  }, [events, updateContentBlocks])
+    for (let i = events.length - 1; i >= 0; i--) {
+      const evt = events[i]
+      if (evt.event_type !== 'final_answer') continue
+      try {
+        const parsed = JSON.parse(evt.payload) as { text?: unknown }
+        if (typeof parsed.text === 'string') {
+          finalizeWithBlocks(parsed.text, blocks)
+        }
+      } catch {
+        console.error('Failed to parse final_answer payload:', evt.payload)
+      }
+      break
+    }
+  }, [events, updateContentBlocks, finalizeWithBlocks])
 
   const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
-  const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)
   const unregisterErrorRef = useRef<(() => void) | null>(null)
   const unregisterSecurityRef = useRef<(() => void) | null>(null)
   const unregisterPermissionRef = useRef<(() => void) | null>(null)
@@ -219,10 +231,6 @@ export function ChatArea({ conversation }: ChatAreaProps) {
   useEffect(() => {
     unregisterStreamChunkRef.current = onStreamChunk((chunk) => {
       appendStreamChunk(chunk)
-    })
-    unregisterFinalAnswerRef.current = onFinalAnswer((answer) => {
-      const blocks = deriveContentBlocks(events)
-      finalizeWithBlocks(answer, blocks)
     })
     unregisterErrorRef.current = onError((message) => {
       setChatError(message)
@@ -236,12 +244,11 @@ export function ChatArea({ conversation }: ChatAreaProps) {
 
     return () => {
       unregisterStreamChunkRef.current?.()
-      unregisterFinalAnswerRef.current?.()
       unregisterErrorRef.current?.()
       unregisterSecurityRef.current?.()
       unregisterPermissionRef.current?.()
     }
-  }, [onStreamChunk, onFinalAnswer, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk, finalizeWithBlocks, events])
+  }, [onStreamChunk, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk])
 
   const handleSend = () => {
     const trimmed = inputValue.trim()

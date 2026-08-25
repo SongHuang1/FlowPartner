@@ -10,7 +10,6 @@ const mockWsSendMessage = vi.fn()
 const mockSendCancel = vi.fn()
 const mockSendPermissionResponse = vi.fn()
 const mockOnStreamChunk = vi.fn(() => () => {})
-const mockOnFinalAnswer = vi.fn(() => () => {})
 const mockOnError = vi.fn(() => () => {})
 const mockOnSecurityEvent = vi.fn(() => () => {})
 const mockOnPermissionRequest = vi.fn(() => () => {})
@@ -92,7 +91,6 @@ const baseWsReturn = {
   subagentRuns: [],
   manualReconnect: vi.fn(),
   onStreamChunk: mockOnStreamChunk,
-  onFinalAnswer: mockOnFinalAnswer,
   onError: mockOnError,
   onSecurityEvent: mockOnSecurityEvent,
   onPermissionRequest: mockOnPermissionRequest,

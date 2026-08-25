@@ -49,7 +49,6 @@ export interface UseWebSocketReturn {
   subagentRuns: SubAgentRun[]
   manualReconnect: () => void
   onStreamChunk: (cb: (chunk: string) => void) => () => void
-  onFinalAnswer: (cb: (answer: string) => void) => () => void
   onAgentsChanged: (cb: () => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
@@ -204,7 +203,6 @@ export function useWebSocket(): UseWebSocketReturn {
   const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionEndedRef = useRef(false)
   const mountedRef = useRef(true)
-  const finalAnswerCallbacksRef = useRef<Set<(answer: string) => void>>(new Set())
   const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
   const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
@@ -346,22 +344,8 @@ export function useWebSocket(): UseWebSocketReturn {
         }
 
         if (raw.event_type === 'final_answer') {
+          // 只入队；由事件流消费者检测到终态后统一定稿消息（避免闭包 events 过期）
           setEvents((prev) => [...prev, raw])
-          let answer: string
-          try {
-            const parsed = JSON.parse(raw.payload)
-            if (typeof parsed.text !== 'string') {
-              console.error('final_answer payload missing text field')
-              return
-            }
-            answer = parsed.text
-          } catch {
-            console.error('Failed to parse final_answer payload:', raw.payload)
-            return
-          }
-          finalAnswerCallbacksRef.current.forEach((cb) => {
-            try { cb(answer) } catch (e) { console.error('onFinalAnswer callback error:', e) }
-          })
           return
         }
 
@@ -445,7 +429,6 @@ export function useWebSocket(): UseWebSocketReturn {
       connectRef.current(port)
     }
 
-    const finalAnswerCbs = finalAnswerCallbacksRef.current
     const streamChunkCbs = streamChunkCallbacksRef.current
     const agentsChangedCbs = agentsChangedCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
@@ -462,7 +445,6 @@ export function useWebSocket(): UseWebSocketReturn {
         wsRef.current.close()
         wsRef.current = null
       }
-      finalAnswerCbs.clear()
       streamChunkCbs.clear()
       agentsChangedCbs.clear()
       errorCbs.clear()
@@ -575,11 +557,6 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { streamChunkCallbacksRef.current.delete(cb) }
   }, [])
 
-  const onFinalAnswer = useCallback((cb: (answer: string) => void) => {
-    finalAnswerCallbacksRef.current.add(cb)
-    return () => { finalAnswerCallbacksRef.current.delete(cb) }
-  }, [])
-
   const onAgentsChanged = useCallback((cb: () => void) => {
     agentsChangedCallbacksRef.current.add(cb)
     return () => { agentsChangedCallbacksRef.current.delete(cb) }
@@ -627,7 +604,6 @@ export function useWebSocket(): UseWebSocketReturn {
     subagentRuns,
     manualReconnect,
     onStreamChunk,
-    onFinalAnswer,
     onAgentsChanged,
     onError,
     onSecurityEvent,

@@ -409,19 +409,15 @@ describe('useWebSocket', () => {
   })
 
   describe('callbacks', () => {
-    it('calls onFinalAnswer when final_answer received', async () => {
+    it('records final_answer into event stream', async () => {
       const { result } = renderHook(() => useWebSocket())
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 
-      const cb = vi.fn()
-      act(() => {
-        result.current.onFinalAnswer(cb)
-      })
-
       sendEvent({ event_type: 'final_answer', payload: '{"text":"the answer"}' })
 
-      expect(cb).toHaveBeenCalledWith('the answer')
+      const finals = result.current.events.filter((e) => e.event_type === 'final_answer')
+      expect(finals).toHaveLength(1)
     })
 
     it('calls onError when error received', async () => {
@@ -437,45 +433,6 @@ describe('useWebSocket', () => {
       sendEvent({ event_type: 'error', payload: '{"message":"something failed"}' })
 
       expect(cb).toHaveBeenCalledWith('something failed')
-    })
-
-    it('returns unregister function from onFinalAnswer', async () => {
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      const cb = vi.fn()
-      let unregister: () => void
-      act(() => {
-        unregister = result.current.onFinalAnswer(cb)
-      })
-
-      act(() => {
-        unregister!()
-      })
-
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"the answer"}' })
-
-      expect(cb).not.toHaveBeenCalled()
-    })
-
-    it('callback exception does not affect other callbacks', async () => {
-      const { result } = renderHook(() => useWebSocket())
-      await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
-      openConnection()
-
-      const cb1 = vi.fn().mockImplementation(() => { throw new Error('cb1 error') })
-      const cb2 = vi.fn()
-
-      act(() => {
-        result.current.onFinalAnswer(cb1)
-        result.current.onFinalAnswer(cb2)
-      })
-
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"answer"}' })
-
-      expect(cb1).toHaveBeenCalled()
-      expect(cb2).toHaveBeenCalled()
     })
   })
 
@@ -611,15 +568,15 @@ describe('useWebSocket', () => {
       await waitFor(() => expect(mockWebSocketInstance).not.toBeNull())
       openConnection()
 
-      const finalAnswerCb = vi.fn()
+      const streamChunkCb = vi.fn()
       act(() => {
-        result.current.onFinalAnswer(finalAnswerCb)
+        result.current.onStreamChunk(streamChunkCb)
       })
 
       unmount()
 
-      sendEvent({ event_type: 'final_answer', payload: '{"text":"should not fire"}' })
-      expect(finalAnswerCb).not.toHaveBeenCalled()
+      sendEvent({ event_type: 'llm_chunk', payload: '{"content":"should not fire"}' })
+      expect(streamChunkCb).not.toHaveBeenCalled()
     })
   })
 
