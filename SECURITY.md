@@ -33,7 +33,7 @@ FlowPartner's core premise is that non-technical users tend to trust AI too much
 
 - **Dangerous operations are blocked by default.** File deletion, system configuration changes, privilege escalation — these require explicit user confirmation.
 - **Recoverable by default.** Deletions go to a recycle bin; the workspace is snapshotted automatically so state can be rolled back (single files are backed up via snapshots on a best-effort schedule rather than before every individual write).
-- **All operations are logged.** Logs are append-only and cannot be deleted through the API.
+- **All operations should be logged.** Logs will be append-only and not deletable through the API. A global append-only log is planned — today only purge and agent-definition changes leave audit trails (see Current Status).
 
 ## Reporting a Security Issue
 

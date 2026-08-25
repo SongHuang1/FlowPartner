@@ -85,7 +85,7 @@ make test-all
 - Use type annotations (parameters + return values)
 - Use `pathlib.Path` for file paths, never `os.path`
 - Catch specific exceptions, never bare `except:`
-- Package manager is uv: `uv sync --frozen` to install, `uv run` to execute
+- Package manager is uv: always pass `--frozen` (`uv sync --frozen`, `uv run --frozen`). A bare `uv run`/`uv sync` re-resolves dependencies and may rewrite `uv.lock` — see the dependency policy at the top of AGENTS.md
 
 ## Proto / gRPC
 

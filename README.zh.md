@@ -35,6 +35,7 @@ FlowPartner/
 ├── agent/                # Python Agent 层
 │   ├── proto/            # proto 文件（与 backend/proto/ 逐字节相同）
 │   ├── src/agent/        # main.py, grpc_client.py, core/（react_agent、subagent_runner、agent_registry）, tools/
+│   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go 后端
 │   ├── cmd/server/main.go

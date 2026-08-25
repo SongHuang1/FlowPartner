@@ -12,7 +12,9 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。这些没�
 
 所有的方案应该采用工业级、长久性、大型项目使用的方案，不要先用简单方案替代；想想如果你要跟他打交道很长时间，你会选择的方案。
 
-不允许更改uv.lock的源，因为这样会导致Github Actions无法拉取到包。
+**uv.lock 依赖纪律**：不允许更改 uv.lock 的源，因为这样会导致 Github Actions 无法拉取到包。pyproject.toml 中禁止配置 `[tool.uv] index-url` 之类的镜像（镜像属个人网络环境偏好；历史上仓库内的清华源配置导致任何不带 `--frozen` 的 uv 命令在重锁时把整个 lock 改写为镜像地址）。因此：
+- 一切 uv 命令必须带 `--frozen`（只运行工具不安装依赖时用 `--no-sync`）
+- 提交前若发现 uv.lock 存在与本任务无关的 diff，先 `git checkout -- agent/uv.lock` 还原，再排查触发重锁的原因
 
 ---
 
@@ -84,7 +86,8 @@ Python Agent (agent/src/agent/)
     │       │       └── 发送 llm_chunk 事件到前端
     │       ├── execute_tool: 通过 gRPC 代理执行工具（含越权审批等待）
     │       ├── ListAgents/GetAgent: 拉取智能体定义（TTL 缓存 + agents_changed 失效）
-    │       └── connect_and_listen: 双向流事件循环
+    │       ├── connect_and_listen: 双向流事件循环
+    │       └── _cancel_task: 取消指定会话任务（cancel_task 命令分发的实现）
     ├── core/react_agent.py: ReAct 循环（思考→行动→观察，带护栏）
     ├── core/subagent_runner.py: 子 agent 派发与事件转发（subagent_* 事件）
     ├── core/agent_registry.py: 智能体定义缓存
@@ -186,7 +189,7 @@ useWebSocket hook
 - preload.cjs 暴露 `window.flowPartner` API（fetchBackendPort、系统锁屏/焦点监听、关闭行为、openExternal、selectFolder、getVersion 等）
 - React 应用通过 `useWebSocket` hook 连接 WebSocket，支持自动重连（5 次，3s 间隔）
 - App 挂载 `useWindowState`：Electron 主进程锁屏通知 → system-lock DOM 事件 → useSnapshot/useLock 触发快照 flush 与锁定
-- 前端已有多 Agent 支持（AgentSelector、SubAgentCard/SubAgentDrilldown）、快照设置（SnapshotSettings/useSnapshot）、Agent 管理（AgentsManager/AgentSettings）
+- 前端已有多 Agent 支持（AgentSelector、SubAgentCard/SubAgentDrilldown）、快照设置（SnapshotSettings/useSnapshot）、Agent 管理（AgentsManager）
 
 
 
@@ -248,17 +251,20 @@ FlowPartner/
 │   │   ├── static/           # 前端静态文件服务（SPA 回退）
 │   │   └── storage/          # JSON 文件原子写入 + 历史 JSONL 格式 + agents.go（智能体定义持久化）
 │   └── proto/                # proto 定义 + 生成的 .pb.go 文件
-├── docs/                   # 目前为空（仅剩空的 specifications/multi-agent 子目录）
+├── docs/                   # 设计资料：specifications/（31 个特性规格目录 + 00-总纲全局约束）、
+│                           # abu/codex/office/opencode/openwork/openworker/pdf（竞品调研与移植决策）
 ├── frontend/               # Electron + React + TypeScript + Tailwind
 │   ├── electron/
 │   │   ├── main.cjs          # Electron 主进程（启动 Go + Python，系统托盘，窗口状态持久化）
 │   │   └── preload.cjs       # preload（暴露 fetchBackendPort、系统锁屏监听、关闭行为等）
 │   ├── src/
 │   │   ├── components/       # chat（含 SubAgentCard/SubAgentDrilldown/AgentSelector）、
-│   │   │                     # layout、settings（含 SnapshotSettings/AgentsManager/AgentSettings）、ui
+│   │   │                     # layout、settings（APISettings/AgentsManager/SnapshotSettings/
+│   │   │                     # SettingsModal/CloseBehaviorSettings）、ui
 │   │   ├── hooks/            # useConversation, useLock, useSettings, useSnapshot,
 │   │   │                     # useWindowState, useWebSocket
-│   │   ├── lib/              # api.ts, utils.ts, validation.ts
+│   │   ├── lib/              # api.ts, history.ts（历史消息→内容块重建）, mention.ts,
+│   │   │                     # utils.ts, validation.ts
 │   │   └── types/            # TypeScript 类型定义
 │   ├── electron-builder.yml  # 打包配置（extraResources 包含 bin/）
 │   └── package.json
@@ -365,7 +371,7 @@ protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=p
 
 # Python
 cd agent
-uv run python -m grpc_tools.protoc -I ../backend/proto --python_out=src/agent --grpc_python_out=src/agent agent.proto
+uv run --frozen python -m grpc_tools.protoc -I ../backend/proto --python_out=src/agent --grpc_python_out=src/agent agent.proto
 ```
 
 ### 验证命令
@@ -380,9 +386,10 @@ cd backend && golangci-lint run              # Lint（如已安装）
 
 # --- Python（Agent 层）---
 cd agent && uv sync --frozen                 # 安装依赖（锁定版本，勿省略 --frozen）
-cd agent && uv run ruff check .              # Lint
-cd agent && uv run mypy . --explicit-package-bases  # 类型检查（与 CI 一致）
-cd agent && uv run pytest -v --cov=.         # 测试
+cd agent && uv run --frozen ruff check .     # Lint
+cd agent && uv run --frozen mypy . --explicit-package-bases  # 类型检查（与 CI 一致）
+cd agent && uv run --frozen pytest -v --cov=.  # 测试
+# 不带 --frozen 的 uv run/sync 会触发重锁并可能改写 uv.lock 的源（见顶部依赖纪律）
 
 # --- TypeScript（Frontend 层）---
 cd frontend && npm run build                 # 构建
@@ -516,6 +523,10 @@ make test-all                                # 构建+测试所有层
 | 字段猜测 | 猜测 JSON/protobuf 的字段名或类型 | grep 对应的 struct 定义确认 |
 | 静默错误 | 用 `//nolint`、`_ = err`、空 catch 隐藏问题 | 每一个 error 必须处理或显式上报 |
 | proto 不同步 | 改了 backend/proto 忘了 agent/proto | 修改 proto 后必须同步两侧并重新生成 |
+| 锁污染 | 裸跑 `uv run`/`uv sync` 触发重锁，可能把镜像源写进 uv.lock | 一律 `--frozen`；提交前检查 uv.lock 是否有本任务无关的 diff |
+| 失效覆盖 | 测试在测试体内手抄生产逻辑而不调用生产代码（生产代码改名/删除后测试照样绿） | 把内联分支提取为可单测方法，让测试调用真实函数 |
+| 恒真断言 | 测试断言的按钮/文案/选择器与当前实现不符，查询永远落空（如断言已删除的"查看历史"按钮） | 写断言前 grep 组件源码确认真实渲染内容；UI 重构后同步更新对应测试 |
+| 死代码测试 | 为零引用的遗留组件保留测试（UnlockDialog/PasswordDialog 先例） | 删除组件时同步删除其测试；grep 确认无生产引用后再删 |
 
 ---
 
@@ -528,6 +539,7 @@ make test-all                                # 构建+测试所有层
 - 修改 proto 后手动编辑生成的 `.pb.go` / `_pb2.py` 文件 — 用 `protoc` 重新生成
 - 基于旧 HTTP chat 端点开发聊天功能 — 新架构用 WebSocket（ws.go）
 - 使用旧 `sendMessage` HTTP 函数 — 该函数已从 api.ts 移除，聊天通信全部走 WebSocket（useWebSocket hook）
+- 测试里手抄生产逻辑而非调用它 — 把逻辑提取为可单测方法，让测试覆盖真实代码路径
 
 
 ---
