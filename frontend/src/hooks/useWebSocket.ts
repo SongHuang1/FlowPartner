@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort } from '@/lib/api'
-import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep } from '@/types'
+import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep, ContentBlock } from '@/types'
 
 export interface ChatEvent {
   event_type: string
@@ -704,4 +704,110 @@ export function useWebSocket(): UseWebSocketReturn {
     onSnapshotStatus,
     onSnapshotMessage,
   }
+}
+
+export function deriveContentBlocks(events: ChatEvent[]): ContentBlock[] {
+  const blocks: ContentBlock[] = []
+  let textBuf = ''
+  const spanToIndex = new Map<string, number>()
+  const pendingToolCalls: Array<{ tool: string; args: Record<string, unknown>; blockIdx: number }> = []
+
+  const flushText = () => {
+    if (textBuf.trim()) {
+      blocks.push({ type: 'text', content: textBuf })
+      textBuf = ''
+    }
+  }
+
+  for (const evt of events) {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(evt.payload)
+    } catch {
+      continue
+    }
+
+    if (evt.event_type === 'llm_chunk') {
+      textBuf += (parsed.content as string) || ''
+      continue
+    }
+
+    if (evt.event_type === 'tool_call') {
+      const toolName = (parsed.tool as string) || ''
+      if (toolName.startsWith('agent__')) {
+        flushText()
+        const blockIdx = blocks.length
+        blocks.push({
+          type: 'subagent',
+          span_id: '',
+          agent_name: toolName,
+          task: ((parsed.args as Record<string, unknown>)?.task as string) || '',
+          status: 'running',
+          steps: [],
+        })
+        pendingToolCalls.push({ tool: toolName, args: parsed.args as Record<string, unknown>, blockIdx })
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_start') {
+      const spanId = (parsed.span_id as string) || ''
+      const pending = pendingToolCalls.shift()
+      if (pending) {
+        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.span_id = spanId
+        block.agent_name = (parsed.agent_name as string) || pending.tool
+        block.task = (parsed.task as string) || (pending.args?.task as string) || ''
+        spanToIndex.set(spanId, pending.blockIdx)
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_step') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.steps.push({
+          step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
+          content: parsed.content as string | undefined,
+          tool: parsed.tool as string | undefined,
+          args: parsed.args as Record<string, unknown> | undefined,
+          result: parsed.result as string | undefined,
+          truncated: parsed.truncated as boolean | undefined,
+        })
+        if (parsed.step_type === 'final_answer' && parsed.content) {
+          block.result = parsed.content as string
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_end') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.status = 'done'
+        if (!block.result && typeof parsed.result === 'string') {
+          block.result = parsed.result
+        }
+      }
+      continue
+    }
+
+    if (evt.event_type === 'subagent_error') {
+      const spanId = (parsed.span_id as string) || ''
+      const idx = spanToIndex.get(spanId)
+      if (idx !== undefined) {
+        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
+        block.status = 'error'
+        block.error = (parsed.message as string) || '未知错误'
+      }
+      continue
+    }
+  }
+
+  flushText()
+  return blocks
 }

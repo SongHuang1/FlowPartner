@@ -6,7 +6,7 @@ import type { Message, PermissionRequestPayload, AgentMeta } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWebSocket, deriveContentBlocks } from '@/hooks/useWebSocket'
 import { listAgents } from '@/lib/api'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
@@ -139,7 +139,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation }: ChatAreaProps) {
-  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent } = conversation
+  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, updateContentBlocks } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
   const {
@@ -161,6 +161,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     onError,
     onSecurityEvent,
     onPermissionRequest,
+    events,
   } = useWebSocket()
 
   const [inputValue, setInputValue] = useState('')
@@ -187,6 +188,12 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     })
     return unregister
   }, [onAgentsChanged, refreshAgents])
+
+  // 从事件流按时间顺序构建内容块（文本 + 子智能体卡片穿插）
+  useEffect(() => {
+    const blocks = deriveContentBlocks(events)
+    updateContentBlocks(blocks)
+  }, [events, updateContentBlocks])
 
   const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
   const unregisterFinalAnswerRef = useRef<(() => void) | null>(null)

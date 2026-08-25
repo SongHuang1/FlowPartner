@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message, ToolCall, SubAgentResult } from '@/types'
+import type { Message, ToolCall, SubAgentResult, ContentBlock } from '@/types'
 
 function generateMessageId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -28,6 +28,7 @@ export interface UseConversationReturn {
   finalizeSubAgent: (span_id: string, result: string) => void
   addToolMessage: (toolCallId: string, name: string, content: string) => void
   addAssistantToolCalls: (toolCalls: ToolCall[]) => void
+  updateContentBlocks: (blocks: ContentBlock[]) => void
   startNewConversation: () => void
   loadConversation: (sessionId: string, messages: Message[]) => void
 }
@@ -163,6 +164,16 @@ export function useConversation(): UseConversationReturn {
     ))
   }, [updateCurrentMessageSubAgent])
 
+  const updateContentBlocks = useCallback((blocks: ContentBlock[]) => {
+    if (!streamingIdRef.current) return
+    const id = streamingIdRef.current
+    const updated = messagesRef.current.map(m =>
+      m.id === id ? { ...m, content_blocks: blocks } : m
+    )
+    messagesRef.current = updated
+    setMessages(updated)
+  }, [])
+
   const addAssistantToolCalls = useCallback((toolCalls: ToolCall[]) => {
     const lastMsg = messagesRef.current[messagesRef.current.length - 1]
     if (lastMsg && lastMsg.role === 'assistant' && lastMsg.status === 'streaming') {
@@ -206,5 +217,5 @@ export function useConversation(): UseConversationReturn {
     setSessionId(sid)
   }, [])
 
-  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, startNewConversation, loadConversation }
+  return { messages, sessionId, streamingContent, sendMessage, addAssistantMessage, appendStreamChunk, finalizeStream, addSubAgentStart, appendSubAgentChunk, finalizeSubAgent, addToolMessage, addAssistantToolCalls, updateContentBlocks, startNewConversation, loadConversation }
 }

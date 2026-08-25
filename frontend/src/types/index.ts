@@ -15,6 +15,19 @@ export interface SubAgentResult {
   status: 'running' | 'done' | 'error'
 }
 
+export type ContentBlock =
+  | { type: 'text'; content: string }
+  | {
+      type: 'subagent'
+      span_id: string
+      agent_name: string
+      task: string
+      status: 'running' | 'done' | 'error'
+      steps: SubAgentStep[]
+      result?: string
+      error?: string
+    }
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -25,6 +38,7 @@ export interface Message {
   tool_call_id?: string
   name?: string
   subagent_results?: SubAgentResult[]
+  content_blocks?: ContentBlock[]
 }
 
 export interface HistoryEntry {

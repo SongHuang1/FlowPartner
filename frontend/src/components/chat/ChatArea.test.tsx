@@ -40,6 +40,7 @@ function makeConversation(overrides: Partial<UseConversationReturn> = {}): UseCo
     finalizeSubAgent: vi.fn(),
     addToolMessage: vi.fn(),
     addAssistantToolCalls: vi.fn(),
+    updateContentBlocks: vi.fn(),
     startNewConversation: vi.fn(),
     loadConversation: vi.fn(),
     ...overrides,
@@ -74,6 +75,7 @@ vi.mock('@/hooks/useLock', () => ({
 
 vi.mock('@/hooks/useWebSocket', () => ({
   useWebSocket: () => mockUseWebSocket(),
+  deriveContentBlocks: () => [],
 }))
 
 const mockUseWebSocket = vi.fn()
