@@ -208,22 +208,34 @@ func TestPathGuard_WorkDirIsSymlink(t *testing.T) {
 
 	realDir := t.TempDir()
 	linkDir := filepath.Join(t.TempDir(), "link_to_work")
-	os.Symlink(realDir, linkDir)
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	// 必须真实存在：若目标不存在，Validate 第二层会因 IsNotExist 短路，
+	// 穿透符号链接的真实落点检查就不会发生。
+	if err := os.WriteFile(filepath.Join(realDir, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	g, err := NewPathGuard(linkDir)
 	if err != nil {
 		t.Fatalf("NewPathGuard: %v", err)
 	}
 
-	// 工作目录通过符号链接解析，应该使用真实路径
+	// Resolve 的契约是词法解析：返回基于传入工作目录的绝对路径，不解析符号链接。
 	resolved, err := g.Resolve("file.txt")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
+	wantLexical := filepath.Join(linkDir, "file.txt")
+	if resolved != wantLexical {
+		t.Errorf("got %q, want lexical path %q", resolved, wantLexical)
+	}
 
-	expected := filepath.Join(realDir, "file.txt")
-	if resolved != expected {
-		t.Errorf("got %q, want %q (should resolve through symlink)", resolved, expected)
+	// 安全校验必须穿透符号链接：Validate 第二层用 EvalSymlinks 对比
+	// workingDirReal（realDir），真实落点在工作区内则放行。
+	if err := g.Validate("file.txt"); err != nil {
+		t.Errorf("Validate through workdir symlink should pass: %v", err)
 	}
 }
 

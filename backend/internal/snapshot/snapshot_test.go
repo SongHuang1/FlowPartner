@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,9 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func TestProjectIDStableAcrossDriveCase(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("盘符大小写折叠是 NormalizeRoot 的 Windows 专属语义，非 Windows 上无法构造对应场景")
+	}
 	a := ProjectID(mustNormalize(t, "C:/Users/foo/work"))
 	b := ProjectID(mustNormalize(t, "c:\\users\\foo\\work"))
 	if a != b {
@@ -389,15 +393,33 @@ func TestProtectedFiles(t *testing.T) {
 }
 
 func TestValidateNoNesting(t *testing.T) {
-	wd := "C:\\work\\proj"
-	if err := ValidateNoNesting(wd, "C:\\work\\proj\\snaps"); err == nil {
+	// 跨平台部分：用临时目录构造真实的嵌套/平级关系
+	base := t.TempDir()
+	wd := filepath.Join(base, "proj")
+	snapsInside := filepath.Join(wd, "snaps")
+	if err := ValidateNoNesting(wd, snapsInside); err == nil {
 		t.Error("储存目录在工作区根内应被拒绝")
 	}
-	if err := ValidateNoNesting(wd, "C:\\work"); err == nil {
+	if err := ValidateNoNesting(wd, base); err == nil {
 		t.Error("工作区根在储存目录内应被拒绝")
 	}
-	if err := ValidateNoNesting(wd, "D:\\snaps"); err != nil {
+	unrelated := filepath.Join(base, "other")
+	if err := ValidateNoNesting(wd, unrelated); err != nil {
 		t.Errorf("合法配置不应被拒绝: %v", err)
+	}
+
+	// Windows 专属：盘符与反斜杠路径语义
+	if runtime.GOOS == "windows" {
+		winWd := "C:\\work\\proj"
+		if err := ValidateNoNesting(winWd, "C:\\work\\proj\\snaps"); err == nil {
+			t.Error("储存目录在工作区根内应被拒绝")
+		}
+		if err := ValidateNoNesting(winWd, "C:\\work"); err == nil {
+			t.Error("工作区根在储存目录内应被拒绝")
+		}
+		if err := ValidateNoNesting(winWd, "D:\\snaps"); err != nil {
+			t.Errorf("合法配置不应被拒绝: %v", err)
+		}
 	}
 }
 
