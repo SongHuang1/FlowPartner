@@ -49,6 +49,7 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
           onSend={onSend}
           disabled={disabled}
           loading={loading}
+          agents={agents}
         />
         <div className="mt-4 flex flex-col gap-2 px-1">
           {onExecutorChange && (
@@ -59,9 +60,7 @@ export function WelcomeView({ settings, inputValue, onInputChange, onSend, disab
                 onChange={onExecutorChange}
                 disabled={disabled || loading}
               />
-              <span className="text-xs text-neutral-400">
-                输入 @智能体名 可指定子智能体
-              </span>
+              <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全</span>
             </div>
           )}
           <div className="flex items-center justify-between text-xs text-neutral-400">

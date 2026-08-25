@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react'
+import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Message, PermissionRequestPayload, AgentMeta } from '@/types'
@@ -13,9 +13,10 @@ import { WelcomeView } from './WelcomeView'
 import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
 import { AgentSelector } from './AgentSelector'
+import { MentionTextarea } from './MentionTextarea'
 
 
-export function MessageList({ messages, streamingContent }: { messages: Message[]; streamingContent: string }) {
+export function MessageList({ messages, streamingContent, agentNames }: { messages: Message[]; streamingContent: string; agentNames: Set<string> }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -29,7 +30,7 @@ export function MessageList({ messages, streamingContent }: { messages: Message[
     <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
       {messages.map((msg) => {
         if (msg.role === 'user') {
-          return <UserMessage key={msg.id} message={msg} />
+          return <UserMessage key={msg.id} message={msg} agentNames={agentNames} />
         }
         const isStreaming = msg.status === 'streaming'
         return (
@@ -51,10 +52,11 @@ interface ChatInputProps {
   onStop?: () => void
   disabled?: boolean
   loading?: boolean
+  agents?: AgentMeta[]
 }
 
-export function ChatInput({ value, onChange, onSend, onStop, disabled, loading }: ChatInputProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, agents = [] }: ChatInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [cancelClicked, setCancelClicked] = useState(false)
 
   const adjustHeight = useCallback(() => {
@@ -94,16 +96,16 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading }
   return (
     <div className="border-t border-neutral-200 p-3 bg-white">
       <div className="flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
+        <MentionTextarea
+          inputRef={textareaRef}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
           onKeyDown={handleKeyDown}
+          agents={agents}
+          disabled={disabled}
           placeholder="输入消息..."
           maxLength={10000}
-          disabled={disabled}
           rows={1}
-          className="flex-1 resize-none overflow-y-auto rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-300 disabled:opacity-50 min-h-[40px] max-h-[200px]"
         />
         {loading ? (
           <Button
@@ -184,6 +186,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
   const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null)
   const [agents, setAgents] = useState<AgentMeta[]>([])
   const [executorAgentId, setExecutorAgentId] = useState('')
+  const agentNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
 
   const refreshAgents = useCallback(() => {
     listAgents()
@@ -322,7 +325,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             onManualReconnect={manualReconnect}
           />
 
-          <MessageList messages={messages} streamingContent={streamingContent} />
+          <MessageList messages={messages} streamingContent={streamingContent} agentNames={agentNames} />
           {processing && !streamingContent && (
             <ThinkingIndicator />
           )}
@@ -343,7 +346,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
               onChange={setExecutorAgentId}
               disabled={lockStatus.locked || processing}
             />
-            <span className="text-xs text-neutral-400">在消息中输入 @智能体名 可建议主智能体调用子智能体</span>
+            <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全，@智能体名 会建议主智能体调用子智能体</span>
           </div>
           <ChatInput
             value={inputValue}
@@ -352,6 +355,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             onStop={handleStop}
             disabled={lockStatus.locked}
             loading={processing}
+            agents={agents}
           />
         </>
       )}
