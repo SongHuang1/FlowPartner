@@ -245,6 +245,15 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
 	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
 
+	// 空 session_id 无法关联审批弹窗，直接拒绝（防呆：避免工具永久挂起等待用户响应）
+	if req.SessionId == "" {
+		return &proto.ToolResponse{
+			Success:   false,
+			Result:    "工具请求缺少会话标识，已拒绝执行",
+			ErrorCode: tools.ErrToolError,
+		}, nil
+	}
+
 	settings := LoadSettings()
 	workingDir := settings.WorkingDirectory
 

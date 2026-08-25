@@ -1,6 +1,7 @@
 import asyncio
 from unittest.mock import AsyncMock
 
+from agent.tools.context import current_session_id, session_id_var
 from agent.tools.file_ops import (
     make_bash_handler,
     make_edit_handler,
@@ -82,7 +83,7 @@ class TestReadBridge:
 
         result = asyncio.run(handler(path="test.txt"))
         assert result == "file content here"
-        mock_client.execute_tool.assert_called_once_with("", "read", {"path": "test.txt"})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "read", {"path": "test.txt"})
 
     def test_read_failure(self):
         mock_client = AsyncMock()
@@ -109,7 +110,7 @@ class TestWriteBridge:
 
         result = asyncio.run(handler(path="output.txt", content="hello"))
         assert "成功写入" in result
-        mock_client.execute_tool.assert_called_once_with("", "write", {"path": "output.txt", "content": "hello"})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "write", {"path": "output.txt", "content": "hello"})
 
     def test_write_outside_workspace(self):
         mock_client = AsyncMock()
@@ -136,7 +137,7 @@ class TestBashBridge:
 
         result = asyncio.run(handler(command="echo hello world"))
         assert "hello world" in result
-        mock_client.execute_tool.assert_called_once_with("", "bash", {"command": "echo hello world"})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "bash", {"command": "echo hello world"})
 
     def test_bash_failure(self):
         mock_client = AsyncMock()
@@ -163,7 +164,7 @@ class TestEditBridge:
 
         result = asyncio.run(handler(path="file.txt", old_string="old", new_string="new"))
         assert result == "成功替换 1 处"
-        mock_client.execute_tool.assert_called_once_with("", "edit", {
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "edit", {
             "path": "file.txt",
             "old_string": "old",
             "new_string": "new",
@@ -207,7 +208,7 @@ class TestTrashBridge:
         result = asyncio.run(handler(path="old.log"))
         assert "old.log" in result
         assert '"success": true' in result
-        mock_client.execute_tool.assert_called_once_with("", "trash", {"path": "old.log"})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "trash", {"path": "old.log"})
 
     def test_trash_multiple_paths(self):
         mock_client = AsyncMock()
@@ -220,7 +221,7 @@ class TestTrashBridge:
 
         result = asyncio.run(handler(paths=["a.log", "b.log"]))
         assert '"success": true' in result
-        mock_client.execute_tool.assert_called_once_with("", "trash", {"paths": ["a.log", "b.log"]})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "trash", {"paths": ["a.log", "b.log"]})
 
     def test_trash_blocked_result_keeps_error_code(self):
         mock_client = AsyncMock()
@@ -248,7 +249,7 @@ class TestPurgeBridge:
 
         result = asyncio.run(handler())
         assert "已永久删除" in result
-        mock_client.execute_tool.assert_called_once_with("", "purge", {})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "purge", {})
 
     def test_purge_single_entry(self):
         mock_client = AsyncMock()
@@ -261,4 +262,32 @@ class TestPurgeBridge:
 
         result = asyncio.run(handler(entry="20260101T000000000001Z__1__a.log"))
         assert '"success": true' in result
-        mock_client.execute_tool.assert_called_once_with("", "purge", {"entry": "20260101T000000000001Z__1__a.log"})
+        mock_client.execute_tool.assert_called_once_with(current_session_id(), "purge", {"entry": "20260101T000000000001Z__1__a.log"})
+
+
+class TestSessionContext:
+    def test_handlers_default_to_empty_session(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={"success": True, "result": "ok", "error_code": ""})
+        handler = make_read_handler(mock_client)
+
+        asyncio.run(handler(path="a.txt"))
+        mock_client.execute_tool.assert_called_once_with("", "read", {"path": "a.txt"})
+
+    def test_handlers_use_session_from_context_var(self):
+        mock_client = AsyncMock()
+        mock_client.execute_tool = AsyncMock(return_value={"success": True, "result": "ok", "error_code": ""})
+        handler = make_write_handler(mock_client)
+
+        async def scenario():
+            token = session_id_var.set("sess_abc")
+            try:
+                await handler(path="out.txt", content="hi")
+            finally:
+                session_id_var.reset(token)
+
+        asyncio.run(scenario())
+        mock_client.execute_tool.assert_called_once_with(
+            "sess_abc", "write", {"path": "out.txt", "content": "hi"}
+        )
+        assert current_session_id() == ""

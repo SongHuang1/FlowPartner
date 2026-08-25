@@ -10,6 +10,7 @@ import grpc
 from agent import agent_pb2, agent_pb2_grpc
 from agent.core.agent_registry import AgentRegistry
 from agent.core.react_agent import ReactAgent
+from agent.tools.context import session_id_var
 from agent.tools.file_ops import (
     make_bash_handler,
     make_edit_handler,
@@ -282,7 +283,14 @@ class FlowPartnerClient:
                     "scope_options": ["once", "session"],
                 }
 
-                await self._send_permission_request(session_id, event_payload)
+                sent = await self._send_permission_request(session_id, event_payload)
+                if not sent:
+                    # 防呆：审批弹窗无法送达时立即失败，避免主循环永久挂起
+                    return {
+                        "success": False,
+                        "result": "无法发起权限审批（会话通道不可用），操作已取消",
+                        "error_code": "PERMISSION_DENIED",
+                    }
 
                 future: asyncio.Future = asyncio.get_running_loop().create_future()
                 async with self._approval_lock:
@@ -317,12 +325,13 @@ class FlowPartnerClient:
         except Exception as e:
             return {"success": False, "result": f"工具调用异常: {e}", "error_code": "TOOL_ERROR"}
 
-    async def _send_permission_request(self, session_id: str, payload: dict) -> None:
+    async def _send_permission_request(self, session_id: str, payload: dict) -> bool:
         queue = self._active_queues.get(session_id)
         if queue is None:
             logging.warning(f"[Permission] No active queue for session {session_id}, cannot send permission_request")
-            return
+            return False
         await self.send_event(session_id, "permission_request", payload, queue)
+        return True
 
     def _drain_pending_approvals(self) -> None:
         for request_id, future in list(self._pending_approvals.items()):
@@ -554,6 +563,9 @@ class FlowPartnerClient:
         task = asyncio.current_task()
         self._tasks[session_id] = task
 
+        # 工具执行链（含子智能体）经此获取会话 id，用于 ExecuteTool/审批的会话关联
+        session_token = session_id_var.set(session_id)
+
         try:
             payload = json.loads(command.payload) if command.payload else {}
             user_message = payload.get("user_message", "")
@@ -643,5 +655,6 @@ class FlowPartnerClient:
             logging.info(f"[Cancel] Chat task cancelled: session={session_id}")
             raise
         finally:
+            session_id_var.reset(session_token)
             self._tasks.pop(session_id, None)
             self._active_queues.pop(session_id, None)
