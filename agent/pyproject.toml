@@ -1,6 +1,6 @@
 [project]
 name = "agent"
-version = "0.0.1"
+version = "0.1.0"
 requires-python = ">=3.12"
 # 仅运行时依赖。grpcio-tools 无 win_arm64 预编译 wheel（源码编译在 MSVC ARM64 上失败），
 # 且只用于 protoc 代码生成，因此放在 dev 组；pyinstaller 仅构建期需要，放在 build 组。
