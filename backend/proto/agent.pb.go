@@ -25,10 +25,21 @@ const (
 type AgentEvent struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	EventType string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // 例如: "iteration_start", "llm_chunk", "tool_call", "tool_result",
-	// "final_answer", "loop_terminated", "error", "permission_request",
-	// "subagent_start", "subagent_step", "subagent_end", "subagent_error"
-	Payload       string `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"` // JSON 格式的具体内容
+	ThreadId  string                 `protobuf:"bytes,11,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId    string                 `protobuf:"bytes,12,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*AgentEvent_TurnStarted
+	//	*AgentEvent_TurnCompleted
+	//	*AgentEvent_TurnAborted
+	//	*AgentEvent_ItemStarted
+	//	*AgentEvent_ItemCompleted
+	//	*AgentEvent_ItemDelta
+	//	*AgentEvent_UsageUpdate
+	//	*AgentEvent_PermissionRequest
+	//	*AgentEvent_Subagent
+	//	*AgentEvent_Error
+	Payload       isAgentEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -70,16 +81,865 @@ func (x *AgentEvent) GetSessionId() string {
 	return ""
 }
 
-func (x *AgentEvent) GetEventType() string {
+func (x *AgentEvent) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetPayload() isAgentEvent_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetTurnStarted() *TurnStarted {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_TurnStarted); ok {
+			return x.TurnStarted
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetTurnCompleted() *TurnCompleted {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_TurnCompleted); ok {
+			return x.TurnCompleted
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetTurnAborted() *TurnAborted {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_TurnAborted); ok {
+			return x.TurnAborted
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetItemStarted() *ItemStarted {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_ItemStarted); ok {
+			return x.ItemStarted
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetItemCompleted() *ItemCompleted {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_ItemCompleted); ok {
+			return x.ItemCompleted
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetItemDelta() *ItemDelta {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_ItemDelta); ok {
+			return x.ItemDelta
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetUsageUpdate() *UsageUpdate {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_UsageUpdate); ok {
+			return x.UsageUpdate
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetPermissionRequest() *PermissionRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_PermissionRequest); ok {
+			return x.PermissionRequest
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetSubagent() *SubagentEvent {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_Subagent); ok {
+			return x.Subagent
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetError() *Error {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentEvent_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+type isAgentEvent_Payload interface {
+	isAgentEvent_Payload()
+}
+
+type AgentEvent_TurnStarted struct {
+	TurnStarted *TurnStarted `protobuf:"bytes,4,opt,name=turn_started,json=turnStarted,proto3,oneof"`
+}
+
+type AgentEvent_TurnCompleted struct {
+	TurnCompleted *TurnCompleted `protobuf:"bytes,5,opt,name=turn_completed,json=turnCompleted,proto3,oneof"`
+}
+
+type AgentEvent_TurnAborted struct {
+	TurnAborted *TurnAborted `protobuf:"bytes,6,opt,name=turn_aborted,json=turnAborted,proto3,oneof"`
+}
+
+type AgentEvent_ItemStarted struct {
+	ItemStarted *ItemStarted `protobuf:"bytes,7,opt,name=item_started,json=itemStarted,proto3,oneof"`
+}
+
+type AgentEvent_ItemCompleted struct {
+	ItemCompleted *ItemCompleted `protobuf:"bytes,8,opt,name=item_completed,json=itemCompleted,proto3,oneof"`
+}
+
+type AgentEvent_ItemDelta struct {
+	ItemDelta *ItemDelta `protobuf:"bytes,9,opt,name=item_delta,json=itemDelta,proto3,oneof"`
+}
+
+type AgentEvent_UsageUpdate struct {
+	UsageUpdate *UsageUpdate `protobuf:"bytes,13,opt,name=usage_update,json=usageUpdate,proto3,oneof"`
+}
+
+type AgentEvent_PermissionRequest struct {
+	PermissionRequest *PermissionRequest `protobuf:"bytes,14,opt,name=permission_request,json=permissionRequest,proto3,oneof"`
+}
+
+type AgentEvent_Subagent struct {
+	Subagent *SubagentEvent `protobuf:"bytes,15,opt,name=subagent,proto3,oneof"`
+}
+
+type AgentEvent_Error struct {
+	Error *Error `protobuf:"bytes,16,opt,name=error,proto3,oneof"`
+}
+
+func (*AgentEvent_TurnStarted) isAgentEvent_Payload() {}
+
+func (*AgentEvent_TurnCompleted) isAgentEvent_Payload() {}
+
+func (*AgentEvent_TurnAborted) isAgentEvent_Payload() {}
+
+func (*AgentEvent_ItemStarted) isAgentEvent_Payload() {}
+
+func (*AgentEvent_ItemCompleted) isAgentEvent_Payload() {}
+
+func (*AgentEvent_ItemDelta) isAgentEvent_Payload() {}
+
+func (*AgentEvent_UsageUpdate) isAgentEvent_Payload() {}
+
+func (*AgentEvent_PermissionRequest) isAgentEvent_Payload() {}
+
+func (*AgentEvent_Subagent) isAgentEvent_Payload() {}
+
+func (*AgentEvent_Error) isAgentEvent_Payload() {}
+
+type TurnStarted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ThreadId      string                 `protobuf:"bytes,1,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId        string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnStarted) Reset() {
+	*x = TurnStarted{}
+	mi := &file_proto_agent_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnStarted) ProtoMessage() {}
+
+func (x *TurnStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnStarted.ProtoReflect.Descriptor instead.
+func (*TurnStarted) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TurnStarted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *TurnStarted) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+type TurnCompleted struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ThreadId         string                 `protobuf:"bytes,1,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId           string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	LastAgentMessage string                 `protobuf:"bytes,3,opt,name=last_agent_message,json=lastAgentMessage,proto3" json:"last_agent_message,omitempty"`
+	DurationMs       int64                  `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *TurnCompleted) Reset() {
+	*x = TurnCompleted{}
+	mi := &file_proto_agent_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnCompleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnCompleted) ProtoMessage() {}
+
+func (x *TurnCompleted) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnCompleted.ProtoReflect.Descriptor instead.
+func (*TurnCompleted) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *TurnCompleted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *TurnCompleted) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *TurnCompleted) GetLastAgentMessage() string {
+	if x != nil {
+		return x.LastAgentMessage
+	}
+	return ""
+}
+
+func (x *TurnCompleted) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+type TurnAborted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ThreadId      string                 `protobuf:"bytes,1,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId        string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnAborted) Reset() {
+	*x = TurnAborted{}
+	mi := &file_proto_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnAborted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnAborted) ProtoMessage() {}
+
+func (x *TurnAborted) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnAborted.ProtoReflect.Descriptor instead.
+func (*TurnAborted) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TurnAborted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *TurnAborted) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *TurnAborted) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ItemStarted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemType      string                 `protobuf:"bytes,2,opt,name=item_type,json=itemType,proto3" json:"item_type,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId        string                 `protobuf:"bytes,4,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemStarted) Reset() {
+	*x = ItemStarted{}
+	mi := &file_proto_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemStarted) ProtoMessage() {}
+
+func (x *ItemStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemStarted.ProtoReflect.Descriptor instead.
+func (*ItemStarted) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ItemStarted) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ItemStarted) GetItemType() string {
+	if x != nil {
+		return x.ItemType
+	}
+	return ""
+}
+
+func (x *ItemStarted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *ItemStarted) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+type ItemCompleted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemType      string                 `protobuf:"bytes,2,opt,name=item_type,json=itemType,proto3" json:"item_type,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,3,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId        string                 `protobuf:"bytes,4,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	Payload       string                 `protobuf:"bytes,5,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemCompleted) Reset() {
+	*x = ItemCompleted{}
+	mi := &file_proto_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemCompleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemCompleted) ProtoMessage() {}
+
+func (x *ItemCompleted) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemCompleted.ProtoReflect.Descriptor instead.
+func (*ItemCompleted) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ItemCompleted) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ItemCompleted) GetItemType() string {
+	if x != nil {
+		return x.ItemType
+	}
+	return ""
+}
+
+func (x *ItemCompleted) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *ItemCompleted) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *ItemCompleted) GetPayload() string {
+	if x != nil {
+		return x.Payload
+	}
+	return ""
+}
+
+type ItemDelta struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemType      string                 `protobuf:"bytes,2,opt,name=item_type,json=itemType,proto3" json:"item_type,omitempty"`
+	Delta         string                 `protobuf:"bytes,3,opt,name=delta,proto3" json:"delta,omitempty"`
+	Seq           int32                  `protobuf:"varint,4,opt,name=seq,proto3" json:"seq,omitempty"`
+	ThreadId      string                 `protobuf:"bytes,5,opt,name=thread_id,json=threadId,proto3" json:"thread_id,omitempty"`
+	TurnId        string                 `protobuf:"bytes,6,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemDelta) Reset() {
+	*x = ItemDelta{}
+	mi := &file_proto_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemDelta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemDelta) ProtoMessage() {}
+
+func (x *ItemDelta) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemDelta.ProtoReflect.Descriptor instead.
+func (*ItemDelta) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ItemDelta) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *ItemDelta) GetItemType() string {
+	if x != nil {
+		return x.ItemType
+	}
+	return ""
+}
+
+func (x *ItemDelta) GetDelta() string {
+	if x != nil {
+		return x.Delta
+	}
+	return ""
+}
+
+func (x *ItemDelta) GetSeq() int32 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *ItemDelta) GetThreadId() string {
+	if x != nil {
+		return x.ThreadId
+	}
+	return ""
+}
+
+func (x *ItemDelta) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+type UsageUpdate struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	InputTokens           int32                  `protobuf:"varint,1,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	CachedInputTokens     int32                  `protobuf:"varint,2,opt,name=cached_input_tokens,json=cachedInputTokens,proto3" json:"cached_input_tokens,omitempty"`
+	OutputTokens          int32                  `protobuf:"varint,3,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	ReasoningOutputTokens int32                  `protobuf:"varint,4,opt,name=reasoning_output_tokens,json=reasoningOutputTokens,proto3" json:"reasoning_output_tokens,omitempty"`
+	TotalTokens           int32                  `protobuf:"varint,5,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
+	ModelContextWindow    int32                  `protobuf:"varint,6,opt,name=model_context_window,json=modelContextWindow,proto3" json:"model_context_window,omitempty"`
+	Estimated             bool                   `protobuf:"varint,7,opt,name=estimated,proto3" json:"estimated,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UsageUpdate) Reset() {
+	*x = UsageUpdate{}
+	mi := &file_proto_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageUpdate) ProtoMessage() {}
+
+func (x *UsageUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageUpdate.ProtoReflect.Descriptor instead.
+func (*UsageUpdate) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *UsageUpdate) GetInputTokens() int32 {
+	if x != nil {
+		return x.InputTokens
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetCachedInputTokens() int32 {
+	if x != nil {
+		return x.CachedInputTokens
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetOutputTokens() int32 {
+	if x != nil {
+		return x.OutputTokens
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetReasoningOutputTokens() int32 {
+	if x != nil {
+		return x.ReasoningOutputTokens
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetTotalTokens() int32 {
+	if x != nil {
+		return x.TotalTokens
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetModelContextWindow() int32 {
+	if x != nil {
+		return x.ModelContextWindow
+	}
+	return 0
+}
+
+func (x *UsageUpdate) GetEstimated() bool {
+	if x != nil {
+		return x.Estimated
+	}
+	return false
+}
+
+type PermissionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Tool          string                 `protobuf:"bytes,2,opt,name=tool,proto3" json:"tool,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Operation     string                 `protobuf:"bytes,4,opt,name=operation,proto3" json:"operation,omitempty"`
+	Detail        string                 `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
+	ScopeOptions  []string               `protobuf:"bytes,6,rep,name=scope_options,json=scopeOptions,proto3" json:"scope_options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PermissionRequest) Reset() {
+	*x = PermissionRequest{}
+	mi := &file_proto_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PermissionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PermissionRequest) ProtoMessage() {}
+
+func (x *PermissionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PermissionRequest.ProtoReflect.Descriptor instead.
+func (*PermissionRequest) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PermissionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PermissionRequest) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *PermissionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PermissionRequest) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *PermissionRequest) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *PermissionRequest) GetScopeOptions() []string {
+	if x != nil {
+		return x.ScopeOptions
+	}
+	return nil
+}
+
+type SubagentEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventType     string                 `protobuf:"bytes,1,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
+	Payload       string                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`                      // JSON
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubagentEvent) Reset() {
+	*x = SubagentEvent{}
+	mi := &file_proto_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubagentEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubagentEvent) ProtoMessage() {}
+
+func (x *SubagentEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubagentEvent.ProtoReflect.Descriptor instead.
+func (*SubagentEvent) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SubagentEvent) GetEventType() string {
 	if x != nil {
 		return x.EventType
 	}
 	return ""
 }
 
-func (x *AgentEvent) GetPayload() string {
+func (x *SubagentEvent) GetPayload() string {
 	if x != nil {
 		return x.Payload
+	}
+	return ""
+}
+
+type Error struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Guess         string                 `protobuf:"bytes,2,opt,name=guess,proto3" json:"guess,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Error) Reset() {
+	*x = Error{}
+	mi := &file_proto_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Error) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Error) ProtoMessage() {}
+
+func (x *Error) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Error.ProtoReflect.Descriptor instead.
+func (*Error) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Error) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *Error) GetGuess() string {
+	if x != nil {
+		return x.Guess
 	}
 	return ""
 }
@@ -88,15 +948,15 @@ func (x *AgentEvent) GetPayload() string {
 type ServerCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	CommandType   string                 `protobuf:"bytes,2,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"` // 例如: "start_chat", "cancel_task"
-	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                            // JSON 格式，包含用户提问、历史上下文等
+	CommandType   string                 `protobuf:"bytes,2,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"` // "start_chat", "cancel_task", "steer_input", "abort_turn", "permission_response", "agents_changed"
+	Payload       string                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`                            // JSON 格式
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ServerCommand) Reset() {
 	*x = ServerCommand{}
-	mi := &file_proto_agent_proto_msgTypes[1]
+	mi := &file_proto_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -108,7 +968,7 @@ func (x *ServerCommand) String() string {
 func (*ServerCommand) ProtoMessage() {}
 
 func (x *ServerCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[1]
+	mi := &file_proto_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -121,7 +981,7 @@ func (x *ServerCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerCommand.ProtoReflect.Descriptor instead.
 func (*ServerCommand) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{1}
+	return file_proto_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ServerCommand) GetSessionId() string {
@@ -156,7 +1016,7 @@ type LLMRequest struct {
 
 func (x *LLMRequest) Reset() {
 	*x = LLMRequest{}
-	mi := &file_proto_agent_proto_msgTypes[2]
+	mi := &file_proto_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +1028,7 @@ func (x *LLMRequest) String() string {
 func (*LLMRequest) ProtoMessage() {}
 
 func (x *LLMRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[2]
+	mi := &file_proto_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +1041,7 @@ func (x *LLMRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMRequest.ProtoReflect.Descriptor instead.
 func (*LLMRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{2}
+	return file_proto_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *LLMRequest) GetSessionId() string {
@@ -203,13 +1063,14 @@ type LLMResponse struct {
 	IsError       bool                   `protobuf:"varint,1,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`               // 是否为错误终止信号。true 表示此次推送为错误终止
 	JsonResponse  string                 `protobuf:"bytes,2,opt,name=json_response,json=jsonResponse,proto3" json:"json_response,omitempty"` // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
 	MessageId     string                 `protobuf:"bytes,3,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`          // 消息唯一标识，用于前端追踪
+	Usage         *UsagePayload          `protobuf:"bytes,4,opt,name=usage,proto3" json:"usage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LLMResponse) Reset() {
 	*x = LLMResponse{}
-	mi := &file_proto_agent_proto_msgTypes[3]
+	mi := &file_proto_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +1082,7 @@ func (x *LLMResponse) String() string {
 func (*LLMResponse) ProtoMessage() {}
 
 func (x *LLMResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[3]
+	mi := &file_proto_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,7 +1095,7 @@ func (x *LLMResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMResponse.ProtoReflect.Descriptor instead.
 func (*LLMResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{3}
+	return file_proto_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LLMResponse) GetIsError() bool {
@@ -258,6 +1119,89 @@ func (x *LLMResponse) GetMessageId() string {
 	return ""
 }
 
+func (x *LLMResponse) GetUsage() *UsagePayload {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+type UsagePayload struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	PromptTokens     int32                  `protobuf:"varint,1,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`
+	CachedTokens     int32                  `protobuf:"varint,2,opt,name=cached_tokens,json=cachedTokens,proto3" json:"cached_tokens,omitempty"`
+	CompletionTokens int32                  `protobuf:"varint,3,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"`
+	ReasoningTokens  int32                  `protobuf:"varint,4,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
+	TotalTokens      int32                  `protobuf:"varint,5,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UsagePayload) Reset() {
+	*x = UsagePayload{}
+	mi := &file_proto_agent_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsagePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsagePayload) ProtoMessage() {}
+
+func (x *UsagePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsagePayload.ProtoReflect.Descriptor instead.
+func (*UsagePayload) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UsagePayload) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *UsagePayload) GetCachedTokens() int32 {
+	if x != nil {
+		return x.CachedTokens
+	}
+	return 0
+}
+
+func (x *UsagePayload) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
+	}
+	return 0
+}
+
+func (x *UsagePayload) GetReasoningTokens() int32 {
+	if x != nil {
+		return x.ReasoningTokens
+	}
+	return 0
+}
+
+func (x *UsagePayload) GetTotalTokens() int32 {
+	if x != nil {
+		return x.TotalTokens
+	}
+	return 0
+}
+
 // --- 4. 工具执行代理 ---
 type ToolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -271,7 +1215,7 @@ type ToolRequest struct {
 
 func (x *ToolRequest) Reset() {
 	*x = ToolRequest{}
-	mi := &file_proto_agent_proto_msgTypes[4]
+	mi := &file_proto_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -283,7 +1227,7 @@ func (x *ToolRequest) String() string {
 func (*ToolRequest) ProtoMessage() {}
 
 func (x *ToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[4]
+	mi := &file_proto_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -296,7 +1240,7 @@ func (x *ToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolRequest.ProtoReflect.Descriptor instead.
 func (*ToolRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{4}
+	return file_proto_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ToolRequest) GetSessionId() string {
@@ -340,7 +1284,7 @@ type ToolResponse struct {
 
 func (x *ToolResponse) Reset() {
 	*x = ToolResponse{}
-	mi := &file_proto_agent_proto_msgTypes[5]
+	mi := &file_proto_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +1296,7 @@ func (x *ToolResponse) String() string {
 func (*ToolResponse) ProtoMessage() {}
 
 func (x *ToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[5]
+	mi := &file_proto_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +1309,7 @@ func (x *ToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolResponse.ProtoReflect.Descriptor instead.
 func (*ToolResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{5}
+	return file_proto_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ToolResponse) GetSuccess() bool {
@@ -412,7 +1356,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_proto_agent_proto_msgTypes[6]
+	mi := &file_proto_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +1368,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[6]
+	mi := &file_proto_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,7 +1381,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{6}
+	return file_proto_agent_proto_rawDescGZIP(), []int{17}
 }
 
 type AgentDef struct {
@@ -454,7 +1398,7 @@ type AgentDef struct {
 
 func (x *AgentDef) Reset() {
 	*x = AgentDef{}
-	mi := &file_proto_agent_proto_msgTypes[7]
+	mi := &file_proto_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +1410,7 @@ func (x *AgentDef) String() string {
 func (*AgentDef) ProtoMessage() {}
 
 func (x *AgentDef) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[7]
+	mi := &file_proto_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +1423,7 @@ func (x *AgentDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDef.ProtoReflect.Descriptor instead.
 func (*AgentDef) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{7}
+	return file_proto_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AgentDef) GetId() string {
@@ -533,7 +1477,7 @@ type AgentId struct {
 
 func (x *AgentId) Reset() {
 	*x = AgentId{}
-	mi := &file_proto_agent_proto_msgTypes[8]
+	mi := &file_proto_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +1489,7 @@ func (x *AgentId) String() string {
 func (*AgentId) ProtoMessage() {}
 
 func (x *AgentId) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[8]
+	mi := &file_proto_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +1502,7 @@ func (x *AgentId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentId.ProtoReflect.Descriptor instead.
 func (*AgentId) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{8}
+	return file_proto_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AgentId) GetId() string {
@@ -577,7 +1521,7 @@ type AgentDefList struct {
 
 func (x *AgentDefList) Reset() {
 	*x = AgentDefList{}
-	mi := &file_proto_agent_proto_msgTypes[9]
+	mi := &file_proto_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +1533,7 @@ func (x *AgentDefList) String() string {
 func (*AgentDefList) ProtoMessage() {}
 
 func (x *AgentDefList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[9]
+	mi := &file_proto_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +1546,7 @@ func (x *AgentDefList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDefList.ProtoReflect.Descriptor instead.
 func (*AgentDefList) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{9}
+	return file_proto_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentDefList) GetAgents() []*AgentDef {
@@ -616,14 +1560,80 @@ var File_proto_agent_proto protoreflect.FileDescriptor
 
 const file_proto_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/agent.proto\x12\vflowpartner\"d\n" +
+	"\x11proto/agent.proto\x12\vflowpartner\"\xeb\x05\n" +
 	"\n" +
 	"AgentEvent\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\tthread_id\x18\v \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\f \x01(\tR\x06turnId\x12>\n" +
+	"\fturn_started\x18\x04 \x01(\v2\x19.flowpartner.turn_startedH\x00R\vturnStarted\x12D\n" +
+	"\x0eturn_completed\x18\x05 \x01(\v2\x1b.flowpartner.turn_completedH\x00R\rturnCompleted\x12>\n" +
+	"\fturn_aborted\x18\x06 \x01(\v2\x19.flowpartner.turn_abortedH\x00R\vturnAborted\x12>\n" +
+	"\fitem_started\x18\a \x01(\v2\x19.flowpartner.item_startedH\x00R\vitemStarted\x12D\n" +
+	"\x0eitem_completed\x18\b \x01(\v2\x1b.flowpartner.item_completedH\x00R\ritemCompleted\x128\n" +
 	"\n" +
-	"event_type\x18\x02 \x01(\tR\teventType\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\tR\apayload\"k\n" +
+	"item_delta\x18\t \x01(\v2\x17.flowpartner.item_deltaH\x00R\titemDelta\x12>\n" +
+	"\fusage_update\x18\r \x01(\v2\x19.flowpartner.usage_updateH\x00R\vusageUpdate\x12P\n" +
+	"\x12permission_request\x18\x0e \x01(\v2\x1f.flowpartner.permission_requestH\x00R\x11permissionRequest\x129\n" +
+	"\bsubagent\x18\x0f \x01(\v2\x1b.flowpartner.subagent_eventH\x00R\bsubagent\x12*\n" +
+	"\x05error\x18\x10 \x01(\v2\x12.flowpartner.errorH\x00R\x05errorB\t\n" +
+	"\apayload\"D\n" +
+	"\fturn_started\x12\x1b\n" +
+	"\tthread_id\x18\x01 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x02 \x01(\tR\x06turnId\"\x95\x01\n" +
+	"\x0eturn_completed\x12\x1b\n" +
+	"\tthread_id\x18\x01 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12,\n" +
+	"\x12last_agent_message\x18\x03 \x01(\tR\x10lastAgentMessage\x12\x1f\n" +
+	"\vduration_ms\x18\x04 \x01(\x03R\n" +
+	"durationMs\"\\\n" +
+	"\fturn_aborted\x12\x1b\n" +
+	"\tthread_id\x18\x01 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"z\n" +
+	"\fitem_started\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1b\n" +
+	"\titem_type\x18\x02 \x01(\tR\bitemType\x12\x1b\n" +
+	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x04 \x01(\tR\x06turnId\"\x96\x01\n" +
+	"\x0eitem_completed\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1b\n" +
+	"\titem_type\x18\x02 \x01(\tR\bitemType\x12\x1b\n" +
+	"\tthread_id\x18\x03 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x04 \x01(\tR\x06turnId\x12\x18\n" +
+	"\apayload\x18\x05 \x01(\tR\apayload\"\xa0\x01\n" +
+	"\n" +
+	"item_delta\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1b\n" +
+	"\titem_type\x18\x02 \x01(\tR\bitemType\x12\x14\n" +
+	"\x05delta\x18\x03 \x01(\tR\x05delta\x12\x10\n" +
+	"\x03seq\x18\x04 \x01(\x05R\x03seq\x12\x1b\n" +
+	"\tthread_id\x18\x05 \x01(\tR\bthreadId\x12\x17\n" +
+	"\aturn_id\x18\x06 \x01(\tR\x06turnId\"\xb1\x02\n" +
+	"\fusage_update\x12!\n" +
+	"\finput_tokens\x18\x01 \x01(\x05R\vinputTokens\x12.\n" +
+	"\x13cached_input_tokens\x18\x02 \x01(\x05R\x11cachedInputTokens\x12#\n" +
+	"\routput_tokens\x18\x03 \x01(\x05R\foutputTokens\x126\n" +
+	"\x17reasoning_output_tokens\x18\x04 \x01(\x05R\x15reasoningOutputTokens\x12!\n" +
+	"\ftotal_tokens\x18\x05 \x01(\x05R\vtotalTokens\x120\n" +
+	"\x14model_context_window\x18\x06 \x01(\x05R\x12modelContextWindow\x12\x1c\n" +
+	"\testimated\x18\a \x01(\bR\testimated\"\xb6\x01\n" +
+	"\x12permission_request\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x12\n" +
+	"\x04tool\x18\x02 \x01(\tR\x04tool\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x1c\n" +
+	"\toperation\x18\x04 \x01(\tR\toperation\x12\x16\n" +
+	"\x06detail\x18\x05 \x01(\tR\x06detail\x12#\n" +
+	"\rscope_options\x18\x06 \x03(\tR\fscopeOptions\"I\n" +
+	"\x0esubagent_event\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\tR\teventType\x12\x18\n" +
+	"\apayload\x18\x02 \x01(\tR\apayload\"7\n" +
+	"\x05error\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
+	"\x05guess\x18\x02 \x01(\tR\x05guess\"k\n" +
 	"\rServerCommand\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
@@ -633,12 +1643,19 @@ const file_proto_agent_proto_rawDesc = "" +
 	"LLMRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
-	"\fjson_payload\x18\x02 \x01(\tR\vjsonPayload\"l\n" +
+	"\fjson_payload\x18\x02 \x01(\tR\vjsonPayload\"\x9d\x01\n" +
 	"\vLLMResponse\x12\x19\n" +
 	"\bis_error\x18\x01 \x01(\bR\aisError\x12#\n" +
 	"\rjson_response\x18\x02 \x01(\tR\fjsonResponse\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x03 \x01(\tR\tmessageId\"\x88\x01\n" +
+	"message_id\x18\x03 \x01(\tR\tmessageId\x12/\n" +
+	"\x05usage\x18\x04 \x01(\v2\x19.flowpartner.UsagePayloadR\x05usage\"\xd3\x01\n" +
+	"\fUsagePayload\x12#\n" +
+	"\rprompt_tokens\x18\x01 \x01(\x05R\fpromptTokens\x12#\n" +
+	"\rcached_tokens\x18\x02 \x01(\x05R\fcachedTokens\x12+\n" +
+	"\x11completion_tokens\x18\x03 \x01(\x05R\x10completionTokens\x12)\n" +
+	"\x10reasoning_tokens\x18\x04 \x01(\x05R\x0freasoningTokens\x12!\n" +
+	"\ftotal_tokens\x18\x05 \x01(\x05R\vtotalTokens\"\x88\x01\n" +
 	"\vToolRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -688,36 +1705,58 @@ func file_proto_agent_proto_rawDescGZIP() []byte {
 	return file_proto_agent_proto_rawDescData
 }
 
-var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proto_agent_proto_goTypes = []any{
-	(*AgentEvent)(nil),    // 0: flowpartner.AgentEvent
-	(*ServerCommand)(nil), // 1: flowpartner.ServerCommand
-	(*LLMRequest)(nil),    // 2: flowpartner.LLMRequest
-	(*LLMResponse)(nil),   // 3: flowpartner.LLMResponse
-	(*ToolRequest)(nil),   // 4: flowpartner.ToolRequest
-	(*ToolResponse)(nil),  // 5: flowpartner.ToolResponse
-	(*Empty)(nil),         // 6: flowpartner.Empty
-	(*AgentDef)(nil),      // 7: flowpartner.AgentDef
-	(*AgentId)(nil),       // 8: flowpartner.AgentId
-	(*AgentDefList)(nil),  // 9: flowpartner.AgentDefList
+	(*AgentEvent)(nil),        // 0: flowpartner.AgentEvent
+	(*TurnStarted)(nil),       // 1: flowpartner.turn_started
+	(*TurnCompleted)(nil),     // 2: flowpartner.turn_completed
+	(*TurnAborted)(nil),       // 3: flowpartner.turn_aborted
+	(*ItemStarted)(nil),       // 4: flowpartner.item_started
+	(*ItemCompleted)(nil),     // 5: flowpartner.item_completed
+	(*ItemDelta)(nil),         // 6: flowpartner.item_delta
+	(*UsageUpdate)(nil),       // 7: flowpartner.usage_update
+	(*PermissionRequest)(nil), // 8: flowpartner.permission_request
+	(*SubagentEvent)(nil),     // 9: flowpartner.subagent_event
+	(*Error)(nil),             // 10: flowpartner.error
+	(*ServerCommand)(nil),     // 11: flowpartner.ServerCommand
+	(*LLMRequest)(nil),        // 12: flowpartner.LLMRequest
+	(*LLMResponse)(nil),       // 13: flowpartner.LLMResponse
+	(*UsagePayload)(nil),      // 14: flowpartner.UsagePayload
+	(*ToolRequest)(nil),       // 15: flowpartner.ToolRequest
+	(*ToolResponse)(nil),      // 16: flowpartner.ToolResponse
+	(*Empty)(nil),             // 17: flowpartner.Empty
+	(*AgentDef)(nil),          // 18: flowpartner.AgentDef
+	(*AgentId)(nil),           // 19: flowpartner.AgentId
+	(*AgentDefList)(nil),      // 20: flowpartner.AgentDefList
 }
 var file_proto_agent_proto_depIdxs = []int32{
-	7, // 0: flowpartner.AgentDefList.agents:type_name -> flowpartner.AgentDef
-	0, // 1: flowpartner.FlowPartnerService.SyncChannel:input_type -> flowpartner.AgentEvent
-	2, // 2: flowpartner.FlowPartnerService.CallLLM:input_type -> flowpartner.LLMRequest
-	4, // 3: flowpartner.FlowPartnerService.ExecuteTool:input_type -> flowpartner.ToolRequest
-	6, // 4: flowpartner.FlowPartnerService.ListAgents:input_type -> flowpartner.Empty
-	8, // 5: flowpartner.FlowPartnerService.GetAgent:input_type -> flowpartner.AgentId
-	1, // 6: flowpartner.FlowPartnerService.SyncChannel:output_type -> flowpartner.ServerCommand
-	3, // 7: flowpartner.FlowPartnerService.CallLLM:output_type -> flowpartner.LLMResponse
-	5, // 8: flowpartner.FlowPartnerService.ExecuteTool:output_type -> flowpartner.ToolResponse
-	9, // 9: flowpartner.FlowPartnerService.ListAgents:output_type -> flowpartner.AgentDefList
-	7, // 10: flowpartner.FlowPartnerService.GetAgent:output_type -> flowpartner.AgentDef
-	6, // [6:11] is the sub-list for method output_type
-	1, // [1:6] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1,  // 0: flowpartner.AgentEvent.turn_started:type_name -> flowpartner.turn_started
+	2,  // 1: flowpartner.AgentEvent.turn_completed:type_name -> flowpartner.turn_completed
+	3,  // 2: flowpartner.AgentEvent.turn_aborted:type_name -> flowpartner.turn_aborted
+	4,  // 3: flowpartner.AgentEvent.item_started:type_name -> flowpartner.item_started
+	5,  // 4: flowpartner.AgentEvent.item_completed:type_name -> flowpartner.item_completed
+	6,  // 5: flowpartner.AgentEvent.item_delta:type_name -> flowpartner.item_delta
+	7,  // 6: flowpartner.AgentEvent.usage_update:type_name -> flowpartner.usage_update
+	8,  // 7: flowpartner.AgentEvent.permission_request:type_name -> flowpartner.permission_request
+	9,  // 8: flowpartner.AgentEvent.subagent:type_name -> flowpartner.subagent_event
+	10, // 9: flowpartner.AgentEvent.error:type_name -> flowpartner.error
+	14, // 10: flowpartner.LLMResponse.usage:type_name -> flowpartner.UsagePayload
+	18, // 11: flowpartner.AgentDefList.agents:type_name -> flowpartner.AgentDef
+	0,  // 12: flowpartner.FlowPartnerService.SyncChannel:input_type -> flowpartner.AgentEvent
+	12, // 13: flowpartner.FlowPartnerService.CallLLM:input_type -> flowpartner.LLMRequest
+	15, // 14: flowpartner.FlowPartnerService.ExecuteTool:input_type -> flowpartner.ToolRequest
+	17, // 15: flowpartner.FlowPartnerService.ListAgents:input_type -> flowpartner.Empty
+	19, // 16: flowpartner.FlowPartnerService.GetAgent:input_type -> flowpartner.AgentId
+	11, // 17: flowpartner.FlowPartnerService.SyncChannel:output_type -> flowpartner.ServerCommand
+	13, // 18: flowpartner.FlowPartnerService.CallLLM:output_type -> flowpartner.LLMResponse
+	16, // 19: flowpartner.FlowPartnerService.ExecuteTool:output_type -> flowpartner.ToolResponse
+	20, // 20: flowpartner.FlowPartnerService.ListAgents:output_type -> flowpartner.AgentDefList
+	18, // 21: flowpartner.FlowPartnerService.GetAgent:output_type -> flowpartner.AgentDef
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_proto_agent_proto_init() }
@@ -725,13 +1764,25 @@ func file_proto_agent_proto_init() {
 	if File_proto_agent_proto != nil {
 		return
 	}
+	file_proto_agent_proto_msgTypes[0].OneofWrappers = []any{
+		(*AgentEvent_TurnStarted)(nil),
+		(*AgentEvent_TurnCompleted)(nil),
+		(*AgentEvent_TurnAborted)(nil),
+		(*AgentEvent_ItemStarted)(nil),
+		(*AgentEvent_ItemCompleted)(nil),
+		(*AgentEvent_ItemDelta)(nil),
+		(*AgentEvent_UsageUpdate)(nil),
+		(*AgentEvent_PermissionRequest)(nil),
+		(*AgentEvent_Subagent)(nil),
+		(*AgentEvent_Error)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_agent_proto_rawDesc), len(file_proto_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -5,17 +5,98 @@ package flowpartner;
 // --- 1. Python 发给 Go 的事件 (实时汇报) ---
 message AgentEvent {
     string session_id = 1;
-    string event_type = 2; // 例如: "iteration_start", "llm_chunk", "tool_call", "tool_result",
-                           // "final_answer", "loop_terminated", "error", "permission_request",
-                           // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
-    string payload = 3;    // JSON 格式的具体内容
+    string thread_id = 11;
+    string turn_id = 12;
+    oneof payload {
+        turn_started turn_started = 4;
+        turn_completed turn_completed = 5;
+        turn_aborted turn_aborted = 6;
+        item_started item_started = 7;
+        item_completed item_completed = 8;
+        item_delta item_delta = 9;
+        usage_update usage_update = 13;
+        permission_request permission_request = 14;
+        subagent_event subagent = 15;
+        error error = 16;
+    }
+}
+
+message turn_started {
+    string thread_id = 1;
+    string turn_id = 2;
+}
+
+message turn_completed {
+    string thread_id = 1;
+    string turn_id = 2;
+    string last_agent_message = 3;
+    int64 duration_ms = 4;
+}
+
+message turn_aborted {
+    string thread_id = 1;
+    string turn_id = 2;
+    string reason = 3;
+}
+
+message item_started {
+    string item_id = 1;
+    string item_type = 2;
+    string thread_id = 3;
+    string turn_id = 4;
+}
+
+message item_completed {
+    string item_id = 1;
+    string item_type = 2;
+    string thread_id = 3;
+    string turn_id = 4;
+    string payload = 5;
+}
+
+message item_delta {
+    string item_id = 1;
+    string item_type = 2;
+    string delta = 3;
+    int32 seq = 4;
+    string thread_id = 5;
+    string turn_id = 6;
+}
+
+message usage_update {
+    int32 input_tokens = 1;
+    int32 cached_input_tokens = 2;
+    int32 output_tokens = 3;
+    int32 reasoning_output_tokens = 4;
+    int32 total_tokens = 5;
+    int32 model_context_window = 6;
+    bool estimated = 7;
+}
+
+message permission_request {
+    string request_id = 1;
+    string tool = 2;
+    string path = 3;
+    string operation = 4;
+    string detail = 5;
+    repeated string scope_options = 6;
+}
+
+message subagent_event {
+    string event_type = 1; // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
+    string payload = 2;    // JSON
+}
+
+message error {
+    string message = 1;
+    string guess = 2;
 }
 
 // --- 2. Go 发给 Python 的指令 (下发任务) ---
 message ServerCommand {
     string session_id = 1;
-    string command_type = 2; // 例如: "start_chat", "cancel_task"
-    string payload = 3;      // JSON 格式，包含用户提问、历史上下文等
+    string command_type = 2; // "start_chat", "cancel_task", "steer_input", "abort_turn", "permission_response", "agents_changed"
+    string payload = 3;      // JSON 格式
 }
 
 // --- 3. Agent 请求 Go 代为调用大模型（服务端流式，方便 Go 控制 API Key 和计费） ---
@@ -28,6 +109,15 @@ message LLMResponse {
     bool is_error = 1;         // 是否为错误终止信号。true 表示此次推送为错误终止
     string json_response = 2;  // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
     string message_id = 3;     // 消息唯一标识，用于前端追踪
+    UsagePayload usage = 4;
+}
+
+message UsagePayload {
+    int32 prompt_tokens = 1;
+    int32 cached_tokens = 2;
+    int32 completion_tokens = 3;
+    int32 reasoning_tokens = 4;
+    int32 total_tokens = 5;
 }
 
 // --- 4. 工具执行代理 ---
