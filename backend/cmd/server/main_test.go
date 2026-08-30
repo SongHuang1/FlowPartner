@@ -16,6 +16,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
@@ -49,7 +50,7 @@ func TestHTTPRoutes(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, nil, mgr)
 
@@ -99,7 +100,7 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	storage.ResetDataDirCache()
 
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, nil, mgr)
 
@@ -146,7 +147,7 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 // TestShutdown_ClosesAllServers 验证 shutdown 按顺序关闭 gRPC → WebSocket → HTTP
 func TestShutdown_ClosesAllServers(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, nil, mgr)
@@ -206,10 +207,9 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	}
 }
 
-// TestShutdown_ForceStopsStuckGRPC 验证 GracefulStop 超时 2 秒后强制停止（§5.5）
 func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	httpServer := &http.Server{Handler: http.NewServeMux()}
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")

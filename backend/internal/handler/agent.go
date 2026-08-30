@@ -161,7 +161,11 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		return h.sendError(stream, messageID, llm.NetworkError(err))
 	}
 
+	var lastUsage *proto.UsagePayload
 	for chunk := range chunkChan {
+		if chunk.Usage != nil {
+			lastUsage = chunk.Usage
+		}
 		if chunk.Done && chunk.Data == "" {
 			continue
 		}
@@ -169,10 +173,20 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 			IsError:      chunk.Done && chunk.Data != "",
 			JsonResponse: chunk.Data,
 			MessageId:    messageID,
+			Usage:        chunk.Usage,
 		}
 		if err := stream.Send(resp); err != nil {
 			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
 			return nil
+		}
+	}
+
+	if lastUsage != nil {
+		if err := stream.Send(&proto.LLMResponse{
+			MessageId: messageID,
+			Usage:     lastUsage,
+		}); err != nil {
+			log.Printf("[CallLLM] Send usage failed: %s", sanitize.Error(err))
 		}
 	}
 

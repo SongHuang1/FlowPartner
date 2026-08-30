@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"encoding/json"
 	"log"
 	"sync"
 
@@ -8,15 +9,11 @@ import (
 	"github.com/songhuang/flowpartner/backend/proto"
 )
 
-// Manager 负责桥接前端 WebSocket 和 Python gRPC
 type Manager struct {
 	// 发往 Python 的指令通道
-	CmdChan chan *proto.ServerCommand
-
-	// 记录 SessionID -> WebSocket 连接的映射
+	CmdChan  chan *proto.ServerCommand
 	sessions map[string]*websocket.Conn
 
-	// 每个连接的写互斥锁（gorilla/websocket 不支持并发写）
 	connMu map[*websocket.Conn]*sync.Mutex
 	mu     sync.RWMutex
 }
@@ -29,7 +26,6 @@ func NewManager() *Manager {
 	}
 }
 
-// RegisterSession 前端建立连接时注册
 func (m *Manager) RegisterSession(sessionId string, conn *websocket.Conn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -39,7 +35,6 @@ func (m *Manager) RegisterSession(sessionId string, conn *websocket.Conn) {
 	m.sessions[sessionId] = conn
 }
 
-// UnregisterSession 前端断开连接时注销
 func (m *Manager) UnregisterSession(sessionId string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -50,7 +45,6 @@ func (m *Manager) UnregisterSession(sessionId string) {
 	}
 }
 
-// connStillInUse 检查是否有其他 session 仍在使用该连接（调用方必须持有 m.mu）
 func (m *Manager) connStillInUse(conn *websocket.Conn) bool {
 	for _, c := range m.sessions {
 		if c == conn {
@@ -60,7 +54,41 @@ func (m *Manager) connStillInUse(conn *websocket.Conn) bool {
 	return false
 }
 
-// SendToSession 将 Python 的事件转发给指定的前端 WebSocket
+func extractEventTypeAndPayload(event *proto.AgentEvent) (string, string) {
+	switch p := event.Payload.(type) {
+	case *proto.AgentEvent_TurnStarted:
+		return "turn_started", mustMarshal(p.TurnStarted)
+	case *proto.AgentEvent_TurnCompleted:
+		return "turn_completed", mustMarshal(p.TurnCompleted)
+	case *proto.AgentEvent_TurnAborted:
+		return "turn_aborted", mustMarshal(p.TurnAborted)
+	case *proto.AgentEvent_ItemStarted:
+		return "item_started", mustMarshal(p.ItemStarted)
+	case *proto.AgentEvent_ItemCompleted:
+		return "item_completed", mustMarshal(p.ItemCompleted)
+	case *proto.AgentEvent_ItemDelta:
+		return "item_delta", mustMarshal(p.ItemDelta)
+	case *proto.AgentEvent_UsageUpdate:
+		return "usage_update", mustMarshal(p.UsageUpdate)
+	case *proto.AgentEvent_PermissionRequest:
+		return "permission_request", mustMarshal(p.PermissionRequest)
+	case *proto.AgentEvent_Subagent:
+		return p.Subagent.EventType, p.Subagent.Payload
+	case *proto.AgentEvent_Error:
+		return "error", mustMarshal(p.Error)
+	default:
+		return "unknown", "{}"
+	}
+}
+
+func mustMarshal(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
 func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 	m.mu.RLock()
 	conn, ok := m.sessions[sessionId]
@@ -71,21 +99,22 @@ func (m *Manager) SendToSession(sessionId string, event *proto.AgentEvent) {
 	m.mu.RUnlock()
 
 	if !ok || writeMu == nil {
-		log.Printf("[Bridge] Session %s not found, dropping event: %s", sessionId, event.EventType)
+		eventType, _ := extractEventTypeAndPayload(event)
+		log.Printf("[Bridge] Session %s not found, dropping event: %s", sessionId, eventType)
 		return
 	}
 
-	// 同一连接可能被多个 session 共享，多个 gRPC 事件循环可能并发写同一连接
-	// gorilla/websocket 不支持并发写，必须串行化
 	writeMu.Lock()
 	defer writeMu.Unlock()
 
-	// 将 protobuf 消息组装成前端易懂的 JSON 格式
-	payload := map[string]interface{}{
-		"event_type": event.EventType,
-		"payload":    event.Payload, // event.Payload 已是 JSON 字符串，直接透传
+	eventType, payload := extractEventTypeAndPayload(event)
+	wirePayload := map[string]interface{}{
+		"event_type": eventType,
+		"payload":    payload,
+		"thread_id":  event.ThreadId,
+		"turn_id":    event.TurnId,
 	}
-  if err := conn.WriteJSON(payload); err != nil {
+	if err := conn.WriteJSON(wirePayload); err != nil {
 		log.Printf("Failed to send WebSocket message to frontend: %v", err)
 	}
 }

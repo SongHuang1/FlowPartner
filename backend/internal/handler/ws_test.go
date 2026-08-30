@@ -10,13 +10,14 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 func TestWebSocketHandler_HandleWS_StartChat(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -57,7 +58,7 @@ func TestWebSocketHandler_HandleWS_StartChat(t *testing.T) {
 
 func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -97,7 +98,7 @@ func TestWebSocketHandler_HandleWS_SpecialChars(t *testing.T) {
 // TestWebSocketHandler_HandleWS_SessionAndHistory 验证前端传入的 session_id 与 history 被透传到 Python
 func TestWebSocketHandler_HandleWS_SessionAndHistory(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -147,7 +148,7 @@ func TestWebSocketHandler_HandleWS_SessionAndHistory(t *testing.T) {
 // TestWebSocketHandler_HandleWS_InvalidSessionID 验证非法 session_id 被拒绝（不进入 CmdChan）
 func TestWebSocketHandler_HandleWS_InvalidSessionID(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -179,7 +180,7 @@ func TestWebSocketHandler_HandleWS_InvalidSessionID(t *testing.T) {
 // TestWebSocketHandler_Close 验证 Close 后 HandleWS 循环确实退出
 func TestWebSocketHandler_Close(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	handlerReturned := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +212,7 @@ func TestWebSocketHandler_Close(t *testing.T) {
 // 场景：读取 goroutine 已读到消息但尚未被主循环消费时触发 Close
 func TestWebSocketHandler_Close_MessageInFlight(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	handlerReturned := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +261,7 @@ func TestWebSocketHandler_Close_MessageInFlight(t *testing.T) {
 // TestWebSocketHandler_CmdChanFull_ErrorEvent 验证 CmdChan 满时向前端回发 error 事件
 func TestWebSocketHandler_CmdChanFull_ErrorEvent(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	// 填满 CmdChan（无消费者）
 	for i := 0; i < cap(mgr.CmdChan); i++ {
@@ -304,7 +305,7 @@ func TestWebSocketHandler_CmdChanFull_ErrorEvent(t *testing.T) {
 // TestWebSocketHandler_UnregistersSessionOnDisconnect 验证连接断开后 session 被注销
 func TestWebSocketHandler_UnregistersSessionOnDisconnect(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -349,7 +350,7 @@ func TestWebSocketHandler_UnregistersSessionOnDisconnect(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_Allow(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am, nil)
+	wsHandler := NewWebSocketHandler(mgr, am, nil, thread.NewTurnManager(mgr, am))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -417,7 +418,7 @@ func TestWebSocketHandler_PermissionResponse_Allow(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_Deny(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am, nil)
+	wsHandler := NewWebSocketHandler(mgr, am, nil, thread.NewTurnManager(mgr, am))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -478,7 +479,7 @@ func TestWebSocketHandler_PermissionResponse_Deny(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_InvalidDecision(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am, nil)
+	wsHandler := NewWebSocketHandler(mgr, am, nil, thread.NewTurnManager(mgr, am))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -522,7 +523,7 @@ func TestWebSocketHandler_PermissionResponse_InvalidDecision(t *testing.T) {
 func TestWebSocketHandler_PermissionResponse_EmptyRequestID(t *testing.T) {
 	am := tools.NewApprovalManager()
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, am, nil)
+	wsHandler := NewWebSocketHandler(mgr, am, nil, thread.NewTurnManager(mgr, am))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -567,7 +568,7 @@ func TestWebSocketHandler_PermissionResponse_EmptyRequestID(t *testing.T) {
 
 func TestWebSocketHandler_CancelTask_ForwardsToPython(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -597,26 +598,23 @@ func TestWebSocketHandler_CancelTask_ForwardsToPython(t *testing.T) {
 		t.Fatalf("failed to write: %v", err)
 	}
 
-	// CmdChan 应收到 cancel_task 命令
+	// CmdChan 应收到 abort_turn 命令（经 TurnManager.InterruptTurn）
 	select {
 	case cmd := <-mgr.CmdChan:
-		if cmd.CommandType != "cancel_task" {
-			t.Errorf("expected CommandType 'cancel_task', got %q", cmd.CommandType)
+		if cmd.CommandType != "abort_turn" {
+			t.Errorf("expected CommandType 'abort_turn', got %q", cmd.CommandType)
 		}
 		if cmd.SessionId != "test-cancel-session" {
 			t.Errorf("expected SessionId 'test-cancel-session', got %q", cmd.SessionId)
 		}
-		if cmd.Payload != "{}" {
-			t.Errorf("expected Payload '{}', got %q", cmd.Payload)
-		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for cancel_task command")
+		t.Fatal("timeout waiting for abort_turn command")
 	}
 }
 
 func TestWebSocketHandler_CancelTask_InvalidSessionID(t *testing.T) {
 	mgr := bridge.NewManager()
-	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil)
+	wsHandler := NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
 
 	server := httptest.NewServer(http.HandlerFunc(wsHandler.HandleWS))
 	defer server.Close()
@@ -646,10 +644,10 @@ func TestWebSocketHandler_CancelTask_InvalidSessionID(t *testing.T) {
 		t.Fatalf("failed to write: %v", err)
 	}
 
-	// 应被拒绝，CmdChan 无 cancel_task 消息
+	// 应被拒绝，CmdChan 无 abort_turn 消息
 	select {
 	case cmd := <-mgr.CmdChan:
-		if cmd.CommandType == "cancel_task" {
+		if cmd.CommandType == "abort_turn" {
 			t.Fatalf("invalid session_id cancel_task should be rejected, got: %+v", cmd)
 		}
 	case <-time.After(500 * time.Millisecond):

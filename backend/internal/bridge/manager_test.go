@@ -82,7 +82,16 @@ func TestManager_SendToSession_EventFormat(t *testing.T) {
 
 	mgr.RegisterSession("sess_1", serverConn)
 
-	event := &proto.AgentEvent{EventType: "llm_chunk", Payload: `{"text":"hello"}`}
+	event := &proto.AgentEvent{
+		Payload: &proto.AgentEvent_ItemDelta{
+			ItemDelta: &proto.ItemDelta{
+				ItemId:   "item_1",
+				ItemType: "agentMessage",
+				Delta:    "hello",
+				Seq:      1,
+			},
+		},
+	}
 	mgr.SendToSession("sess_1", event)
 
 	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -98,11 +107,8 @@ func TestManager_SendToSession_EventFormat(t *testing.T) {
 	if err := json.Unmarshal(data, &msg); err != nil {
 		t.Fatalf("event is not valid JSON: %v", err)
 	}
-	if msg.EventType != "llm_chunk" {
-		t.Errorf("expected event_type 'llm_chunk', got %q", msg.EventType)
-	}
-	if msg.Payload != `{"text":"hello"}` {
-		t.Errorf("payload mismatch, got %q", msg.Payload)
+	if msg.EventType != "item_delta" {
+		t.Errorf("expected event_type 'item_delta', got %q", msg.EventType)
 	}
 }
 
@@ -125,7 +131,15 @@ func TestManager_SendToSession_Concurrent(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < perWriter; j++ {
 				payload := fmt.Sprintf(`{"writer":%d,"n":%d}`, id, j)
-				mgr.SendToSession("sess_1", &proto.AgentEvent{EventType: "token", Payload: payload})
+				mgr.SendToSession("sess_1", &proto.AgentEvent{
+				Payload: &proto.AgentEvent_ItemDelta{
+					ItemDelta: &proto.ItemDelta{
+						ItemId:   "item_1",
+						ItemType: "agentMessage",
+						Delta:    payload,
+					},
+				},
+			})
 			}
 		}(i)
 	}
@@ -145,7 +159,7 @@ func TestManager_SendToSession_Concurrent(t *testing.T) {
 		if err := json.Unmarshal(data, &msg); err != nil {
 			t.Fatalf("message %d interleaved/corrupted: %v (raw: %s)", i, err, string(data))
 		}
-		if msg.EventType != "token" {
+		if msg.EventType != "item_delta" {
 			t.Errorf("message %d: unexpected event_type %q", i, msg.EventType)
 		}
 	}

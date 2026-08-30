@@ -16,6 +16,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 )
@@ -34,19 +35,20 @@ type WebSocketHandler struct {
 	manager         *bridge.Manager
 	approvalManager *tools.ApprovalManager
 	snapshotMgr     *snapshot.Manager
+	turnMgr         *thread.TurnManager
 	done            chan struct{}
 
-	// 所有已连接前端的连接集合（用于全局事件广播，如 snapshot_status）。
 	connsMu   sync.Mutex
 	conns     map[*websocket.Conn]struct{}
 	connLocks map[*websocket.Conn]*sync.Mutex
 }
 
-func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager, snapshotMgr *snapshot.Manager) *WebSocketHandler {
+func NewWebSocketHandler(m *bridge.Manager, am *tools.ApprovalManager, snapshotMgr *snapshot.Manager, turnMgr *thread.TurnManager) *WebSocketHandler {
 	return &WebSocketHandler{
 		manager:         m,
 		approvalManager: am,
 		snapshotMgr:     snapshotMgr,
+		turnMgr:         turnMgr,
 		done:            make(chan struct{}),
 		conns:           make(map[*websocket.Conn]struct{}),
 		connLocks:       make(map[*websocket.Conn]*sync.Mutex),
@@ -177,6 +179,7 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		DeleteExtras    bool               `json:"delete_extras"`
 		ExecutorAgentID string             `json:"executor_agent_id"`
 		InjectAgentID   string             `json:"inject_agent_id"`
+		TurnID          string             `json:"turn_id"`
 	}
 
 	var sessionIDs []string
@@ -277,12 +280,12 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					history = append(history, hm)
 				}
 
-			payloadBytes, err := json.Marshal(map[string]interface{}{
-				"user_message":      msg.Content,
-				"history":           history,
-				"executor_agent_id": msg.ExecutorAgentID,
-				"inject_agent_id":   msg.InjectAgentID,
-			})
+				payloadBytes, err := json.Marshal(map[string]interface{}{
+					"user_message":      msg.Content,
+					"history":           history,
+					"executor_agent_id": msg.ExecutorAgentID,
+					"inject_agent_id":   msg.InjectAgentID,
+				})
 				if err != nil {
 					log.Printf("JSON encoding failed: %v", err)
 					continue
@@ -295,12 +298,16 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 				}
 				select {
 				case h.manager.CmdChan <- cmd:
+					h.turnMgr.StartTurn(sessionId, sessionId, msg.TurnID)
 					log.Printf("[Chat started] Session: %s | Content length: %d", sessionId, utf8.RuneCountInString(msg.Content))
 				default:
 					log.Printf("CmdChan full, dropping command: session=%s", sessionId)
 					h.manager.SendToSession(sessionId, &proto.AgentEvent{
-						EventType: "error",
-						Payload:   `{"message": "消息发送失败：系统繁忙，请稍后重试"}`,
+						Payload: &proto.AgentEvent_Error{
+							Error: &proto.Error{
+								Message: "消息发送失败：系统繁忙，请稍后重试",
+							},
+						},
 					})
 				}
 
@@ -354,17 +361,19 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
-				cmd := &proto.ServerCommand{
-					SessionId:   sessionId,
-					CommandType: "cancel_task",
-					Payload:     "{}",
+				if err := h.turnMgr.InterruptTurn(sessionId, "user_cancelled"); err != nil {
+					log.Printf("[Cancel] InterruptTurn failed: session=%s err=%v", sessionId, err)
 				}
-				select {
-				case h.manager.CmdChan <- cmd:
-					log.Printf("[Cancel] Task cancelled: session=%s", sessionId)
-				default:
-					log.Printf("CmdChan full, dropping cancel_task: session=%s", sessionId)
+
+			case "steer":
+				sessionId := msg.SessionID
+				if !storage.ValidSessionID(sessionId) {
+					log.Printf("Rejecting steer with invalid session ID: %q", sessionId)
+					continue
 				}
+
+				threadID := sessionId
+				h.turnMgr.SteerInput(sessionId, threadID, msg.TurnID, msg.Content)
 
 			default:
 				log.Printf("Unknown action: %q, dropping", msg.Action)

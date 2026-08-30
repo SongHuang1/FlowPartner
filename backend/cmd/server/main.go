@@ -19,23 +19,22 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/server"
 	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/static"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 )
 
 func main() {
-	// 1. 读取配置
+
 	cfg := config.Load()
 
-	// 2. 初始化 keystore 状态（从已保存的 settings.json 恢复 hasAPIKey）
 	initializeKeystore()
 
-	// 3. 创建 bridge.Manager、WebSocketHandler 与快照管理器（共享桥接层）
 	mgr := bridge.NewManager()
 	approvalManager := tools.NewApprovalManager()
+	turnMgr := thread.NewTurnManager(mgr, approvalManager)
 
-	// 快照管理器：状态与消息事件通过 WebSocket 广播到前端
 	var wsHandler *handler.WebSocketHandler
 	snapshotMgr := snapshot.NewManager(
 		func(status snapshot.Status) {
@@ -45,8 +44,8 @@ func main() {
 			wsHandler.BroadcastEvent("snapshot_message", mustJSON(msg))
 		},
 	)
-	wsHandler = handler.NewWebSocketHandler(mgr, approvalManager, snapshotMgr)
-	// 启动时按已保存设置应用快照配置（含启动清理，后台执行）
+	wsHandler = handler.NewWebSocketHandler(mgr, approvalManager, snapshotMgr, turnMgr)
+
 	applySnapshotConfig(snapshotMgr)
 
 	// 4. 端口探索
@@ -56,7 +55,6 @@ func main() {
 	}
 	defer httpListener.Close()
 
-	// gRPC 端口探索，排除 HTTP 已占用的端口
 	exclude := map[string]bool{fmt.Sprintf("127.0.0.1:%d", httpPort): true}
 	grpcListener, grpcPort, err := server.FindAvailablePort(":50051", exclude)
 	if err != nil {
@@ -64,7 +62,6 @@ func main() {
 	}
 	defer grpcListener.Close()
 
-	// 5. 注册 HTTP 路由
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, snapshotMgr, mgr)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
@@ -72,11 +69,9 @@ func main() {
 
 	httpServer := &http.Server{Handler: mux}
 
-	// 6. 创建 gRPC Server
 	grpcServer := grpc.NewServer()
 	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, approvalManager))
 
-	// 7. 启动 HTTP Server (goroutine)
 	httpErrChan := make(chan error, 1)
 	readyChan := make(chan struct{}, 2)
 	go func() {
@@ -87,7 +82,6 @@ func main() {
 		}
 	}()
 
-	// 8. 启动 gRPC Server (goroutine)
 	grpcErrChan := make(chan error, 1)
 	go func() {
 		log.Printf("gRPC server starting on :%d", grpcPort)
@@ -97,7 +91,6 @@ func main() {
 		}
 	}()
 
-	// 9. 等待两个服务 goroutine 启动后输出就绪信号（listener 已在端口探索时绑定，早到的连接由内核排队）
 	<-readyChan
 	<-readyChan
 	fmt.Fprintln(os.Stderr, readySignal(httpPort, grpcPort))
@@ -197,7 +190,6 @@ func initializeKeystore() {
 	}
 }
 
-// readySignal 生成 Electron 主进程识别的后端就绪信号
 func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }
@@ -208,7 +200,6 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 		snapshotMgr.Close()
 	}
 
-	// 1. 先关闭 gRPC Server（等待当前 RPC 完成，超时 2 秒强制停止）
 	gracefulDone := make(chan struct{})
 	go func() {
 		grpcServer.GracefulStop()
@@ -221,13 +212,9 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 		grpcServer.Stop()
 	}
 
-	// 2. 断开所有 WebSocket 连接
 	mgr.CloseAllSessions()
-
-	// 3. 关闭 WebSocketHandler 的 done channel，让 HandleWS 循环退出
 	wsHandler.Close()
 
-	// 4. 关闭 HTTP Server（2 秒超时）
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
