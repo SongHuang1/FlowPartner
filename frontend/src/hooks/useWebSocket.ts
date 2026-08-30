@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiPort } from '@/lib/api'
-import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep, ContentBlock } from '@/types'
+import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep, ContentBlock, UsageUpdate, TurnInfo } from '@/types'
 
 export interface ChatEvent {
   event_type: string
   payload: string
+  thread_id?: string
+  turn_id?: string
 }
 
 type ConnectionState =
@@ -26,6 +28,9 @@ const KNOWN_EVENT_TYPES = [
   'loop_terminated', 'snapshot_status', 'snapshot_message',
   'subagent_start', 'subagent_step', 'subagent_end', 'subagent_error',
   'agents_changed',
+  'turn_started', 'turn_completed', 'turn_aborted',
+  'item_started', 'item_completed', 'item_delta',
+  'usage_update',
 ] as const
 
 function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
@@ -40,6 +45,7 @@ export interface UseWebSocketReturn {
   processing: boolean
   sendMessage: (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string) => boolean
   sendCancel: (sessionId: string) => void
+  sendSteer: (sessionId: string, content: string) => void
   sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => void
   sendManualSnapshot: () => void
   sendRestore: (snapshotId: string, deleteExtras: boolean) => void
@@ -49,6 +55,10 @@ export interface UseWebSocketReturn {
   subagentRuns: SubAgentRun[]
   manualReconnect: () => void
   onStreamChunk: (cb: (chunk: string) => void) => () => void
+  onUsageUpdate: (cb: (usage: UsageUpdate) => void) => () => void
+  onTurnStarted: (cb: (info: TurnInfo) => void) => () => void
+  onTurnCompleted: (cb: (info: TurnInfo) => void) => () => void
+  onTurnAborted: (cb: (info: TurnInfo) => void) => () => void
   onAgentsChanged: (cb: () => void) => () => void
   onError: (cb: (message: string) => void) => () => void
   onSecurityEvent: (cb: (message: string) => void) => () => void
@@ -204,6 +214,10 @@ export function useWebSocket(): UseWebSocketReturn {
   const sessionEndedRef = useRef(false)
   const mountedRef = useRef(true)
   const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
+  const usageUpdateCallbacksRef = useRef<Set<(usage: UsageUpdate) => void>>(new Set())
+  const turnStartedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
+  const turnCompletedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
+  const turnAbortedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
   const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
   const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
   const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
@@ -212,6 +226,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const snapshotMessageCallbacksRef = useRef<Set<(message: SnapshotMessage) => void>>(new Set())
   const connectRef = useRef<(port: number) => void>(() => {})
   const sessionIdRef = useRef<string>('')
+  const currentTurnIdRef = useRef<string>('')
 
   const connected = connectionState === 'connected'
   const reconnecting = connectionState === 'reconnecting'
@@ -360,6 +375,53 @@ export function useWebSocket(): UseWebSocketReturn {
           return
         }
 
+        if (raw.event_type === 'turn_started') {
+          setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload)
+            turnStartedCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnStarted callback error:', e) }
+            })
+          } catch { /* ignore */ }
+          return
+        }
+
+        if (raw.event_type === 'turn_completed') {
+          resetProcessing()
+          sessionEndedRef.current = true
+          setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload)
+            turnCompletedCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnCompleted callback error:', e) }
+            })
+          } catch { /* ignore */ }
+          return
+        }
+
+        if (raw.event_type === 'turn_aborted') {
+          resetProcessing()
+          sessionEndedRef.current = true
+          setEvents((prev) => [...prev, raw])
+          try {
+            const parsed = JSON.parse(raw.payload)
+            turnAbortedCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnAborted callback error:', e) }
+            })
+          } catch { /* ignore */ }
+          return
+        }
+
+        if (raw.event_type === 'usage_update') {
+          try {
+            const parsed = JSON.parse(raw.payload) as UsageUpdate
+            usageUpdateCallbacksRef.current.forEach((cb) => {
+              try { cb(parsed) } catch (e) { console.error('onUsageUpdate callback error:', e) }
+            })
+          } catch { /* ignore */ }
+          return
+        }
+
         if (raw.event_type === 'agents_changed') {
           agentsChangedCallbacksRef.current.forEach((cb) => {
             try { cb() } catch (e) { console.error('onAgentsChanged callback error:', e) }
@@ -430,6 +492,10 @@ export function useWebSocket(): UseWebSocketReturn {
     }
 
     const streamChunkCbs = streamChunkCallbacksRef.current
+    const usageUpdateCbs = usageUpdateCallbacksRef.current
+    const turnStartedCbs = turnStartedCallbacksRef.current
+    const turnCompletedCbs = turnCompletedCallbacksRef.current
+    const turnAbortedCbs = turnAbortedCallbacksRef.current
     const agentsChangedCbs = agentsChangedCallbacksRef.current
     const errorCbs = errorCallbacksRef.current
     const securityCbs = securityCallbacksRef.current
@@ -446,6 +512,10 @@ export function useWebSocket(): UseWebSocketReturn {
         wsRef.current = null
       }
       streamChunkCbs.clear()
+      usageUpdateCbs.clear()
+      turnStartedCbs.clear()
+      turnCompletedCbs.clear()
+      turnAbortedCbs.clear()
       agentsChangedCbs.clear()
       errorCbs.clear()
       securityCbs.clear()
@@ -490,6 +560,10 @@ export function useWebSocket(): UseWebSocketReturn {
         return entry
       })
 
+      // 生成 turn_id 用于后续 steer 校验
+      const turnId = crypto.randomUUID()
+      currentTurnIdRef.current = turnId
+
       const msg = JSON.stringify({
         action: 'start_chat',
         content: trimmed,
@@ -497,6 +571,7 @@ export function useWebSocket(): UseWebSocketReturn {
         history: historyPayload,
         executor_agent_id: executorAgentId || '',
         inject_agent_id: injectAgentId || '',
+        turn_id: turnId,
       })
       wsRef.current.send(msg)
       return true
@@ -509,6 +584,16 @@ export function useWebSocket(): UseWebSocketReturn {
     wsRef.current.send(JSON.stringify({
       action: 'cancel_task',
       session_id: sessionId,
+    }))
+  }, [])
+
+  const sendSteer = useCallback((sessionId: string, content: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+    wsRef.current.send(JSON.stringify({
+      action: 'steer',
+      session_id: sessionId,
+      content,
+      turn_id: currentTurnIdRef.current,
     }))
   }, [])
 
@@ -557,6 +642,26 @@ export function useWebSocket(): UseWebSocketReturn {
     return () => { streamChunkCallbacksRef.current.delete(cb) }
   }, [])
 
+  const onUsageUpdate = useCallback((cb: (usage: UsageUpdate) => void) => {
+    usageUpdateCallbacksRef.current.add(cb)
+    return () => { usageUpdateCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onTurnStarted = useCallback((cb: (info: TurnInfo) => void) => {
+    turnStartedCallbacksRef.current.add(cb)
+    return () => { turnStartedCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onTurnCompleted = useCallback((cb: (info: TurnInfo) => void) => {
+    turnCompletedCallbacksRef.current.add(cb)
+    return () => { turnCompletedCallbacksRef.current.delete(cb) }
+  }, [])
+
+  const onTurnAborted = useCallback((cb: (info: TurnInfo) => void) => {
+    turnAbortedCallbacksRef.current.add(cb)
+    return () => { turnAbortedCallbacksRef.current.delete(cb) }
+  }, [])
+
   const onAgentsChanged = useCallback((cb: () => void) => {
     agentsChangedCallbacksRef.current.add(cb)
     return () => { agentsChangedCallbacksRef.current.delete(cb) }
@@ -595,6 +700,7 @@ export function useWebSocket(): UseWebSocketReturn {
     processing,
     sendMessage,
     sendCancel,
+    sendSteer,
     sendPermissionResponse,
     sendManualSnapshot,
     sendRestore,
@@ -604,6 +710,10 @@ export function useWebSocket(): UseWebSocketReturn {
     subagentRuns,
     manualReconnect,
     onStreamChunk,
+    onUsageUpdate,
+    onTurnStarted,
+    onTurnCompleted,
+    onTurnAborted,
     onAgentsChanged,
     onError,
     onSecurityEvent,

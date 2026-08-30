@@ -236,3 +236,21 @@ export interface SubAgentRun {
   error?: string
   steps: SubAgentStep[]
 }
+
+export interface UsageUpdate {
+  input_tokens: number
+  cached_input_tokens: number
+  output_tokens: number
+  reasoning_output_tokens: number
+  total_tokens: number
+  model_context_window: number
+  estimated: boolean
+}
+
+export interface TurnInfo {
+  thread_id: string
+  turn_id: string
+  status: 'active' | 'completed' | 'aborted'
+  last_agent_message?: string
+  duration_ms?: number
+}
