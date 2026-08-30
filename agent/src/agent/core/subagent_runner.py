@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from collections.abc import Callable
@@ -61,6 +62,7 @@ class SubAgentRunner:
         if event_type == "llm_chunk":
             await self._emit("subagent_step", {"step_type": "thinking", "content": payload.get("content", "")})
         elif event_type == "tool_call":
+            # 旧格式（forced_tool_call 仍使用）
             await self._emit(
                 "subagent_step",
                 {
@@ -70,6 +72,7 @@ class SubAgentRunner:
                 },
             )
         elif event_type == "tool_result":
+            # 旧格式（forced_tool_call 仍使用）
             await self._emit(
                 "subagent_step",
                 {
@@ -77,6 +80,32 @@ class SubAgentRunner:
                     "tool": payload.get("tool", ""),
                     "result": payload.get("result", ""),
                     "truncated": payload.get("truncated", False),
+                },
+            )
+        elif event_type == "item_started":
+            # 新格式：工具开始执行
+            await self._emit(
+                "subagent_step",
+                {
+                    "step_type": "tool_call",
+                    "tool": payload.get("item_type", ""),
+                    "args": {"item_id": payload.get("item_id", "")},
+                },
+            )
+        elif event_type == "item_completed":
+            # 新格式：工具执行完成（payload 为 JSON 字符串）
+            import json
+            try:
+                inner = json.loads(payload.get("payload", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                inner = {}
+            await self._emit(
+                "subagent_step",
+                {
+                    "step_type": "tool_result",
+                    "tool": payload.get("item_type", ""),
+                    "result": inner.get("result", ""),
+                    "truncated": False,
                 },
             )
         elif event_type == "loop_terminated":

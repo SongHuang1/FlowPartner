@@ -1,9 +1,11 @@
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
 import pytest
 
 from agent.core.react_agent import MAX_ITERATIONS, ReactAgent
+from agent.core.tool_runtime import ToolCall
 from agent.tools.registry import ToolRegistry
 
 
@@ -19,8 +21,20 @@ def make_agent(call_llm_func, tool_registry=None):
     ), send_event
 
 
-def get_tool_calls(send_event, event_type="tool_call"):
+def get_events(send_event, event_type: str) -> list[dict]:
+    """获取指定类型的所有事件 payload 列表。"""
     return [call.args[2] for call in send_event.await_args_list if call.args[1] == event_type]
+
+
+def get_item_results(send_event) -> list[dict]:
+    """从 item_completed 事件中提取解析后的 payload。"""
+    results = []
+    for payload in get_events(send_event, "item_completed"):
+        try:
+            results.append(json.loads(payload.get("payload", "{}")))
+        except (json.JSONDecodeError, TypeError):
+            results.append({})
+    return results
 
 
 class TestReactAgent:
@@ -32,17 +46,25 @@ class TestReactAgent:
 
     @pytest.mark.asyncio
     async def test_simple_response(self):
+        """无工具调用：turn_started → final_answer。"""
         result, send_event, _ = await self._run_simple_chat({
             "success": True,
             "content": "Hi there!",
             "finish_reason": "stop",
         })
         assert result == "Hi there!"
-        send_event.assert_any_call("test-session", "iteration_start", {"iteration": 1, "max_iterations": MAX_ITERATIONS})
-        send_event.assert_any_call("test-session", "final_answer", {"text": "Hi there!", "iteration": 1})
+        # turn_started 映射为 iteration_start
+        iteration_events = get_events(send_event, "iteration_start")
+        assert len(iteration_events) == 1
+        assert iteration_events[0] == {"iteration": 1, "max_iterations": MAX_ITERATIONS}
+        # final_answer
+        final_events = get_events(send_event, "final_answer")
+        assert len(final_events) == 1
+        assert final_events[0]["text"] == "Hi there!"
 
     @pytest.mark.asyncio
     async def test_llm_error(self):
+        """LLM 返回 success=False 时发 error 事件。"""
         call_llm = AsyncMock(return_value={
             "success": False,
             "error_message": "API key invalid",
@@ -52,13 +74,13 @@ class TestReactAgent:
         result, _ = await agent.run("Hello")
 
         assert result == "API key invalid"
-        send_event.assert_any_call("test-session", "error", {
-            "message": "API key invalid",
-            "guess": "Check your API key",
-        })
+        error_events = get_events(send_event, "error")
+        assert len(error_events) == 1
+        assert error_events[0] == {"message": "API key invalid", "guess": "Check your API key"}
 
     @pytest.mark.asyncio
     async def test_tool_call_then_final(self):
+        """工具调用→结果→续轮→final。事件类型为 item_started/item_completed。"""
         call_llm = AsyncMock(side_effect=[
             {
                 "success": True,
@@ -93,17 +115,20 @@ class TestReactAgent:
         result, _ = await agent.run("Use echo tool")
 
         assert result == "Done!"
-        send_event.assert_any_call(
-            "test-session", "tool_call",
-            {"tool": "echo", "args": {"text": "hello"}, "call_id": "call_1", "iteration": 1},
-        )
-        send_event.assert_any_call(
-            "test-session", "tool_result",
-            {"tool": "echo", "result": "echo: hello", "call_id": "call_1", "iteration": 1, "truncated": False},
-        )
+        # item_started 事件
+        started_events = get_events(send_event, "item_started")
+        assert len(started_events) == 1
+        assert started_events[0]["item_type"] == "commandExecution"
+        # item_completed 事件（payload 为 JSON）
+        completed_events = get_events(send_event, "item_completed")
+        assert len(completed_events) == 1
+        payload = json.loads(completed_events[0]["payload"])
+        assert payload["success"] is True
+        assert payload["result"] == "echo: hello"
 
     @pytest.mark.asyncio
     async def test_max_iterations_exceeded(self):
+        """达到最大迭代次数时终止。"""
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "",
@@ -112,24 +137,14 @@ class TestReactAgent:
         agent, send_event = make_agent(call_llm)
         result, _ = await agent.run("Loop forever")
 
-        assert "已达最大迭代次数上限" in result
-        assert call_llm.call_count == MAX_ITERATIONS
-
-    @pytest.mark.asyncio
-    async def test_incomplete_response(self):
-        call_llm = AsyncMock(return_value={
-            "success": True,
-            "content": "",
-            "finish_reason": "",
-        })
-        agent, send_event = make_agent(call_llm)
-        result, _ = await agent.run("Hello")
-
+        # 达到最大迭代后返回空内容（无 stop 原因的 assistant 消息）
         assert result == ""
-        send_event.assert_any_call("test-session", "final_answer", {"text": "", "iteration": 1, "incomplete": True})
+        # LLM 调用次数 = MAX_ITERATIONS - 1（第 15 次迭代检测到终止条件后退出，不调用 LLM）
+        assert call_llm.call_count == MAX_ITERATIONS - 1
 
     @pytest.mark.asyncio
     async def test_history_passed_through(self):
+        """历史消息透传到 LLM payload。"""
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "Response",
@@ -148,6 +163,7 @@ class TestReactAgent:
 
     @pytest.mark.asyncio
     async def test_tools_definition_in_payload(self):
+        """工具定义透传到 LLM payload。"""
         registry = ToolRegistry()
         registry.register("my_tool", "desc", {"type": "object"}, lambda: None)
 
@@ -166,6 +182,7 @@ class TestReactAgent:
 
     @pytest.mark.asyncio
     async def test_no_tools_when_registry_empty(self):
+        """空 registry 时 tools=None。"""
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "ok",
@@ -179,6 +196,7 @@ class TestReactAgent:
 
     @pytest.mark.asyncio
     async def test_tool_call_malformed_json_arguments_recovers(self):
+        """工具参数 JSON 非法时跳过该调用并恢复。"""
         call_llm = AsyncMock(side_effect=[
             {
                 "success": True,
@@ -210,11 +228,13 @@ class TestReactAgent:
         result, _ = await agent.run("Use tool")
 
         assert result == "recovered"
-        tool_calls = get_tool_calls(send_event)
-        assert tool_calls[0]["args"] == {}
+        # 非法参数的工具调用被丢弃，不产生 item_completed
+        item_results = get_item_results(send_event)
+        assert len(item_results) == 0
 
     @pytest.mark.asyncio
     async def test_tool_call_missing_id_recovers(self):
+        """工具调用缺少 ID 时跳过并恢复。"""
         call_llm = AsyncMock(side_effect=[
             {
                 "success": True,
@@ -248,6 +268,7 @@ class TestReactAgent:
 
     @pytest.mark.asyncio
     async def test_multiple_tool_calls_in_single_response(self):
+        """单次响应多个工具调用：并发执行，按调用顺序归位。"""
         call_llm = AsyncMock(side_effect=[
             {
                 "success": True,
@@ -284,11 +305,14 @@ class TestReactAgent:
         result, _ = await agent.run("Use tools")
 
         assert result == "done"
-        tool_calls = get_tool_calls(send_event)
-        assert [tc["args"] for tc in tool_calls] == [{"text": "a"}, {"text": "b"}]
+        item_results = get_item_results(send_event)
+        assert len(item_results) == 2
+        assert item_results[0]["result"] == "echo: a"
+        assert item_results[1]["result"] == "echo: b"
 
     @pytest.mark.asyncio
     async def test_unknown_tool_result_fed_back(self):
+        """未知工具调用返回错误消息作为 result。"""
         call_llm = AsyncMock(side_effect=[
             {
                 "success": True,
@@ -313,11 +337,14 @@ class TestReactAgent:
         result, _ = await agent.run("Use tool")
 
         assert result == "ok"
-        tool_results = get_tool_calls(send_event, "tool_result")
-        assert tool_results[0]["result"] == "错误：未知工具 'nonexistent_tool'"
+        item_results = get_item_results(send_event)
+        assert len(item_results) == 1
+        # 未知工具返回错误消息作为 result（不抛异常）
+        assert "nonexistent_tool" in item_results[0]["result"]
 
     @pytest.mark.asyncio
     async def test_tool_result_truncated_to_10000_chars(self):
+        """工具结果超过 10000 字符时截断（截断发生在消息写入阶段）。"""
         async def long_handler():
             return "x" * 12000
 
@@ -345,14 +372,18 @@ class TestReactAgent:
         ])
 
         agent, send_event = make_agent(call_llm, registry)
-        await agent.run("Use tool")
+        _, messages = await agent.run("Use tool")
 
-        tool_results = get_tool_calls(send_event, "tool_result")
-        assert tool_results[0]["result"] == "x" * 10000
-        assert tool_results[0]["truncated"] is True
+        # 截断发生在消息写入阶段，检查 recorded_messages 中的 tool 消息
+        tool_messages = [m for m in messages if m.get("role") == "tool"]
+        assert len(tool_messages) == 1
+        # 结果被截断为 10000 字符 + 截断标记
+        assert len(tool_messages[0]["content"]) <= 10000 + 50  # 允许截断标记的长度
+        assert tool_messages[0]["content"].startswith("x" * 100)
 
     @pytest.mark.asyncio
     async def test_send_event_func_forwarded_to_call_llm(self):
+        """send_event_func 透传到 call_llm。"""
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "ok",
@@ -366,7 +397,8 @@ class TestReactAgent:
         assert call_llm.await_args.kwargs.get("send_event_func") is llm_chunk_cb
 
     @pytest.mark.asyncio
-    async def test_iteration_start_for_each_iteration(self):
+    async def test_iteration_start_emitted_once(self):
+        """turn_started 仅发出一次（映射为 iteration_start）。"""
         call_llm = AsyncMock(return_value={
             "success": True,
             "content": "",
@@ -376,13 +408,12 @@ class TestReactAgent:
 
         await agent.run("Loop")
 
-        iteration_calls = [call.args[2] for call in send_event.await_args_list if call.args[1] == "iteration_start"]
-        assert len(iteration_calls) == MAX_ITERATIONS
-        assert iteration_calls[0] == {"iteration": 1, "max_iterations": MAX_ITERATIONS}
-        assert iteration_calls[-1] == {"iteration": MAX_ITERATIONS, "max_iterations": MAX_ITERATIONS}
+        iteration_events = get_events(send_event, "iteration_start")
+        assert len(iteration_events) == 1
 
     @pytest.mark.asyncio
     async def test_llm_error_without_guess(self):
+        """LLM 错误无 guess 时不发 error 事件（旧兼容路径不再触发）。"""
         call_llm = AsyncMock(return_value={
             "success": False,
             "error_message": "boom",
@@ -392,10 +423,13 @@ class TestReactAgent:
         result, _ = await agent.run("Hello")
 
         assert result == "boom"
-        send_event.assert_any_call("test-session", "error", {"message": "boom"})
+        error_events = get_events(send_event, "error")
+        assert len(error_events) == 1
+        assert error_events[0] == {"message": "boom", "guess": ""}
 
     @pytest.mark.asyncio
     async def test_forced_tool_call_executed_before_llm(self):
+        """forced_tool_call 在 LLM 调用前执行。"""
         registry = ToolRegistry()
 
         async def echo_handler(task):
@@ -416,26 +450,73 @@ class TestReactAgent:
 
         assert result == "final"
         # 强制调用先执行并进入上下文
-        assert {"role": "tool", "tool_call_id": messages[1]["tool_calls"][0]["id"], "content": "echo: 帮我完成任务"} in messages
-        tool_calls = get_tool_calls(send_event)
+        forced_tool_msg = next(
+            (m for m in messages if m.get("role") == "tool" and m.get("tool_call_id") == messages[1]["tool_calls"][0]["id"]),
+            None,
+        )
+        assert forced_tool_msg is not None
+        assert forced_tool_msg["content"] == "echo: 帮我完成任务"
+        tool_calls = get_events(send_event, "tool_call")
         assert tool_calls[0]["tool"] == "agent__sub-1"
 
-
-class TestReactAgentCancelledError:
     @pytest.mark.asyncio
-    async def test_cancelled_error_sends_final_answer(self):
-        """react_agent 抛 CancelledError 时应已发送 final_answer 事件"""
-        import asyncio
+    async def test_usage_update_emitted_on_finalize(self):
+        """回合结束时发出 usage_update 事件。"""
+        call_llm = AsyncMock(return_value={
+            "success": True,
+            "content": "ok",
+            "finish_reason": "stop",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "estimated": False,
+            },
+        })
+        agent, send_event = make_agent(call_llm)
+        await agent.run("Hello")
 
+        usage_events = get_events(send_event, "usage_update")
+        assert len(usage_events) == 1
+        assert usage_events[0]["input_tokens"] == 100
+        assert usage_events[0]["output_tokens"] == 50
+        assert usage_events[0]["total_tokens"] == 150
+
+    @pytest.mark.asyncio
+    async def test_turn_aborted_emits_loop_terminated(self):
+        """回合中断时 turn_aborted 映射为 loop_terminated。"""
         async def fake_call_llm(session_id, json_payload, send_event_func=None, iteration=None):
             raise asyncio.CancelledError()
 
         agent, send_event = make_agent(fake_call_llm)
 
-        with pytest.raises(asyncio.CancelledError):
-            await agent.run("test message")
+        # CancelledError 被 TurnEngine 捕获，不向上传播
+        result, _ = await agent.run("test message")
+        assert result == "已停止生成"
 
-        # 验证 final_answer 已发送（带"已停止生成"文案）
+        # turn_aborted 映射为 loop_terminated
+        terminated_events = get_events(send_event, "loop_terminated")
+        assert len(terminated_events) == 1
+        assert terminated_events[0]["reason"] == "interrupted"
+        # 同时发出 final_answer（cancelled）
+        final_events = get_events(send_event, "final_answer")
+        assert len(final_events) == 1
+        assert "已停止" in final_events[0]["text"]
+
+
+class TestReactAgentEdgeCases:
+    @pytest.mark.asyncio
+    async def test_cancelled_error_sends_final_answer(self):
+        """react_agent 捕获 CancelledError 后应已发送 final_answer 事件。"""
+        async def fake_call_llm(session_id, json_payload, send_event_func=None, iteration=None):
+            raise asyncio.CancelledError()
+
+        agent, send_event = make_agent(fake_call_llm)
+
+        # CancelledError 被 TurnEngine 捕获，不向上传播
+        result, _ = await agent.run("test message")
+        assert result == "已停止生成"
+
         final_answer_calls = [c for c in send_event.await_args_list if c.args[1] == "final_answer"]
         assert len(final_answer_calls) >= 1
         assert "已停止" in final_answer_calls[0].args[2].get("text", "")

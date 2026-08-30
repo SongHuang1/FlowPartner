@@ -10,6 +10,7 @@ import grpc
 from agent import agent_pb2, agent_pb2_grpc
 from agent.core.agent_registry import AgentRegistry
 from agent.core.react_agent import ReactAgent
+from agent.core.steer import TurnContext
 from agent.tools.context import session_id_var
 from agent.tools.file_ops import (
     make_bash_handler,
@@ -105,6 +106,80 @@ def _safe_session_id(session_id: str) -> str:
     return session_id
 
 
+def _fill_event_payload(event: agent_pb2.AgentEvent, event_type: str, payload: dict) -> None:
+    if event_type == "turn_started":
+        event.turn_started.CopyFrom(agent_pb2.turn_started(
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+        ))
+    elif event_type == "turn_completed":
+        event.turn_completed.CopyFrom(agent_pb2.turn_completed(
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+            last_agent_message=payload.get("last_agent_message", ""),
+            duration_ms=payload.get("duration_ms", 0),
+        ))
+    elif event_type == "turn_aborted":
+        event.turn_aborted.CopyFrom(agent_pb2.turn_aborted(
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+            reason=payload.get("reason", ""),
+        ))
+    elif event_type == "item_started":
+        event.item_started.CopyFrom(agent_pb2.item_started(
+            item_id=payload.get("item_id", ""),
+            item_type=payload.get("item_type", ""),
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+        ))
+    elif event_type == "item_completed":
+        event.item_completed.CopyFrom(agent_pb2.item_completed(
+            item_id=payload.get("item_id", ""),
+            item_type=payload.get("item_type", ""),
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+            payload=payload.get("payload", ""),
+        ))
+    elif event_type == "item_delta":
+        event.item_delta.CopyFrom(agent_pb2.item_delta(
+            item_id=payload.get("item_id", ""),
+            item_type=payload.get("item_type", ""),
+            delta=payload.get("delta", ""),
+            seq=payload.get("seq", 0),
+            thread_id=payload.get("thread_id", ""),
+            turn_id=payload.get("turn_id", ""),
+        ))
+    elif event_type == "usage_update":
+        event.usage_update.CopyFrom(agent_pb2.usage_update(
+            input_tokens=payload.get("input_tokens", 0),
+            cached_input_tokens=payload.get("cached_input_tokens", 0),
+            output_tokens=payload.get("output_tokens", 0),
+            reasoning_output_tokens=payload.get("reasoning_output_tokens", 0),
+            total_tokens=payload.get("total_tokens", 0),
+            model_context_window=payload.get("model_context_window", 0),
+            estimated=payload.get("estimated", False),
+        ))
+    elif event_type == "permission_request":
+        event.permission_request.CopyFrom(agent_pb2.permission_request(
+            request_id=payload.get("request_id", ""),
+            tool=payload.get("tool", ""),
+            path=payload.get("path", ""),
+            operation=payload.get("operation", ""),
+            detail=payload.get("detail", ""),
+            scope_options=payload.get("scope_options", []),
+        ))
+    elif event_type == "error":
+        event.error.CopyFrom(agent_pb2.error(
+            message=payload.get("message", ""),
+            guess=payload.get("guess", ""),
+        ))
+    else:
+        event.subagent.CopyFrom(agent_pb2.subagent_event(
+            event_type=event_type,
+            payload=json.dumps(payload, ensure_ascii=False),
+        ))
+
+
 class FlowPartnerClient:
     def __init__(self, workspace_path: str, server_address: str = "localhost:50051"):
         self.workspace_path = Path(workspace_path)
@@ -120,6 +195,7 @@ class FlowPartnerClient:
 
         self._tasks: dict[str, asyncio.Task] = {}
         self._active_queues: dict[str, asyncio.Queue] = {}
+        self._turn_contexts: dict[str, TurnContext] = {}
 
         self.tool_registry = ToolRegistry()
         self.agent_registry = AgentRegistry(self)
@@ -248,11 +324,8 @@ class FlowPartnerClient:
         }
 
     async def send_event(self, session_id: str, event_type: str, payload: dict, queue: asyncio.Queue):
-        event = agent_pb2.AgentEvent(
-            session_id=session_id,
-            event_type=event_type,
-            payload=json.dumps(payload, ensure_ascii=False)
-        )
+        event = agent_pb2.AgentEvent(session_id=session_id)
+        _fill_event_payload(event, event_type, payload)
         await queue.put(event)
 
     async def execute_tool(self, session_id: str, tool_name: str, arguments: dict) -> dict:
@@ -369,6 +442,19 @@ class FlowPartnerClient:
                         "json_response": ""
                     }
 
+                if response.usage.prompt_tokens > 0 or response.usage.total_tokens > 0:
+                    usage = {
+                        "input_tokens": response.usage.prompt_tokens,
+                        "cached_input_tokens": response.usage.cached_tokens,
+                        "output_tokens": response.usage.completion_tokens,
+                        "reasoning_output_tokens": response.usage.reasoning_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                        "estimated": False,
+                    }
+
+                if not response.json_response:
+                    continue
+
                 chunk = json.loads(response.json_response)
                 choices = chunk.get("choices", [])
                 if not choices:
@@ -406,9 +492,6 @@ class FlowPartnerClient:
 
                 if choices[0].get("finish_reason"):
                     finish_reason = choices[0]["finish_reason"]
-
-                if chunk.get("usage"):
-                    usage = chunk["usage"]
 
                 if send_event_func and delta.get("content"):
                     await send_event_func(session_id, "llm_chunk", {
@@ -455,14 +538,35 @@ class FlowPartnerClient:
         except (json.JSONDecodeError, KeyError) as e:
             return {"success": False, "error_message": f"Response parse error: {e}", "error_guess": "", "json_response": ""}
 
-    async def _cancel_task(self, session_id: str) -> None:
-        """取消指定会话的活跃任务；无活跃任务时静默忽略。"""
-        task = self._tasks.get(session_id)
-        if task is not None and not task.done():
-            task.cancel()
-            logging.info(f"[Cancel] Task cancelled: session={session_id}")
+    async def _handle_steer_input(self, command) -> None:
+        """处理 Go 推送的 steer 输入。"""
+        try:
+            payload = json.loads(command.payload) if command.payload else {}
+            session_id = command.session_id
+            turn_ctx = self._turn_contexts.get(session_id)
+            if turn_ctx is not None:
+                from agent.core.steer import SteerInput
+                steer = SteerInput(
+                    content=payload.get("content", ""),
+                    thread_id=payload.get("thread_id", ""),
+                    turn_id=payload.get("turn_id", ""),
+                )
+                turn_ctx.steer_queue.push(steer)
+                logging.info(f"[Steer] Pushed input for session={session_id}")
+            else:
+                logging.warning(f"[Steer] No active turn context for session={session_id}")
+        except Exception as e:
+            logging.error(f"[Steer] Failed to process: {e}")
+
+    async def _handle_abort_turn(self, command) -> None:
+        """处理 Go 推送的中断指令。"""
+        session_id = command.session_id
+        turn_ctx = self._turn_contexts.get(session_id)
+        if turn_ctx is not None:
+            turn_ctx.interrupt()
+            logging.info(f"[Abort] Turn interrupted for session={session_id}")
         else:
-            logging.info(f"[Cancel] No active task for session={session_id}, ignoring")
+            logging.warning(f"[Abort] No active turn context for session={session_id}")
 
     async def _handle_permission_response(self, payload_str: str | None) -> None:
         """处理 Go 转发的审批决定，唤醒等待中的 execute_tool。"""
@@ -513,8 +617,11 @@ class FlowPartnerClient:
                     elif command.command_type == "permission_response":
                         await self._handle_permission_response(command.payload)
 
-                    elif command.command_type == "cancel_task":
-                        await self._cancel_task(command.session_id)
+                    elif command.command_type == "steer_input":
+                        await self._handle_steer_input(command)
+
+                    elif command.command_type == "abort_turn":
+                        await self._handle_abort_turn(command)
 
                     elif command.command_type == "agents_changed":
                         self.agent_registry.invalidate()
@@ -626,6 +733,11 @@ class FlowPartnerClient:
                 # 转发原始事件
                 await send_evt(sid, etype, epayload)
 
+            def make_turn_ctx():
+                ctx = TurnContext(thread_id=session_id, turn_id="")
+                self._turn_contexts[session_id] = ctx
+                return ctx
+
             agent = ReactAgent(
                 session_id=session_id,
                 call_llm_func=self.call_llm_via_go,
@@ -638,6 +750,7 @@ class FlowPartnerClient:
                 send_event_func=tracking_send_evt,
                 system_prompt=system_prompt,
                 forced_tool_call=forced_tool_call,
+                turn_ctx_factory=make_turn_ctx,
             )
 
             # 将子智能体引用挂回产生调用的 assistant 消息
@@ -665,3 +778,4 @@ class FlowPartnerClient:
             session_id_var.reset(session_token)
             self._tasks.pop(session_id, None)
             self._active_queues.pop(session_id, None)
+            self._turn_contexts.pop(session_id, None)

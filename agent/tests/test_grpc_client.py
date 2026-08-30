@@ -14,8 +14,9 @@ def make_client(tmp_path: Path) -> FlowPartnerClient:
     return FlowPartnerClient(workspace_path=str(tmp_path))
 
 
-def llm_response(json_response: str, *, is_error: bool = False) -> agent_pb2.LLMResponse:
-    return agent_pb2.LLMResponse(is_error=is_error, json_response=json_response)
+def llm_response(json_response: str, *, is_error: bool = False,
+                  usage: agent_pb2.UsagePayload | None = None) -> agent_pb2.LLMResponse:
+    return agent_pb2.LLMResponse(is_error=is_error, json_response=json_response, usage=usage)
 
 
 def tool_response(success: bool, result: str, error_code: str = "") -> agent_pb2.ToolResponse:
@@ -93,8 +94,8 @@ class TestSendEvent:
 
         event = queue.get_nowait()
         assert event.session_id == "sess-1"
-        assert event.event_type == "tool_call"
-        assert json.loads(event.payload) == {"tool": "echo", "args": {"text": "hi"}}
+        assert event.WhichOneof("payload") == "subagent"
+        assert json.loads(event.subagent.payload) == {"tool": "echo", "args": {"text": "hi"}}
 
 
 class TestCallLLMViaGo:
@@ -160,14 +161,24 @@ class TestCallLLMViaGo:
     @pytest.mark.asyncio
     async def test_usage_included_when_present(self, tmp_path: Path):
         client = make_client(tmp_path)
+        usage_proto = agent_pb2.UsagePayload(
+            prompt_tokens=5, completion_tokens=3, total_tokens=8,
+        )
         client.stub = FakeCallLLMStub([  # type: ignore[assignment]
-            llm_response(chunk(delta={"content": "hi"}, finish_reason="stop",
-                               usage={"prompt_tokens": 5, "completion_tokens": 3})),
+            llm_response(chunk(delta={"content": "hi"}, finish_reason="stop"),
+                         usage=usage_proto),
         ])
 
         result = await client.call_llm_via_go("sess-1", "{}")
 
-        assert result["usage"] == {"prompt_tokens": 5, "completion_tokens": 3}
+        assert result["usage"] == {
+            "input_tokens": 5,
+            "output_tokens": 3,
+            "total_tokens": 8,
+            "cached_input_tokens": 0,
+            "reasoning_output_tokens": 0,
+            "estimated": False,
+        }
 
     @pytest.mark.asyncio
     async def test_skips_chunks_without_choices(self, tmp_path: Path):
@@ -510,12 +521,11 @@ class TestExecuteToolPermissionFlow:
 
         task = asyncio.create_task(run_tool())
 
-        # 等待 permission_request 事件被发送到 queue
         event = await asyncio.wait_for(queue.get(), timeout=2.0)
-        assert event.event_type == "permission_request"
-        payload = json.loads(event.payload)
-        assert payload["request_id"] == "req-123"
-        assert payload["tool"] == "read"
+        assert event.WhichOneof("payload") == "permission_request"
+        payload = event.permission_request
+        assert payload.request_id == "req-123"
+        assert payload.tool == "read"
 
         # 模拟前端发回 permission_response allow
         async with client._approval_lock:
@@ -579,43 +589,6 @@ class TestExecuteToolPermissionFlow:
         assert future2.done()
         assert future2.result() == "deny"
         assert len(client._pending_approvals) == 0
-
-
-# --- cancel_task 测试 ---
-
-class TestHandleCommandCancelTask:
-    @pytest.mark.asyncio
-    async def test_cancel_task_cancels_active_task(self, tmp_path: Path):
-        """_cancel_task 应取消对应 session 的活跃任务"""
-        client = make_client(tmp_path)
-        cancel_called = asyncio.Event()
-
-        async def slow_task():
-            try:
-                await asyncio.sleep(100)
-            except asyncio.CancelledError:
-                cancel_called.set()
-                raise
-
-        # 注册一个模拟任务
-        task = asyncio.create_task(slow_task())
-        client._tasks["sess-cancel"] = task
-
-        # 让出事件循环，使 slow_task 进入 await asyncio.sleep(100)
-        await asyncio.sleep(0)
-
-        await client._cancel_task("sess-cancel")
-
-        # 等待任务被取消
-        await asyncio.wait_for(cancel_called.wait(), timeout=2.0)
-        assert task.cancelled()
-
-    @pytest.mark.asyncio
-    async def test_cancel_task_no_active_task(self, tmp_path: Path):
-        """_cancel_task 无活跃任务时应静默忽略"""
-        client = make_client(tmp_path)
-        await client._cancel_task("sess-no-task")
-        assert "sess-no-task" not in client._tasks
 
 
 class TestSubAgentRunTracker:

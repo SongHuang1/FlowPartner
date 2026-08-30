@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -5,13 +7,16 @@ import time
 import uuid
 from typing import Any
 
+from agent.core.turn_engine import TurnEngine, _LLMStreamResult
+from agent.core.tool_runtime import ToolCall
+
+logger = logging.getLogger(__name__)
+
 MAX_ITERATIONS = 15
 LOOP_DEADLINE_SECONDS = 5 * 60
-TOKEN_BUDGET = 60000000  # 累计 token 上限（输入+输出合计）
-STUCK_THRESHOLD = 3  # 连续相同工具调用触发卡死
+TOKEN_BUDGET = 60000000
+STUCK_THRESHOLD = 3
 
-# 默认系统提示词；executor 定义缺失时的兜底。内容仿照 Go 侧 defaultMainPrompt，
-# 但两份文案各自维护、已有差异（Go 版含 "FlowPartner" 字样），修改时需人工同步。
 DEFAULT_SYSTEM_PROMPT = (
     "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，"
     "帮助用户完成各种任务。请根据用户需求合理使用工具。删除任何文件或目录时，"
@@ -19,9 +24,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "仅当用户明确要求永久删除回收站内容时，才使用 purge 工具（该操作不可逆且每次都需要用户审批）。"
 )
 
+_CANCELLED_ANSWER = "已停止生成"
+
 
 def _make_tool_call_signature(tool_call: dict) -> str:
-    """生成工具调用的签名（tool_name + arguments），用于重复检测。"""
     func = tool_call.get("function", {})
     name = func.get("name", "")
     args = func.get("arguments", "")
@@ -29,7 +35,11 @@ def _make_tool_call_signature(tool_call: dict) -> str:
 
 
 class ReactAgent:
-    """ReAct Agent 核心：思考 -> 行动 -> 观察 -> 循环（健壮版）"""
+    """ReAct Agent 兼容入口。
+
+    内部创建 TurnEngine 执行回合，通过 send_event 回调发射旧格式事件
+    （供 SubAgentRunner._forward 转换）。
+    """
 
     def __init__(self, session_id: str, call_llm_func, send_event_func, tool_registry):
         self.session_id = session_id
@@ -38,7 +48,6 @@ class ReactAgent:
         self.tools = tool_registry
 
     async def _emit(self, event_type: str, payload: dict) -> None:
-        """发送事件到 send_event_func（主循环直连前端队列；作为子 agent 运行时经 SubAgentRunner._forward 转换后转发）。"""
         await self.send_event(self.session_id, event_type, payload)
 
     def _check_loop_termination(
@@ -48,22 +57,17 @@ class ReactAgent:
         total_tokens: int,
         tool_call_history: list[str],
     ) -> str | None:
-        """检查循环护栏是否触发。返回 reason 或 None。"""
         if iteration >= MAX_ITERATIONS:
             return "max_iterations"
-
         elapsed = time.monotonic() - start_time
         if elapsed > LOOP_DEADLINE_SECONDS:
             return "time_budget"
-
         if total_tokens > TOKEN_BUDGET:
             return "token_budget"
-
         if len(tool_call_history) >= STUCK_THRESHOLD:
             last_n = tool_call_history[-STUCK_THRESHOLD:]
             if len(set(last_n)) == 1 and last_n[0] != "":
                 return "stuck"
-
         return None
 
     async def run(
@@ -73,243 +77,186 @@ class ReactAgent:
         send_event_func=None,
         system_prompt: str | None = None,
         forced_tool_call: dict | None = None,
+        turn_ctx_factory=None,
     ) -> tuple[str, list[dict]]:
-
-        if history is None:
-            history = []
-
         system_content = system_prompt if system_prompt else DEFAULT_SYSTEM_PROMPT
-
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_content}
-        ]
-
-        for h in history:
-            role = h.get("role", "")
-            if role in ("user", "assistant"):
-                msg: dict[str, Any] = {"role": role, "content": h.get("content", "")}
-                if role == "assistant":
-                    if h.get("tool_calls"):
-                        msg["tool_calls"] = h["tool_calls"]
-                messages.append(msg)
-            elif role == "tool":
-                msg = {"role": "tool", "content": h.get("content", "")}
-                if h.get("tool_call_id"):
-                    msg["tool_call_id"] = h["tool_call_id"]
-                messages.append(msg)
-
-        messages.append({"role": "user", "content": user_message})
-
         tools_def = self.tools.get_openai_tools_definition()
-        start_time = time.monotonic()
-        total_tokens = 0
-        tool_call_history: list[str] = []
 
-        user_msg_record = {"role": "user", "content": user_message}
-        recorded_messages: list[dict[str, Any]] = [user_msg_record]
+        async def call_llm_adapter(
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]],
+            forced_name: str | None = None,
+        ) -> _LLMStreamResult:
+            # 系统提示词作为第一条消息（StepContext 冻结）
+            full_messages = [{"role": "system", "content": system_content}] + messages
+            payload_dict: dict[str, Any] = {
+                "model": "auto",
+                "messages": full_messages,
+                "tools": tools if tools else None,
+            }
+            if forced_name:
+                payload_dict["tool_choice"] = {"type": "function", "function": {"name": forced_name}}
 
+            payload_str = json.dumps(payload_dict, ensure_ascii=False)
+            result = await self.call_llm(self.session_id, payload_str, send_event_func=send_event_func)
+
+            if not result.get("success"):
+
+                await self._emit("error", {
+                    "message": result.get("error_message", "未知错误"),
+                    "guess": result.get("error_guess", ""),
+                })
+
+                return _LLMStreamResult(
+                    content=result.get("error_message", ""),
+                    tool_calls=[],
+                    finish_reason="stop",
+                )
+
+            tool_calls = []
+            for tc in result.get("tool_calls", []):
+                func = tc.get("function", {})
+                args_str = func.get("arguments", "{}")
+                try:
+                    args = json.loads(args_str)
+                except json.JSONDecodeError:
+                    # 参数 JSON 非法时丢弃该工具调用（与 grpc_client 服务端重组策略一致）
+                    logger.warning(
+                        f"[LLM] Tool call {func.get('name', '?')} has invalid JSON arguments "
+                        f"({args_str[:100]}...), dropping"
+                    )
+                    continue
+                tool_calls.append(ToolCall(
+                    call_id=tc.get("id", ""),
+                    tool_name=func.get("name", ""),
+                    arguments=args,
+                ))
+
+            return _LLMStreamResult(
+                content=result.get("content", ""),
+                tool_calls=tool_calls,
+                finish_reason=result.get("finish_reason", ""),
+                usage=result.get("usage", {}),
+            )
+
+        async def execute_tool_adapter(tool_name: str, arguments: dict) -> dict:
+            try:
+                result = await self.tools.execute(tool_name, arguments)
+                return {"success": True, "result": result, "error_code": ""}
+            except Exception as e:
+                return {"success": False, "result": f"工具执行失败: {e}", "error_code": "TOOL_ERROR"}
+
+        async def emit_adapter(event_type: str, payload: dict) -> None:
+            await self._map_and_emit(event_type, payload)
+
+        # 创建或复用 TurnContext
+        turn_ctx = None
+        if turn_ctx_factory is not None:
+            turn_ctx = turn_ctx_factory()
+
+        engine = TurnEngine(
+            session_id=self.session_id,
+            thread_id=self.session_id,
+            call_llm_func=call_llm_adapter,
+            execute_tool_func=execute_tool_adapter,
+            emit_event_func=emit_adapter,
+            system_prompt=system_content,
+            tools_definition=tools_def,
+            turn_ctx=turn_ctx,
+        )
+
+
+        original_history_len = len(history) if history else 0
+
+        # 处理 forced_tool_call
         if forced_tool_call:
             forced_name = forced_tool_call.get("name", "")
             forced_args = forced_tool_call.get("arguments", {})
             if not isinstance(forced_args, dict):
                 forced_args = {}
+            if history is None:
+                history = []
             forced_call_id = f"call_forced_{uuid.uuid4().hex[:12]}"
-            forced_call = {
-                "id": forced_call_id,
-                "type": "function",
-                "function": {"name": forced_name, "arguments": json.dumps(forced_args, ensure_ascii=False)},
-            }
-            forced_assistant_msg: dict[str, Any] = {
+            history.append({
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [forced_call],
-            }
-            messages.append(forced_assistant_msg)
-            recorded_messages.append(forced_assistant_msg)
-
-            sig = _make_tool_call_signature(forced_call)
-            tool_call_history.append(sig)
-
-            logging.info(f"[ReAct] forced tool_call: {forced_name}")
+                "tool_calls": [{
+                    "id": forced_call_id,
+                    "type": "function",
+                    "function": {"name": forced_name, "arguments": json.dumps(forced_args, ensure_ascii=False)},
+                }],
+            })
+            tool_result = await execute_tool_adapter(forced_name, forced_args)
+            result_text = tool_result.get("result", "")
+            truncated = len(result_text) > 10000
+            if truncated:
+                result_text = result_text[:10000]
+            history.append({
+                "role": "tool",
+                "tool_call_id": forced_call_id,
+                "name": forced_name,
+                "content": result_text,
+            })
             await self._emit("tool_call", {
                 "tool": forced_name,
                 "args": forced_args,
                 "call_id": forced_call_id,
                 "iteration": 1,
             })
-
-            forced_result = await self.tools.execute(forced_name, forced_args)
-            truncated = False
-            if len(forced_result) > 10000:
-                forced_result = forced_result[:10000]
-                truncated = True
-
             await self._emit("tool_result", {
                 "tool": forced_name,
-                "result": forced_result,
+                "result": result_text,
                 "call_id": forced_call_id,
                 "iteration": 1,
                 "truncated": truncated,
             })
 
-            forced_tool_msg = {
-                "role": "tool",
-                "tool_call_id": forced_call_id,
-                "content": forced_result,
-            }
-            messages.append(forced_tool_msg)
-            recorded_messages.append(forced_tool_msg)
+        turn_result = await engine.run(user_message, history=history)
 
-        try:
-            for iteration in range(MAX_ITERATIONS):
-                logging.info(f"[ReAct] iteration={iteration + 1}/{MAX_ITERATIONS} session={self.session_id}")
+        recorded_messages = self._build_recorded_messages(
+            original_history_len, user_message, engine._messages,
+        )
 
-                await self._emit("iteration_start", {
-                    "iteration": iteration + 1,
-                    "max_iterations": MAX_ITERATIONS,
-                })
+        if turn_result.aborted:
+            await self._emit("final_answer", {"text": _CANCELLED_ANSWER, "cancelled": True})
+            return _CANCELLED_ANSWER, recorded_messages
 
-                payload = json.dumps({
-                    "model": "auto",
-                    "messages": messages,
-                    "tools": tools_def if tools_def else None,
-                }, ensure_ascii=False)
+        await self._emit("final_answer", {
+            "text": turn_result.last_agent_message,
+        })
+        return turn_result.last_agent_message, recorded_messages
 
-                llm_resp = await self.call_llm(
-                    self.session_id, payload,
-                    send_event_func=send_event_func,
-                    iteration=iteration + 1,
-                )
+    async def _map_and_emit(self, event_type: str, payload: dict) -> None:
+        """透传 TurnEngine 新事件，同时附加旧格式事件（向后兼容）。"""
+        # 透传所有新事件
+        await self._emit(event_type, payload)
 
-                if not llm_resp.get("success"):
-                    error_msg = llm_resp.get("error_message", "未知错误")
-                    error_guess = llm_resp.get("error_guess", "")
-                    event_payload: dict[str, Any] = {"message": error_msg}
-                    if error_guess:
-                        event_payload["guess"] = error_guess
-                    await self._emit("error", event_payload)
-                    return error_msg, recorded_messages
-
-                if llm_resp.get("usage"):
-                    usage = llm_resp["usage"]
-                    total_tokens += usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
-
-                finish_reason = llm_resp.get("finish_reason", "")
-
-                term_reason = self._check_loop_termination(
-                    iteration + 1, start_time, total_tokens, tool_call_history
-                )
-                if term_reason:
-                    logging.warning(f"[ReAct] Loop terminated: reason={term_reason} session={self.session_id}")
-                    await self._emit("loop_terminated", {
-                        "reason": term_reason,
-                        "iteration": iteration + 1,
-                    })
-
-                    summary = self._termination_summary(term_reason)
-                    await self._emit("final_answer", {
-                        "text": summary,
-                        "iteration": iteration + 1,
-                    })
-                    recorded_messages.append({"role": "assistant", "content": summary})
-                    return summary, recorded_messages
-
-                if llm_resp.get("tool_calls"):
-                    assistant_msg: dict[str, Any] = {
-                        "role": "assistant",
-                        "content": llm_resp.get("content", ""),
-                        "tool_calls": llm_resp["tool_calls"],
-                    }
-                    messages.append(assistant_msg)
-                    recorded_messages.append(assistant_msg)
-
-                    tool_names = [tc["function"]["name"] for tc in llm_resp["tool_calls"]]
-                    has_subagent = any(n.startswith("agent__") for n in tool_names)
-                    logging.info(f"[ReAct] iteration={iteration+1} decision={'CALL SUB-AGENT' if has_subagent else 'TEXT ONLY'}, tools={tool_names}, content_len={len(llm_resp.get('content', ''))}")
-
-                    for tool_call in llm_resp["tool_calls"]:
-                        func_name = tool_call["function"]["name"]
-                        try:
-                            func_args = json.loads(tool_call["function"]["arguments"])
-                        except json.JSONDecodeError:
-                            logging.warning(f"[ReAct] Tool {func_name} called with malformed JSON arguments, using empty args")
-                            func_args = {}
-                        call_id = tool_call.get("id", "")
-
-                        sig = _make_tool_call_signature(tool_call)
-                        tool_call_history.append(sig)
-
-                        logging.info(f"[ReAct] tool_call: {func_name} call_id={call_id}")
-                        await self._emit("tool_call", {
-                            "tool": func_name,
-                            "args": func_args,
-                            "call_id": call_id,
-                            "iteration": iteration + 1,
-                        })
-
-                        result = await self.tools.execute(func_name, func_args)
-
-                        truncated = False
-                        if len(result) > 10000:
-                            result = result[:10000]
-                            truncated = True
-
-                        await self._emit("tool_result", {
-                            "tool": func_name,
-                            "result": result,
-                            "call_id": call_id,
-                            "iteration": iteration + 1,
-                            "truncated": truncated,
-                        })
-
-                        tool_msg = {
-                            "role": "tool",
-                            "tool_call_id": call_id,
-                            "content": result,
-                        }
-                        messages.append(tool_msg)
-                        recorded_messages.append(tool_msg)
-
-                    continue
-
-                final_answer = llm_resp.get("content", "")
-                if finish_reason == "stop" or final_answer:
-                    logging.info(f"[ReAct] iteration={iteration+1} decision=TEXT ONLY (no sub-agent), final_answer length={len(final_answer)}")
-                    await self._emit("final_answer", {
-                        "text": final_answer,
-                        "iteration": iteration + 1,
-                    })
-                    recorded_messages.append({"role": "assistant", "content": final_answer})
-                    return final_answer, recorded_messages
-
-                if not final_answer and not finish_reason:
-                    logging.warning(f"[ReAct] Empty LLM response, keys: {list(llm_resp.keys())}")
-                    await self._emit("final_answer", {
-                        "text": final_answer or "",
-                        "iteration": iteration + 1,
-                        "incomplete": True,
-                    })
-                    recorded_messages.append({"role": "assistant", "content": final_answer or ""})
-                    return final_answer or "", recorded_messages
-
-            fallback = "抱歉，经过多轮尝试后未能得出结论。请尝试简化你的问题。"
-            await self._emit("final_answer", {
-                "text": fallback,
-                "iteration": MAX_ITERATIONS,
+        # 附加旧格式事件（供 SubAgentRunner 等下游消费）
+        if event_type == "turn_started":
+            await self._emit("iteration_start", {
+                "iteration": 1,
+                "max_iterations": MAX_ITERATIONS,
             })
-            recorded_messages.append({"role": "assistant", "content": fallback})
-            return fallback, recorded_messages
+        elif event_type == "turn_aborted":
+            await self._emit("loop_terminated", {
+                "reason": "interrupted",
+                "iteration": 1,
+            })
 
-        except asyncio.CancelledError:
-            logging.info(f"[ReAct] Cancelled during execution: session={self.session_id}")
-            try:
-                await self._emit("final_answer", {
-                    "text": _CANCELLED_ANSWER,
-                    "cancelled": True,
-                })
-            except Exception:
-                logging.warning(f"[ReAct] Failed to send cancelled event: session={self.session_id}")
-            raise
+    def _build_recorded_messages(
+        self,
+        original_history_len: int,
+        user_message: str,
+        engine_messages: list[dict],
+    ) -> list[dict]:
+        recorded: list[dict] = [{"role": "user", "content": user_message}]
+        # 只记录本轮新增消息（排除原始历史消息，但包含 forced_tool_call 消息）
+        new_messages = engine_messages[original_history_len:]
+        for msg in new_messages:
+            role = msg.get("role", "")
+            if role in ("assistant", "tool"):
+                recorded.append(msg)
+        return recorded
 
     @staticmethod
     def _termination_summary(reason: str) -> str:
@@ -320,6 +267,3 @@ class ReactAgent:
             "stuck": "检测到连续重复的工具调用，Agent 可能陷入死循环，已终止。",
         }
         return summaries.get(reason, f"循环因未知原因终止：{reason}")
-
-
-_CANCELLED_ANSWER = "已停止生成"

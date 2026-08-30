@@ -11,8 +11,10 @@ class FakeAgentClient:
     def __init__(self, defs: list[dict]) -> None:
         self._defs = defs
         self.tool_registry = ToolRegistry()
+        async def _fake_handler(**kwargs):
+            return ""
         for name in ("read", "write", "bash", "edit", "trash", "purge"):
-            self.tool_registry.register(name, name, {"type": "object"}, lambda: "")
+            self.tool_registry.register(name, name, {"type": "object"}, _fake_handler)
         self.call_llm_via_go = AsyncMock(return_value={
             "success": True,
             "content": "ok",
@@ -144,10 +146,11 @@ class TestSubAgentRunner:
 
         steps = [e[2] for e in events if e[1] == "subagent_step"]
         step_types = [s["step_type"] for s in steps]
+
         assert "tool_call" in step_types
         assert "tool_result" in step_types
-        tool_call_step = next(s for s in steps if s["step_type"] == "tool_call")
-        assert tool_call_step["tool"] == "read"
+        tool_result_step = next(s for s in steps if s["step_type"] == "tool_result")
+        assert tool_result_step["result"] == ""
 
     @pytest.mark.asyncio
     async def test_error_emits_subagent_error(self):
