@@ -1,14 +1,13 @@
 package thread
 
 import (
-	"encoding/json"
+	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
-	"github.com/songhuang/flowpartner/backend/internal/tools"
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
 type TurnStatus int
@@ -19,170 +18,284 @@ const (
 	TurnAborting                   // 中断中（等待 Python 确认）
 )
 
+type Connection interface {
+	SendNotification(method string, params interface{}) error
+}
+
+type Thread struct {
+	ID        string    `json:"id"`
+	AgentID   string    `json:"agentId"`
+	Cwd       string    `json:"cwd"`
+	CreatedAt time.Time `json:"createdAt"`
+	Archived  bool      `json:"archived"`
+
+	mu                     sync.RWMutex
+	ActiveTurn             *TurnInfo
+	pendingServerRequestID *int64
+	connIDs                map[string]struct{}
+	conns                  map[string]Connection
+	manager                *Manager
+}
+
+// TurnInfo tracks the active turn within a thread.
 type TurnInfo struct {
-	ThreadID  string
-	TurnID    string
-	Status    TurnStatus
-	StartedAt time.Time
+	ID        string     `json:"id"`
+	Status    TurnStatus `json:"status"`
+	StartedAt time.Time  `json:"startedAt"`
 }
 
-type ClearTrustFunc func(sessionID string)
+// Manager owns the thread registry and fanout routing.
+type Manager struct {
+	mu      sync.RWMutex
+	threads map[string]*Thread
 
-type TurnManager struct {
-	manager     *bridge.Manager
-	approvalMgr *tools.ApprovalManager
-	clearTrust  ClearTrustFunc
+	reqMu     sync.Mutex
+	nextReqID int64
+	pending   map[int64]*ServerRequest
 
-	mu    sync.RWMutex
-	turns map[string]*TurnInfo // session_id -> turn info
+	done chan struct{}
 }
 
-func NewTurnManager(m *bridge.Manager, am *tools.ApprovalManager) *TurnManager {
-	return &TurnManager{
-		manager:     m,
-		approvalMgr: am,
-		turns:       make(map[string]*TurnInfo),
+// NewManager creates a thread Manager.
+func NewManager() *Manager {
+	return &Manager{
+		threads:   make(map[string]*Thread),
+		pending:   make(map[int64]*ServerRequest),
+		nextReqID: 1,
+		done:      make(chan struct{}),
 	}
 }
 
-func (tm *TurnManager) SetClearTrustFunc(fn ClearTrustFunc) {
-	tm.clearTrust = fn
-}
-
-func (tm *TurnManager) StartTurn(sessionID, threadID, turnID string) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	tm.turns[sessionID] = &TurnInfo{
-		ThreadID:  threadID,
-		TurnID:    turnID,
-		Status:    TurnActive,
-		StartedAt: time.Now(),
+// Close signals the manager to stop background goroutines.
+func (m *Manager) Close() {
+	select {
+	case <-m.done:
+	default:
+		close(m.done)
 	}
 }
 
-func (tm *TurnManager) GetTurn(sessionID string) *TurnInfo {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-	return tm.turns[sessionID]
+// CreateThread creates a new thread and registers it.
+func (m *Manager) CreateThread(id, agentID, cwd string) (*Thread, error) {
+	if id == "" {
+		return nil, fmt.Errorf("thread id 不能为空")
+	}
+	if !storage.ValidSessionID(id) {
+		return nil, fmt.Errorf("无效的 thread id: %s", id)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.threads[id]; exists {
+		return nil, fmt.Errorf("thread 已存在: %s", id)
+	}
+
+	t := &Thread{
+		ID:        id,
+		AgentID:   agentID,
+		Cwd:       cwd,
+		CreatedAt: time.Now(),
+		Archived:  false,
+		connIDs:   make(map[string]struct{}),
+		conns:     make(map[string]Connection),
+		manager:   m,
+	}
+	m.threads[id] = t
+	return t, nil
 }
 
-func (tm *TurnManager) EndTurn(sessionID string) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	delete(tm.turns, sessionID)
+// GetThread retrieves a thread by id.
+func (m *Manager) GetThread(id string) (*Thread, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	t, ok := m.threads[id]
+	return t, ok
 }
 
-func (tm *TurnManager) SteerInput(sessionID, threadID, turnID, content string) int {
-	tm.mu.RLock()
-	info, ok := tm.turns[sessionID]
-	tm.mu.RUnlock()
+func (m *Manager) ListThreads(cursor string, limit int, archived *bool) ([]*Thread, string) {
+	m.mu.RLock()
+	all := make([]*Thread, 0, len(m.threads))
+	for _, t := range m.threads {
+		all = append(all, t)
+	}
+	m.mu.RUnlock()
 
+	if archived != nil {
+		filtered := make([]*Thread, 0, len(all))
+		for _, t := range all {
+			if t.Archived == *archived {
+				filtered = append(filtered, t)
+			}
+		}
+		all = filtered
+	}
+
+	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+
+	found := cursor == ""
+	result := make([]*Thread, 0, limit)
+	var nextCursor string
+	for _, t := range all {
+		if !found {
+			if t.ID == cursor {
+				found = true
+			}
+			continue
+		}
+		if len(result) >= limit {
+			nextCursor = t.ID
+			break
+		}
+		result = append(result, t)
+	}
+	return result, nextCursor
+}
+
+// ArchiveThread marks a thread as archived and aborts pending requests.
+func (m *Manager) ArchiveThread(id string) error {
+	m.mu.Lock()
+	t, ok := m.threads[id]
+	m.mu.Unlock()
 	if !ok {
-		log.Printf("[TurnManager] Steer rejected: no active turn for session=%s", sessionID)
-		return -32005
+		return fmt.Errorf("thread 不存在: %s", id)
 	}
+	t.mu.Lock()
+	t.Archived = true
+	t.mu.Unlock()
 
-	if info.Status != TurnActive {
-		log.Printf("[TurnManager] Steer rejected: turn not active (status=%d) for session=%s", info.Status, sessionID)
-		return -32005
-	}
-
-	if turnID != "" && info.TurnID != turnID {
-		log.Printf("[TurnManager] Steer rejected: turn_id mismatch (expected=%s got=%s)", info.TurnID, turnID)
-		return -32005
-	}
-
-	payload := map[string]interface{}{
-		"content":   content,
-		"thread_id": threadID,
-		"turn_id":   info.TurnID,
-	}
-
-	payloadBytes, _ := jsonMarshal(payload)
-	cmd := &proto.ServerCommand{
-		SessionId:   sessionID,
-		CommandType: "steer_input",
-		Payload:     string(payloadBytes),
-	}
-
-	select {
-	case tm.manager.CmdChan <- cmd:
-		log.Printf("[TurnManager] Steer input sent: session=%s turn=%s", sessionID, info.TurnID)
-		return 0
-	default:
-		log.Printf("[TurnManager] Steer failed: CmdChan full for session=%s", sessionID)
-		return -32001
-	}
-}
-
-func (tm *TurnManager) InterruptTurn(sessionID, reason string) error {
-	tm.mu.Lock()
-	info, ok := tm.turns[sessionID]
-	if ok && info.Status == TurnAborting {
-		tm.mu.Unlock()
-		return nil // 已在中断中
-	}
-
-	if ok {
-		info.Status = TurnAborting
-	}
-	threadID := ""
-	turnID := ""
-	if ok {
-		threadID = info.ThreadID
-		turnID = info.TurnID
-	}
-	tm.mu.Unlock()
-
-	tm.approvalMgr.CancelSession(sessionID)
-
-	if tm.clearTrust != nil {
-		tm.clearTrust(sessionID)
-	}
-
-	payload := map[string]interface{}{
-		"thread_id": threadID,
-		"turn_id":   turnID,
-		"reason":    reason,
-	}
-	payloadBytes, _ := jsonMarshal(payload)
-	cmd := &proto.ServerCommand{
-		SessionId:   sessionID,
-		CommandType: "abort_turn",
-		Payload:     string(payloadBytes),
-	}
-
-	select {
-	case tm.manager.CmdChan <- cmd:
-		log.Printf("[TurnManager] AbortTurn sent: session=%s turn=%s reason=%s", sessionID, turnID, reason)
-	default:
-		log.Printf("[TurnManager] AbortTurn failed: CmdChan full for session=%s", sessionID)
-	}
-
-	if ok {
-		go tm.forceAbortAfterTimeout(sessionID, 5*time.Second)
-	}
-
+	go t.AbortPendingRequests(turnAbortedReason)
 	return nil
 }
 
-func (tm *TurnManager) forceAbortAfterTimeout(sessionID string, timeout time.Duration) {
-	time.Sleep(timeout)
-
-	tm.mu.RLock()
-	info, ok := tm.turns[sessionID]
-	tm.mu.RUnlock()
-
+// DeleteThread marks a thread as deleted (metadata only).
+func (m *Manager) DeleteThread(id string) error {
+	m.mu.Lock()
+	t, ok := m.threads[id]
+	m.mu.Unlock()
 	if !ok {
+		return fmt.Errorf("thread 不存在: %s", id)
+	}
+
+	go t.AbortPendingRequests(turnAbortedReason)
+	return nil
+}
+
+// --- Connection attach/detach ---
+
+// AttachConn attaches a connection to a thread for event fanout.
+func (t *Thread) AttachConn(connID string, conn Connection) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.connIDs[connID] = struct{}{}
+	t.conns[connID] = conn
+}
+
+// DetachConn removes a connection from a thread.
+func (t *Thread) DetachConn(connID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.connIDs, connID)
+	delete(t.conns, connID)
+}
+
+// ConnectionCount returns the number of attached connections.
+func (t *Thread) ConnectionCount() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return len(t.conns)
+}
+
+// Fanout sends a notification to all connections attached to this thread.
+func (t *Thread) Fanout(method string, params interface{}) {
+	t.mu.RLock()
+	conns := make(map[string]Connection, len(t.conns))
+	for id, c := range t.conns {
+		conns[id] = c
+	}
+	t.mu.RUnlock()
+
+	for _, conn := range conns {
+		if err := conn.SendNotification(method, params); err != nil {
+			log.Printf("[Thread:%s] fanout failed: %v", t.ID, err)
+		}
+	}
+}
+
+// --- Turn management ---
+
+// StartTurn activates a new turn on the thread. Returns error if busy.
+func (t *Thread) StartTurn(turnID string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Archived {
+		return fmt.Errorf("thread 已归档")
+	}
+	if t.ActiveTurn != nil && t.ActiveTurn.Status != TurnIdle {
+		return fmt.Errorf("turn conflict")
+	}
+
+	t.ActiveTurn = &TurnInfo{
+		ID:        turnID,
+		Status:    TurnActive,
+		StartedAt: time.Now(),
+	}
+	return nil
+}
+
+// EndTurn clears the active turn.
+func (t *Thread) EndTurn() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ActiveTurn = nil
+}
+
+// GetTurn returns the current active turn.
+func (t *Thread) GetTurn() *TurnInfo {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.ActiveTurn
+}
+
+// SetTurnStatus updates the active turn's status.
+func (t *Thread) SetTurnStatus(status TurnStatus) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ActiveTurn != nil {
+		t.ActiveTurn.Status = status
+	}
+}
+
+// PendingServerRequestID returns the pending request id for the thread, if any.
+func (t *Thread) PendingServerRequestID() *int64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.pendingServerRequestID
+}
+
+// SetPendingServerRequestID updates the pending request id on the thread.
+func (t *Thread) SetPendingServerRequestID(id *int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pendingServerRequestID = id
+}
+
+// --- Pending request abort ---
+
+const turnAbortedReason = "turn_aborted"
+
+// AbortPendingRequests releases all pending requests on this thread with -32003.
+func (t *Thread) AbortPendingRequests(reason string) {
+	pendingID := t.PendingServerRequestID()
+	if pendingID == nil {
 		return
 	}
-
-	if info.Status == TurnAborting {
-		log.Printf("[TurnManager] Force abort after timeout: session=%s turn=%s", sessionID, info.TurnID)
-		tm.EndTurn(sessionID)
+	t.SetPendingServerRequestID(nil)
+	if t.manager != nil {
+		t.manager.resolveRequest(*pendingID, nil, fmt.Errorf("%w: %s", ErrApprovalReleased, reason))
 	}
 }
 
-func jsonMarshal(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
-}
+// ErrApprovalReleased indicates a pending approval was released due to abort/lock.
+var ErrApprovalReleased = fmt.Errorf("approval pending released")
