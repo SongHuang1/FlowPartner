@@ -12,18 +12,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
+	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
 	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// TestMain 将数据目录隔离到临时目录，避免与其他测试二进制并行写入 ~/.flowpartner 冲突
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "flowpartner-cmd-test-*")
 	if err != nil {
@@ -35,7 +33,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// TestReadySignal 验证就绪信号格式
 func TestReadySignal(t *testing.T) {
 	got := readySignal(8080, 50051)
 	want := "__FP_BACKEND_READY__ HTTP=:8080 gRPC=:50051"
@@ -44,15 +41,18 @@ func TestReadySignal(t *testing.T) {
 	}
 }
 
-// TestHTTPRoutes 验证 registerRoutes 注册的全部 REST 端点
 func TestHTTPRoutes(t *testing.T) {
 	keystore.Reset()
 	storage.ResetDataDirCache()
 
-	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
+	threadMgr := thread.NewManager()
+	snapshotMgr := snapshot.NewManager(nil, nil)
+	globalEventCh := make(chan handler.GlobalEvent, 10)
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil, mgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 
 	tests := []struct {
 		name       string
@@ -78,12 +78,7 @@ func TestHTTPRoutes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var body *strings.Reader
-			if tt.body == "" {
-				body = strings.NewReader("")
-			} else {
-				body = strings.NewReader(tt.body)
-			}
+			body := strings.NewReader(tt.body)
 			req := httptest.NewRequest(tt.method, tt.path, body)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
@@ -94,17 +89,19 @@ func TestHTTPRoutes(t *testing.T) {
 	}
 }
 
-// TestHTTPRoutes_UnlockFlow 验证完整解锁流程：设置 API Key → 解锁 → 状态变化
 func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	keystore.Reset()
 	storage.ResetDataDirCache()
 
-	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
+	threadMgr := thread.NewManager()
+	snapshotMgr := snapshot.NewManager(nil, nil)
+	globalEventCh := make(chan handler.GlobalEvent, 10)
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil, mgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 
-	// 设置 API Key
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings",
 		strings.NewReader(`{"model":"gpt-4","context_window":4096,"language":"zh-CN","api_key":"sk-test-key-abc","password":"TestPass123"}`))
 	putRec := httptest.NewRecorder()
@@ -113,7 +110,6 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 		t.Fatalf("PUT settings = %d, want 200: %s", putRec.Code, putRec.Body.String())
 	}
 
-	// 锁定
 	lockReq := httptest.NewRequest(http.MethodPost, "/api/lock", nil)
 	lockRec := httptest.NewRecorder()
 	mux.ServeHTTP(lockRec, lockReq)
@@ -121,7 +117,6 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 		t.Fatalf("POST lock = %d, want 200", lockRec.Code)
 	}
 
-	// 正确密码解锁
 	unlockReq := httptest.NewRequest(http.MethodPost, "/api/unlock",
 		strings.NewReader(`{"password":"TestPass123"}`))
 	unlockRec := httptest.NewRecorder()
@@ -130,7 +125,6 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 		t.Fatalf("POST unlock = %d, want 200: %s", unlockRec.Code, unlockRec.Body.String())
 	}
 
-	// 状态应为已解锁
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/lock_status", nil)
 	statusRec := httptest.NewRecorder()
 	mux.ServeHTTP(statusRec, statusReq)
@@ -144,13 +138,16 @@ func TestHTTPRoutes_UnlockFlow(t *testing.T) {
 	}
 }
 
-// TestShutdown_ClosesAllServers 验证 shutdown 按顺序关闭 gRPC → WebSocket → HTTP
 func TestShutdown_ClosesAllServers(t *testing.T) {
-	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
+	threadMgr := thread.NewManager()
+	snapshotMgr := snapshot.NewManager(nil, nil)
+	globalEventCh := make(chan handler.GlobalEvent, 10)
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
 
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, nil, mgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 	httpServer := &http.Server{Handler: mux}
 
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -166,10 +163,9 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	}
 	defer grpcLis.Close()
 	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, tools.NewApprovalManager()))
+	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
 	go grpcServer.Serve(grpcLis)
 
-	// 建立 WebSocket 连接并注册 session（带重试等待 server 就绪）
 	wsURL := "ws://" + httpLis.Addr().String() + "/ws"
 	var conn *websocket.Conn
 	deadline := time.Now().Add(2 * time.Second)
@@ -184,23 +180,20 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	defer conn.Close()
-	mgr.RegisterSession("sess_shutdown_test", conn)
 
 	start := time.Now()
-	shutdown(grpcServer, httpServer, mgr, wsHandler, nil)
+	shutdown(grpcServer, httpServer, wsHandler, snapshotMgr, threadMgr)
 
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("shutdown took %v, expected < 2s", elapsed)
 	}
 
-	// HTTP server 应已关闭：请求应失败
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	_, err = client.Get("http://" + httpLis.Addr().String() + "/api/settings")
 	if err == nil {
 		t.Error("expected HTTP request to fail after shutdown")
 	}
 
-	// WebSocket 连接应已关闭
 	_, _, err = conn.ReadMessage()
 	if err == nil {
 		t.Error("expected websocket to be closed after shutdown")
@@ -208,8 +201,12 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 }
 
 func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
-	mgr := bridge.NewManager()
-	wsHandler := handler.NewWebSocketHandler(mgr, tools.NewApprovalManager(), nil, thread.NewTurnManager(mgr, tools.NewApprovalManager()))
+	threadMgr := thread.NewManager()
+	snapshotMgr := snapshot.NewManager(nil, nil)
+	globalEventCh := make(chan handler.GlobalEvent, 10)
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
 
 	httpServer := &http.Server{Handler: http.NewServeMux()}
 	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -224,10 +221,9 @@ func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	}
 	defer grpcLis.Close()
 	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, tools.NewApprovalManager()))
+	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
 	go grpcServer.Serve(grpcLis)
 
-	// 建立 gRPC 双向流并保持打开，模拟 Python Agent 卡死
 	grpcConn, err := grpc.NewClient(grpcLis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("grpc dial: %v", err)
@@ -244,13 +240,12 @@ func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	defer stream.CloseSend()
 
 	start := time.Now()
-	shutdown(grpcServer, httpServer, mgr, wsHandler, nil)
+	shutdown(grpcServer, httpServer, wsHandler, snapshotMgr, threadMgr)
 
 	if elapsed := time.Since(start); elapsed > 4*time.Second {
 		t.Fatalf("shutdown took %v, expected force stop within ~2s", elapsed)
 	}
 
-	// 强制停止后流应被终止：Recv 应在超时内返回错误
 	recvDone := make(chan struct{})
 	go func() {
 		defer close(recvDone)

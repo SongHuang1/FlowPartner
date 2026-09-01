@@ -14,8 +14,10 @@ class SteerInput:
 
 
 class SteerQueue:
+    MAX_SIZE: int = 64
+
     def __init__(self) -> None:
-        self._queue: asyncio.Queue[SteerInput] = asyncio.Queue(maxsize=self.MAX_SIZE)
+        self._queue: asyncio.Queue[SteerInput] = asyncio.Queue(maxsize=SteerQueue.MAX_SIZE)
 
     def push(self, steer: SteerInput) -> None:
         if self._queue.full():

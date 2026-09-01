@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/config"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
@@ -20,35 +19,37 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/static"
 	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 )
 
 func main() {
-
 	cfg := config.Load()
-
 	initializeKeystore()
 
-	mgr := bridge.NewManager()
-	approvalManager := tools.NewApprovalManager()
-	turnMgr := thread.NewTurnManager(mgr, approvalManager)
+	threadMgr := thread.NewManager()
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	globalEventCh := make(chan handler.GlobalEvent, 100)
 
-	var wsHandler *handler.WebSocketHandler
 	snapshotMgr := snapshot.NewManager(
 		func(status snapshot.Status) {
-			wsHandler.BroadcastEvent("snapshot_status", mustJSON(status))
+			select {
+			case globalEventCh <- handler.GlobalEvent{EventType: "snapshot_status", Payload: mustJSON(status)}:
+			default:
+			}
 		},
 		func(msg snapshot.Message) {
-			wsHandler.BroadcastEvent("snapshot_message", mustJSON(msg))
+			select {
+			case globalEventCh <- handler.GlobalEvent{EventType: "snapshot_message", Payload: mustJSON(msg)}:
+			default:
+			}
 		},
 	)
-	wsHandler = handler.NewWebSocketHandler(mgr, approvalManager, snapshotMgr, turnMgr)
 
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
+	go wsHandler.StartBroadcastLoop(globalEventCh)
 	applySnapshotConfig(snapshotMgr)
 
-	// 4. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
 	if err != nil {
 		log.Fatalf("HTTP port discovery failed: %v", err)
@@ -62,15 +63,18 @@ func main() {
 	}
 	defer grpcListener.Close()
 
+	grpcServer := grpc.NewServer()
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
+	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
+
+	go agentHandler.StartEventPump(agentEventCh)
+
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, snapshotMgr, mgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
 	staticHandler.Handle(mux)
 
 	httpServer := &http.Server{Handler: mux}
-
-	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, approvalManager))
 
 	httpErrChan := make(chan error, 1)
 	readyChan := make(chan struct{}, 2)
@@ -95,7 +99,6 @@ func main() {
 	<-readyChan
 	fmt.Fprintln(os.Stderr, readySignal(httpPort, grpcPort))
 
-	// 10. 优雅退出
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -106,19 +109,19 @@ func main() {
 		log.Fatalf("gRPC server error: %v", err)
 	case sig := <-quit:
 		log.Printf("Received signal %v, gracefully shutting down...", sig)
-		shutdown(grpcServer, httpServer, mgr, wsHandler, snapshotMgr)
+		shutdown(grpcServer, httpServer, wsHandler, snapshotMgr, threadMgr)
 	}
 
 	log.Println("Server exited")
 }
 
-func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, mgr *bridge.Manager) {
+func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager, agentHandler *handler.AgentHandler) {
 	settingsHandler := handler.NewSettingsHandler(snapshotMgr)
 	historyHandler := &handler.HistoryHandler{}
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
 	snapshotHandler := handler.NewSnapshotHandler(snapshotMgr)
-	agentDefHandler := handler.NewAgentDefHandler(mgr, wsHandler.BroadcastEvent)
+	agentDefHandler := handler.NewAgentDefHandler(threadMgr, agentHandler.SendCommand, wsHandler.BroadcastEvent)
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
@@ -152,7 +155,6 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, sna
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
 }
 
-// applySnapshotConfig 按已保存设置启动快照管理器（工作区根与 PathGuard 同源）。
 func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
 	settings := handler.LoadSettings()
 	workingDir := handler.ResolveWorkingDir(settings)
@@ -165,7 +167,6 @@ func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
 	}
 }
 
-// mustJSON 序列化状态/消息事件；失败时返回空对象占位。
 func mustJSON(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -174,7 +175,6 @@ func mustJSON(v interface{}) string {
 	return string(data)
 }
 
-// initializeKeystore 从已保存的 settings.json 恢复 keystore 的 hasAPIKey 状态
 func initializeKeystore() {
 	settings := handler.LoadSettings()
 	ks := keystore.Instance()
@@ -194,8 +194,7 @@ func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }
 
-func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Manager, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
-
+func shutdown(grpcServer *grpc.Server, httpServer *http.Server, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager) {
 	if snapshotMgr != nil {
 		snapshotMgr.Close()
 	}
@@ -212,8 +211,8 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 		grpcServer.Stop()
 	}
 
-	mgr.CloseAllSessions()
 	wsHandler.Close()
+	threadMgr.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -221,3 +220,5 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 		log.Printf("HTTP server did not shut down within timeout: %v", err)
 	}
 }
+
+
