@@ -98,6 +98,8 @@ export interface Settings {
   snapshot_dir: string
   snapshot_enabled: boolean
   snapshot_include_secrets: boolean
+
+  protocol_v2: boolean
 }
 
 export interface SnapshotStatus {

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import type { SnapshotStatus, SnapshotMessage, SnapshotManifest, SnapshotDetail } from '@/types'
 import { getSnapshots, getSnapshotDetail } from '@/lib/api'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWsV2 } from '@/hooks/useWebSocket'
 import { useSettings } from '@/hooks/useSettings'
 
 export interface UseSnapshotReturn {
@@ -20,9 +20,7 @@ export interface UseSnapshotReturn {
 const SnapshotContext = createContext<UseSnapshotReturn | null>(null)
 
 export function SnapshotProvider({ children }: { children: React.ReactNode }) {
-  const { sendManualSnapshot, sendRestore, sendSystemLock, onSnapshotStatus, onSnapshotMessage } = useWebSocket()
   const { settings } = useSettings()
-
   const [status, setStatus] = useState<SnapshotStatus | null>(null)
   const [messages, setMessages] = useState<SnapshotMessage[]>([])
   const [snapshots, setSnapshots] = useState<SnapshotManifest[]>([])
@@ -33,6 +31,19 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     settingsRef.current = settings
   }, [settings])
+
+  const onGlobalEvent = useCallback((eventType: string, payload: string) => {
+    if (eventType === 'snapshot_status') {
+      try { setStatus(JSON.parse(payload)) } catch { /* ignore */ }
+    } else if (eventType === 'snapshot_message') {
+      try {
+        const msg = JSON.parse(payload) as SnapshotMessage
+        setMessages((prev) => [...prev, msg].slice(-5))
+      } catch { /* ignore */ }
+    }
+  }, [])
+
+  const { triggerSnapshot, restoreSnapshot, systemLock } = useWsV2({ onGlobalEvent })
 
   const refreshList = useCallback(async () => {
     if (!settingsRef.current.snapshot_dir) {
@@ -52,18 +63,16 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    ;(async () => {
-      await refreshList()
-    })()
+    ;(async () => { await refreshList() })()
   }, [refreshList])
 
   const manualSnapshot = useCallback(() => {
-    sendManualSnapshot()
-  }, [sendManualSnapshot])
+    triggerSnapshot()
+  }, [triggerSnapshot])
 
   const restore = useCallback((snapshotId: string, deleteExtras: boolean) => {
-    sendRestore(snapshotId, deleteExtras)
-  }, [sendRestore])
+    restoreSnapshot(snapshotId, deleteExtras)
+  }, [restoreSnapshot])
 
   const getDetail = useCallback(async (snapshotId: string): Promise<SnapshotDetail | null> => {
     try {
@@ -79,28 +88,10 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const unsubStatus = onSnapshotStatus((s) => setStatus(s))
-    const unsubMessage = onSnapshotMessage((m) => {
-      setMessages((prev) => {
-        const next = [...prev, m]
-        return next.slice(-5)
-      })
-    })
-    return () => {
-      unsubStatus()
-      unsubMessage()
-    }
-  }, [onSnapshotStatus, onSnapshotMessage])
-
-  // 系统锁屏：刷新快照（flush）以保护未保存的工作。
-  // system-lock DOM 事件由 App 挂载的 useWindowState 在收到 Electron 主进程通知后派发。
-  useEffect(() => {
-    const handleSystemLock = () => {
-      sendSystemLock()
-    }
+    const handleSystemLock = () => { systemLock() }
     window.addEventListener('system-lock', handleSystemLock)
     return () => window.removeEventListener('system-lock', handleSystemLock)
-  }, [sendSystemLock])
+  }, [systemLock])
 
   return (
     <SnapshotContext.Provider

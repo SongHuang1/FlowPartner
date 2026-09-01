@@ -1,845 +1,337 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { getApiPort } from '@/lib/api'
-import type { Message, PermissionRequestPayload, IterationStep, SnapshotStatus, SnapshotMessage, SubAgentRun, SubAgentStep, ContentBlock, UsageUpdate, TurnInfo } from '@/types'
-
-export interface ChatEvent {
-  event_type: string
-  payload: string
-  thread_id?: string
-  turn_id?: string
-}
-
-type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'reconnect_exhausted'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_INTERVAL_MS = 3000
-const PROCESSING_TIMEOUT_MS = 300000
-const MIN_PORT = 1024
-const MAX_PORT = 65535
+const PORT_MIN = 1024
+const PORT_MAX = 65535
 
-const KNOWN_EVENT_TYPES = [
-  'status_update', 'tool_call', 'tool_result', 'final_answer',
-  'error', 'permission_request', 'iteration_start', 'llm_chunk',
-  'loop_terminated', 'snapshot_status', 'snapshot_message',
-  'subagent_start', 'subagent_step', 'subagent_end', 'subagent_error',
-  'agents_changed',
-  'turn_started', 'turn_completed', 'turn_aborted',
-  'item_started', 'item_completed', 'item_delta',
-  'usage_update',
-] as const
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'reconnect_exhausted'
 
-function isKnownEventType(type: string): type is (typeof KNOWN_EVENT_TYPES)[number] {
-  return (KNOWN_EVENT_TYPES as readonly string[]).includes(type)
+interface WsEnvelope {
+  id?: string | number
+  method?: string
+  params?: unknown
+  result?: unknown
+  error?: { code: number; message: string; data?: unknown }
 }
 
-export interface UseWebSocketReturn {
-  connected: boolean
-  reconnecting: boolean
-  reconnectAttempts: number
-  isReconnectExhausted: boolean
-  processing: boolean
-  sendMessage: (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string) => boolean
-  sendCancel: (sessionId: string) => void
-  sendSteer: (sessionId: string, content: string) => void
-  sendPermissionResponse: (sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => void
-  sendManualSnapshot: () => void
-  sendRestore: (snapshotId: string, deleteExtras: boolean) => void
-  sendSystemLock: () => void
-  events: ChatEvent[]
-  steps: IterationStep[]
-  subagentRuns: SubAgentRun[]
-  manualReconnect: () => void
-  onStreamChunk: (cb: (chunk: string) => void) => () => void
-  onUsageUpdate: (cb: (usage: UsageUpdate) => void) => () => void
-  onTurnStarted: (cb: (info: TurnInfo) => void) => () => void
-  onTurnCompleted: (cb: (info: TurnInfo) => void) => () => void
-  onTurnAborted: (cb: (info: TurnInfo) => void) => () => void
-  onAgentsChanged: (cb: () => void) => () => void
-  onError: (cb: (message: string) => void) => () => void
-  onSecurityEvent: (cb: (message: string) => void) => () => void
-  onPermissionRequest: (cb: (payload: PermissionRequestPayload) => void) => () => void
-  onSnapshotStatus: (cb: (status: SnapshotStatus) => void) => () => void
-  onSnapshotMessage: (cb: (message: SnapshotMessage) => void) => () => void
+export interface ApprovalRequestPayload {
+  threadId: string
+  requestId: number
+  command?: string
+  tool?: string
+  path?: string
+  operation?: string
+  detail?: string
+  availableDecisions: string[]
 }
 
-function buildSteps(events: ChatEvent[]): IterationStep[] {
-  const steps: IterationStep[] = []
-  let current: IterationStep | null = null
-
-  for (const evt of events) {
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(evt.payload)
-    } catch {
-      continue
-    }
-
-    if (evt.event_type === 'iteration_start') {
-      current = {
-        iteration: (parsed.iteration as number) || steps.length + 1,
-        thinking: '',
-        toolCalls: [],
-      }
-      steps.push(current)
-      continue
-    }
-
-    if (evt.event_type === 'llm_chunk') {
-      if (!current) {
-        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
-        steps.push(current)
-      }
-      current.thinking += (parsed.content as string) || ''
-      continue
-    }
-
-    if (evt.event_type === 'tool_call') {
-      if (!current) {
-        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
-        steps.push(current)
-      }
-      current.toolCalls.push({
-        tool: (parsed.tool as string) || '',
-        args: (parsed.args as Record<string, unknown>) || {},
-        call_id: (parsed.call_id as string) || '',
-      })
-      continue
-    }
-
-    if (evt.event_type === 'tool_result') {
-      const callId = (parsed.call_id as string) || ''
-      for (const step of steps) {
-        const tc = step.toolCalls.find((t) => t.call_id === callId)
-        if (tc) {
-          tc.result = (parsed.result as string) || ''
-          tc.truncated = parsed.truncated as boolean | undefined
-          break
-        }
-      }
-      continue
-    }
-
-    if (evt.event_type === 'loop_terminated') {
-      if (!current) {
-        current = { iteration: steps.length + 1, thinking: '', toolCalls: [] }
-        steps.push(current)
-      }
-      current.loopTerminated = { reason: (parsed.reason as string) || '' }
-    }
-  }
-
-  return steps
+interface WsV2Callbacks {
+  onRequestApproval?: (payload: ApprovalRequestPayload) => void
+  onServerRequestResolved?: (payload: { threadId: string; requestId: number }) => void
+  onThreadEvent?: (method: string, params: unknown) => void
+  onGlobalEvent?: (eventType: string, payload: string) => void
 }
 
-function buildSubagentRuns(events: ChatEvent[]): SubAgentRun[] {
-  const runs = new Map<string, SubAgentRun>()
-  const order: string[] = []
-
-  for (const evt of events) {
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(evt.payload)
-    } catch {
-      continue
-    }
-
-    const spanId = (parsed.span_id as string) || ''
-    if (!spanId) continue
-
-    let run = runs.get(spanId)
-    if (evt.event_type === 'subagent_start') {
-      if (!run) {
-        run = {
-          agent_id: (parsed.agent_id as string) || '',
-          agent_name: (parsed.agent_name as string) || '',
-          depth: (parsed.depth as number) || 1,
-          span_id: spanId,
-          trace_id: (parsed.trace_id as string) || '',
-          parent_span_id: (parsed.parent_span_id as string) || undefined,
-          status: 'running',
-          task: (parsed.task as string) || '',
-          steps: [],
-        }
-        runs.set(spanId, run)
-        order.push(spanId)
-      }
-      continue
-    }
-
-    if (!run) continue
-
-    if (evt.event_type === 'subagent_step') {
-      const step: SubAgentStep = {
-        step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
-      }
-      if (typeof parsed.content === 'string') step.content = parsed.content
-      if (typeof parsed.tool === 'string') step.tool = parsed.tool
-      if (parsed.args && typeof parsed.args === 'object') step.args = parsed.args as Record<string, unknown>
-      if (typeof parsed.result === 'string') step.result = parsed.result
-      if (typeof parsed.truncated === 'boolean') step.truncated = parsed.truncated
-      run.steps.push(step)
-      continue
-    }
-
-    if (evt.event_type === 'subagent_end') {
-      run.status = 'done'
-      if (typeof parsed.result === 'string') run.result = parsed.result
-      continue
-    }
-
-    if (evt.event_type === 'subagent_error') {
-      run.status = 'error'
-      run.error = (parsed.message as string) || '未知错误'
-    }
-  }
-
-  return order.map((id) => runs.get(id)!).filter(Boolean)
-}
-
-export function useWebSocket(): UseWebSocketReturn {
+export function useWsV2(callbacks: WsV2Callbacks) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
-  const [events, setEvents] = useState<ChatEvent[]>([])
-  const [processing, setProcessing] = useState(false)
-  const [reconnectAttempts, setReconnectAttempts] = useState(0)
-
   const wsRef = useRef<WebSocket | null>(null)
+  const requestIdRef = useRef(0)
+  const pendingReqsRef = useRef<Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>>(new Map())
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sessionEndedRef = useRef(false)
-  const mountedRef = useRef(true)
-  const streamChunkCallbacksRef = useRef<Set<(chunk: string) => void>>(new Set())
-  const usageUpdateCallbacksRef = useRef<Set<(usage: UsageUpdate) => void>>(new Set())
-  const turnStartedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
-  const turnCompletedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
-  const turnAbortedCallbacksRef = useRef<Set<(info: TurnInfo) => void>>(new Set())
-  const agentsChangedCallbacksRef = useRef<Set<() => void>>(new Set())
-  const errorCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
-  const securityCallbacksRef = useRef<Set<(message: string) => void>>(new Set())
-  const permissionRequestCallbacksRef = useRef<Set<(payload: PermissionRequestPayload) => void>>(new Set())
-  const snapshotStatusCallbacksRef = useRef<Set<(status: SnapshotStatus) => void>>(new Set())
-  const snapshotMessageCallbacksRef = useRef<Set<(message: SnapshotMessage) => void>>(new Set())
-  const connectRef = useRef<(port: number) => void>(() => {})
-  const sessionIdRef = useRef<string>('')
-  const currentTurnIdRef = useRef<string>('')
-
-  const connected = connectionState === 'connected'
-  const reconnecting = connectionState === 'reconnecting'
-  const isReconnectExhausted = connectionState === 'reconnect_exhausted'
-  const steps = buildSteps(events)
-  const subagentRuns = buildSubagentRuns(events)
-
-  const clearProcessingTimer = useCallback(() => {
-    if (processingTimerRef.current) {
-      clearTimeout(processingTimerRef.current)
-      processingTimerRef.current = null
-    }
-  }, [])
-
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current)
-      reconnectTimerRef.current = null
-    }
-  }, [])
-
-  const resetProcessing = useCallback(() => {
-    clearProcessingTimer()
-    setProcessing(false)
-  }, [clearProcessingTimer])
-
-  const connect = useCallback(
-    (port: number) => {
-      if (!mountedRef.current) return
-
-      if (port < MIN_PORT || port > MAX_PORT) {
-        const msg = `端口 ${port} 不在安全范围（${MIN_PORT}-${MAX_PORT}），已拒绝连接`
-        securityCallbacksRef.current.forEach((cb) => {
-          try { cb(msg) } catch (e) { console.error('Security callback error:', e) }
-        })
-        return
-      }
-
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-
-      setConnectionState(
-        reconnectAttemptsRef.current > 0 ? 'reconnecting' : 'connecting',
-      )
-
-      const ws = new WebSocket(`ws://localhost:${port}/ws`)
-
-      ws.onopen = () => {
-        if (!mountedRef.current) { ws.close(); return }
-        reconnectAttemptsRef.current = 0
-        setReconnectAttempts(0)
-        setConnectionState('connected')
-      }
-
-      ws.onmessage = (evt) => {
-        if (!mountedRef.current) return
-
-        let raw: ChatEvent
-        try {
-          raw = JSON.parse(evt.data)
-        } catch {
-          console.error('Failed to parse WebSocket message:', evt.data)
-          return
-        }
-
-        if (!raw.event_type || !isKnownEventType(raw.event_type)) {
-          console.warn('Unknown event_type:', raw.event_type)
-          return
-        }
-
-        // 快照事件是全局事件（与对话无关），不进入会话事件流，也不受会话结束状态门控
-        if (raw.event_type === 'snapshot_status') {
-          try {
-            const parsed = JSON.parse(raw.payload) as SnapshotStatus
-            snapshotStatusCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed) } catch (e) { console.error('onSnapshotStatus callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse snapshot_status payload:', raw.payload)
-          }
-          return
-        }
-
-        if (raw.event_type === 'snapshot_message') {
-          try {
-            const parsed = JSON.parse(raw.payload) as SnapshotMessage
-            snapshotMessageCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed) } catch (e) { console.error('onSnapshotMessage callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse snapshot_message payload:', raw.payload)
-          }
-          return
-        }
-
-        if (sessionEndedRef.current) return
-
-        if (raw.event_type === 'llm_chunk') {
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            const content = (parsed.content as string) || ''
-            streamChunkCallbacksRef.current.forEach((cb) => {
-              try { cb(content) } catch (e) { console.error('onStreamChunk callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse llm_chunk payload:', raw.payload)
-          }
-          return
-        }
-
-        if (raw.event_type === 'final_answer' || raw.event_type === 'error') {
-          resetProcessing()
-          sessionEndedRef.current = true
-        }
-
-        if (raw.event_type === 'permission_request') {
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload) as PermissionRequestPayload
-            permissionRequestCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed) } catch (e) { console.error('onPermissionRequest callback error:', e) }
-            })
-          } catch {
-            console.error('Failed to parse permission_request payload:', raw.payload)
-          }
-          return
-        }
-
-        if (raw.event_type === 'final_answer') {
-          // 只入队；由事件流消费者检测到终态后统一定稿消息（避免闭包 events 过期）
-          setEvents((prev) => [...prev, raw])
-          return
-        }
-
-        // 子智能体事件只进入事件流，由 deriveContentBlocks 统一构建内容块
-        if (raw.event_type === 'subagent_start' || raw.event_type === 'subagent_step' || raw.event_type === 'subagent_error') {
-          setEvents((prev) => [...prev, raw])
-          return
-        }
-
-        if (raw.event_type === 'subagent_end') {
-          setEvents((prev) => [...prev, raw])
-          return
-        }
-
-        if (raw.event_type === 'turn_started') {
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            turnStartedCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnStarted callback error:', e) }
-            })
-          } catch { /* ignore */ }
-          return
-        }
-
-        if (raw.event_type === 'turn_completed') {
-          resetProcessing()
-          sessionEndedRef.current = true
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            turnCompletedCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnCompleted callback error:', e) }
-            })
-          } catch { /* ignore */ }
-          return
-        }
-
-        if (raw.event_type === 'turn_aborted') {
-          resetProcessing()
-          sessionEndedRef.current = true
-          setEvents((prev) => [...prev, raw])
-          try {
-            const parsed = JSON.parse(raw.payload)
-            turnAbortedCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed as TurnInfo) } catch (e) { console.error('onTurnAborted callback error:', e) }
-            })
-          } catch { /* ignore */ }
-          return
-        }
-
-        if (raw.event_type === 'usage_update') {
-          try {
-            const parsed = JSON.parse(raw.payload) as UsageUpdate
-            usageUpdateCallbacksRef.current.forEach((cb) => {
-              try { cb(parsed) } catch (e) { console.error('onUsageUpdate callback error:', e) }
-            })
-          } catch { /* ignore */ }
-          return
-        }
-
-        if (raw.event_type === 'agents_changed') {
-          agentsChangedCallbacksRef.current.forEach((cb) => {
-            try { cb() } catch (e) { console.error('onAgentsChanged callback error:', e) }
-          })
-          return
-        }
-
-        if (raw.event_type === 'error') {
-          setEvents((prev) => [...prev, raw])
-          let message: string
-          try {
-            const parsed = JSON.parse(raw.payload)
-            if (typeof parsed.message !== 'string') {
-              console.error('error payload missing message field')
-              return
-            }
-            message = parsed.message
-          } catch {
-            console.error('Failed to parse error payload:', raw.payload)
-            return
-          }
-          errorCallbacksRef.current.forEach((cb) => {
-            try { cb(message) } catch (e) { console.error('onError callback error:', e) }
-          })
-          return
-        }
-
-        setEvents((prev) => [...prev, raw])
-      }
-
-      ws.onclose = () => {
-        if (!mountedRef.current) return
-        wsRef.current = null
-        resetProcessing()
-
-        if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-          setConnectionState('reconnect_exhausted')
-          return
-        }
-
-        reconnectAttemptsRef.current += 1
-        setReconnectAttempts(reconnectAttemptsRef.current)
-        setConnectionState('reconnecting')
-        clearReconnectTimer()
-        reconnectTimerRef.current = setTimeout(() => {
-          const port = getApiPort()
-          if (port) connectRef.current(port)
-        }, RECONNECT_INTERVAL_MS)
-      }
-
-      ws.onerror = () => { ws.close() }
-
-      wsRef.current = ws
-    },
-    [clearReconnectTimer, resetProcessing],
-  )
+  const shouldReconnectRef = useRef(true)
+  const mountedRef = useRef(false)
+  const callbacksRef = useRef(callbacks)
+  const apiRef = useRef<{
+    connect: () => void
+    disconnect: () => void
+    handshake: () => void
+    attemptReconnect: () => void
+    handleEnvelope: (env: WsEnvelope) => void
+    handleLegacyMessage: (data: string) => void
+  } | null>(null)
 
   useEffect(() => {
-    connectRef.current = connect
+    callbacksRef.current = callbacks
   })
+
+  const sendRequest = useCallback(async (method: string, params?: unknown): Promise<unknown> => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket 未连接')
+    }
+    const id = `req-${++requestIdRef.current}`
+    const envelope: WsEnvelope = { id, method, params: params ?? {} }
+    return new Promise((resolve, reject) => {
+      pendingReqsRef.current.set(id, { resolve, reject })
+      ws.send(JSON.stringify(envelope))
+      setTimeout(() => {
+        if (pendingReqsRef.current.has(id)) {
+          pendingReqsRef.current.delete(id)
+          reject(new Error(`请求超时: ${method}`))
+        }
+      }, 30000)
+    })
+  }, [])
+
+  const sendNotification = useCallback((method: string, params?: unknown) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ method, params: params ?? {} }))
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
 
-    const port = getApiPort()
-    if (port) {
-      connectRef.current(port)
+    const handleEnvelope = (env: WsEnvelope) => {
+      if (env.id !== undefined && pendingReqsRef.current.has(String(env.id))) {
+        const { resolve, reject } = pendingReqsRef.current.get(String(env.id))!
+        pendingReqsRef.current.delete(String(env.id))
+        if (env.error) {
+          reject(new Error(env.error.message))
+        } else {
+          resolve(env.result)
+        }
+        return
+      }
+      if (env.error) return
+
+      if (env.method) {
+        const params = env.params as Record<string, unknown> | undefined
+
+        if (env.method === 'item/commandExecution/requestApproval') {
+          const p = params as { threadId?: string; requestId?: number; command?: string; tool?: string; path?: string; operation?: string; detail?: string; availableDecisions?: string[] }
+          callbacksRef.current.onRequestApproval?.({
+            threadId: p.threadId ?? '',
+            requestId: p.requestId ?? 0,
+            command: p.command,
+            tool: p.tool,
+            path: p.path,
+            operation: p.operation,
+            detail: p.detail,
+            availableDecisions: p.availableDecisions ?? ['approved', 'denied'],
+          })
+          return
+        }
+
+        if (env.method === 'serverRequest/resolved') {
+          const p = params as { threadId?: string; requestId?: number }
+          callbacksRef.current.onServerRequestResolved?.({
+            threadId: p.threadId ?? '',
+            requestId: p.requestId ?? 0,
+          })
+          return
+        }
+
+        callbacksRef.current.onThreadEvent?.(env.method, env.params)
+      }
     }
 
-    const streamChunkCbs = streamChunkCallbacksRef.current
-    const usageUpdateCbs = usageUpdateCallbacksRef.current
-    const turnStartedCbs = turnStartedCallbacksRef.current
-    const turnCompletedCbs = turnCompletedCallbacksRef.current
-    const turnAbortedCbs = turnAbortedCallbacksRef.current
-    const agentsChangedCbs = agentsChangedCallbacksRef.current
-    const errorCbs = errorCallbacksRef.current
-    const securityCbs = securityCallbacksRef.current
-    const permissionCbs = permissionRequestCallbacksRef.current
-    const snapshotStatusCbs = snapshotStatusCallbacksRef.current
-    const snapshotMessageCbs = snapshotMessageCallbacksRef.current
+    const handleLegacyMessage = (data: string) => {
+      try {
+        const msg = JSON.parse(data)
+        if (msg.event_type) {
+          callbacksRef.current.onGlobalEvent?.(msg.event_type, msg.payload)
+        }
+      } catch { /* ignore */ }
+    }
+
+    const handshake = async () => {
+      try {
+        await sendRequest('initialize', {
+          clientInfo: {
+            name: 'FlowPartner',
+            title: 'FlowPartner',
+            version: window.flowPartner.getVersion?.() || '0.3.0',
+          },
+        })
+        sendNotification('initialized')
+      } catch {
+        wsRef.current?.close()
+      }
+    }
+
+    const attemptReconnect = () => {
+      if (!mountedRef.current) return
+      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setConnectionState('reconnect_exhausted')
+        return
+      }
+      setConnectionState('reconnecting')
+      reconnectAttemptsRef.current++
+      reconnectTimerRef.current = setTimeout(() => {
+        doConnect()
+      }, RECONNECT_INTERVAL_MS)
+    }
+
+    const doConnect = async () => {
+      if (!mountedRef.current) return
+      if (wsRef.current?.readyState === WebSocket.OPEN) return
+
+      setConnectionState('connecting')
+      shouldReconnectRef.current = true
+
+      try {
+        const port = await window.flowPartner.fetchBackendPort()
+        if (typeof port !== 'number' || isNaN(port) || port < PORT_MIN || port > PORT_MAX) {
+          throw new Error(`无效端口: ${port}`)
+        }
+
+        const ws = new WebSocket(`ws://localhost:${port}/ws`)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          reconnectAttemptsRef.current = 0
+          setConnectionState('connected')
+          handshake()
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const env: WsEnvelope = JSON.parse(event.data)
+            handleEnvelope(env)
+          } catch {
+            handleLegacyMessage(event.data)
+          }
+        }
+
+        ws.onclose = () => {
+          wsRef.current = null
+          pendingReqsRef.current.forEach(({ reject }) => reject(new Error('连接已断开')))
+          pendingReqsRef.current.clear()
+          if (shouldReconnectRef.current && mountedRef.current) {
+            attemptReconnect()
+          } else {
+            setConnectionState('disconnected')
+          }
+        }
+
+        ws.onerror = () => {
+          ws.close()
+        }
+      } catch {
+        setConnectionState('disconnected')
+      }
+    }
+
+    const doDisconnect = () => {
+      shouldReconnectRef.current = false
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+      wsRef.current?.close()
+      wsRef.current = null
+      setConnectionState('disconnected')
+    }
+
+    apiRef.current = {
+      connect: doConnect,
+      disconnect: doDisconnect,
+      handshake,
+      attemptReconnect,
+      handleEnvelope,
+      handleLegacyMessage,
+    }
+
+    doConnect()
 
     return () => {
       mountedRef.current = false
-      clearReconnectTimer()
-      clearProcessingTimer()
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-      streamChunkCbs.clear()
-      usageUpdateCbs.clear()
-      turnStartedCbs.clear()
-      turnCompletedCbs.clear()
-      turnAbortedCbs.clear()
-      agentsChangedCbs.clear()
-      errorCbs.clear()
-      securityCbs.clear()
-      permissionCbs.clear()
-      snapshotStatusCbs.clear()
-      snapshotMessageCbs.clear()
-      setEvents([])
+      doDisconnect()
     }
-  }, [clearReconnectTimer, clearProcessingTimer, resetProcessing])
+  }, [sendRequest, sendNotification])
 
-  const sendMessage = useCallback(
-    (content: string, sessionId: string, history: Message[], executorAgentId?: string, injectAgentId?: string): boolean => {
-      const trimmed = content.trim()
-      if (!trimmed) return false
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false
-      if (processing) return false
-
-      sessionIdRef.current = sessionId
-      setEvents([])
-      sessionEndedRef.current = false
-      setProcessing(true)
-      clearProcessingTimer()
-      processingTimerRef.current = setTimeout(() => {
-        resetProcessing()
-        sessionEndedRef.current = true
-        errorCallbacksRef.current.forEach((cb) => {
-          try { cb('请求超时，请重试') } catch (e) { console.error('onError callback error:', e) }
-        })
-      }, PROCESSING_TIMEOUT_MS)
-
-      const historyPayload = history.map((m) => {
-        const entry: Record<string, unknown> = { role: m.role, content: m.content }
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          entry.tool_calls = m.tool_calls
-        }
-        if (m.tool_call_id) {
-          entry.tool_call_id = m.tool_call_id
-        }
-        if (m.name) {
-          entry.name = m.name
-        }
-        return entry
-      })
-
-      // 生成 turn_id 用于后续 steer 校验
-      const turnId = crypto.randomUUID()
-      currentTurnIdRef.current = turnId
-
-      const msg = JSON.stringify({
-        action: 'start_chat',
-        content: trimmed,
-        session_id: sessionId,
-        history: historyPayload,
-        executor_agent_id: executorAgentId || '',
-        inject_agent_id: injectAgentId || '',
-        turn_id: turnId,
-      })
-      wsRef.current.send(msg)
-      return true
-    },
-    [processing, clearProcessingTimer, resetProcessing],
-  )
-
-  const sendCancel = useCallback((sessionId: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    wsRef.current.send(JSON.stringify({
-      action: 'cancel_task',
-      session_id: sessionId,
-    }))
+  const connect = useCallback(() => {
+    apiRef.current?.connect()
   }, [])
 
-  const sendSteer = useCallback((sessionId: string, content: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    wsRef.current.send(JSON.stringify({
-      action: 'steer',
-      session_id: sessionId,
-      content,
-      turn_id: currentTurnIdRef.current,
-    }))
+  const disconnect = useCallback(() => {
+    apiRef.current?.disconnect()
   }, [])
 
-  const sendPermissionResponse = useCallback((sessionId: string, requestId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session') => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    const payload: Record<string, string> = {
-      action: 'permission_response',
-      session_id: sessionId,
-      request_id: requestId,
-      decision,
-    }
-    if (decision === 'allow' && scope) {
-      payload.scope = scope
-    }
-    wsRef.current.send(JSON.stringify(payload))
-  }, [])
+  const startChat = useCallback(async (params: {
+    threadId?: string
+    input: { type: string; text: string }[]
+    cwd?: string
+    agentId?: string
+  }) => {
+    const result = await sendRequest('turn/start', {
+      threadId: params.threadId,
+      input: params.input,
+      overrides: {
+        cwd: params.cwd,
+        agentId: params.agentId,
+      },
+    })
+    return result as { threadId: string; turnId: string }
+  }, [sendRequest])
 
-  const sendManualSnapshot = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    wsRef.current.send(JSON.stringify({ action: 'manual_snapshot' }))
-  }, [])
+  const steer = useCallback(async (params: {
+    threadId: string
+    turnId?: string
+    input: { type: string; text: string }[]
+  }) => {
+    return sendRequest('turn/steer', params)
+  }, [sendRequest])
 
-  const sendRestore = useCallback((snapshotId: string, deleteExtras: boolean) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    wsRef.current.send(JSON.stringify({
-      action: 'restore',
-      snapshot_id: snapshotId,
-      delete_extras: deleteExtras,
-    }))
-  }, [])
+  const interrupt = useCallback(async (params: { threadId: string; turnId?: string }) => {
+    return sendRequest('turn/interrupt', params)
+  }, [sendRequest])
 
-  const sendSystemLock = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    wsRef.current.send(JSON.stringify({ action: 'system_lock' }))
-  }, [])
+  const respondToApproval = useCallback(async (params: {
+    threadId: string
+    requestId: number
+    decision: string
+  }) => {
+    return sendRequest('response/' + params.requestId, {
+      threadId: params.threadId,
+      decision: params.decision,
+    })
+  }, [sendRequest])
 
-  const manualReconnect = useCallback(() => {
-    reconnectAttemptsRef.current = 0
-    setReconnectAttempts(0)
-    const port = getApiPort()
-    if (port) connectRef.current(port)
-  }, [])
+  const listThreads = useCallback(async (params?: { cursor?: string; limit?: number; archived?: boolean }) => {
+    return sendRequest('thread/list', params ?? {})
+  }, [sendRequest])
 
-  const onStreamChunk = useCallback((cb: (chunk: string) => void) => {
-    streamChunkCallbacksRef.current.add(cb)
-    return () => { streamChunkCallbacksRef.current.delete(cb) }
-  }, [])
+  const readThread = useCallback(async (threadId: string) => {
+    return sendRequest('thread/read', { threadId })
+  }, [sendRequest])
 
-  const onUsageUpdate = useCallback((cb: (usage: UsageUpdate) => void) => {
-    usageUpdateCallbacksRef.current.add(cb)
-    return () => { usageUpdateCallbacksRef.current.delete(cb) }
-  }, [])
+  const startThread = useCallback(async (params?: { cwd?: string; agentId?: string }) => {
+    return sendRequest('thread/start', params ?? {})
+  }, [sendRequest])
 
-  const onTurnStarted = useCallback((cb: (info: TurnInfo) => void) => {
-    turnStartedCallbacksRef.current.add(cb)
-    return () => { turnStartedCallbacksRef.current.delete(cb) }
-  }, [])
+  const triggerSnapshot = useCallback(async () => {
+    return sendRequest('snapshot/trigger')
+  }, [sendRequest])
 
-  const onTurnCompleted = useCallback((cb: (info: TurnInfo) => void) => {
-    turnCompletedCallbacksRef.current.add(cb)
-    return () => { turnCompletedCallbacksRef.current.delete(cb) }
-  }, [])
+  const restoreSnapshot = useCallback(async (snapshotId: string, deleteExtras: boolean) => {
+    return sendRequest('snapshot/restore', { snapshotId, deleteExtras })
+  }, [sendRequest])
 
-  const onTurnAborted = useCallback((cb: (info: TurnInfo) => void) => {
-    turnAbortedCallbacksRef.current.add(cb)
-    return () => { turnAbortedCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onAgentsChanged = useCallback((cb: () => void) => {
-    agentsChangedCallbacksRef.current.add(cb)
-    return () => { agentsChangedCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onError = useCallback((cb: (message: string) => void) => {
-    errorCallbacksRef.current.add(cb)
-    return () => { errorCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onSecurityEvent = useCallback((cb: (message: string) => void) => {
-    securityCallbacksRef.current.add(cb)
-    return () => { securityCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onPermissionRequest = useCallback((cb: (payload: PermissionRequestPayload) => void) => {
-    permissionRequestCallbacksRef.current.add(cb)
-    return () => { permissionRequestCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onSnapshotStatus = useCallback((cb: (status: SnapshotStatus) => void) => {
-    snapshotStatusCallbacksRef.current.add(cb)
-    return () => { snapshotStatusCallbacksRef.current.delete(cb) }
-  }, [])
-
-  const onSnapshotMessage = useCallback((cb: (message: SnapshotMessage) => void) => {
-    snapshotMessageCallbacksRef.current.add(cb)
-    return () => { snapshotMessageCallbacksRef.current.delete(cb) }
-  }, [])
+  const systemLock = useCallback(async () => {
+    return sendRequest('system/lock')
+  }, [sendRequest])
 
   return {
-    connected,
-    reconnecting,
-    reconnectAttempts,
-    isReconnectExhausted,
-    processing,
-    sendMessage,
-    sendCancel,
-    sendSteer,
-    sendPermissionResponse,
-    sendManualSnapshot,
-    sendRestore,
-    sendSystemLock,
-    events,
-    steps,
-    subagentRuns,
-    manualReconnect,
-    onStreamChunk,
-    onUsageUpdate,
-    onTurnStarted,
-    onTurnCompleted,
-    onTurnAborted,
-    onAgentsChanged,
-    onError,
-    onSecurityEvent,
-    onPermissionRequest,
-    onSnapshotStatus,
-    onSnapshotMessage,
+    connectionState,
+    sendRequest,
+    sendNotification,
+    connect,
+    disconnect,
+    startChat,
+    steer,
+    interrupt,
+    respondToApproval,
+    listThreads,
+    readThread,
+    startThread,
+    triggerSnapshot,
+    restoreSnapshot,
+    systemLock,
   }
 }
 
-export function deriveContentBlocks(events: ChatEvent[]): ContentBlock[] {
-  const blocks: ContentBlock[] = []
-  let textBuf = ''
-  const spanToIndex = new Map<string, number>()
-  const pendingAgentCalls: Array<{ callId: string; blockIdx: number }> = []
-
-  const flushText = () => {
-    if (textBuf.trim()) {
-      blocks.push({ type: 'text', content: textBuf })
-      textBuf = ''
-    }
-  }
-
-  for (const evt of events) {
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(evt.payload)
-    } catch {
-      continue
-    }
-
-    if (evt.event_type === 'llm_chunk') {
-      textBuf += (parsed.content as string) || ''
-      continue
-    }
-
-    if (evt.event_type === 'tool_call') {
-      const toolName = (parsed.tool as string) || ''
-      if (toolName.startsWith('agent__')) {
-        flushText()
-        const blockIdx = blocks.length
-        blocks.push({
-          type: 'subagent',
-          span_id: '',
-          agent_name: toolName,
-          task: ((parsed.args as Record<string, unknown>)?.task as string) || '',
-          status: 'running',
-          steps: [],
-        })
-        pendingAgentCalls.push({ callId: (parsed.call_id as string) || '', blockIdx })
-      }
-      continue
-    }
-
-    if (evt.event_type === 'subagent_start') {
-      const spanId = (parsed.span_id as string) || ''
-      const pending = pendingAgentCalls.shift()
-      if (pending) {
-        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
-        block.span_id = spanId
-        block.agent_name = (parsed.agent_name as string) || block.agent_name
-        block.task = (parsed.task as string) || ''
-        spanToIndex.set(spanId, pending.blockIdx)
-      }
-      continue
-    }
-
-    if (evt.event_type === 'tool_result') {
-      const callId = (parsed.call_id as string) || ''
-      const pendingIdx = pendingAgentCalls.findIndex((p) => p.callId === callId)
-      if (pendingIdx !== -1) {
-        const pending = pendingAgentCalls[pendingIdx]
-        pendingAgentCalls.splice(pendingIdx, 1)
-        const block = blocks[pending.blockIdx] as Extract<ContentBlock, { type: 'subagent' }>
-        if (!block.span_id) {
-          block.status = 'done'
-          if (typeof parsed.result === 'string') block.result = parsed.result
-        }
-      }
-      continue
-    }
-
-    if (evt.event_type === 'subagent_step') {
-      const spanId = (parsed.span_id as string) || ''
-      const idx = spanToIndex.get(spanId)
-      if (idx !== undefined) {
-        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
-        block.steps.push({
-          step_type: (parsed.step_type as SubAgentStep['step_type']) || 'thinking',
-          content: parsed.content as string | undefined,
-          tool: parsed.tool as string | undefined,
-          args: parsed.args as Record<string, unknown> | undefined,
-          result: parsed.result as string | undefined,
-          truncated: parsed.truncated as boolean | undefined,
-        })
-        if (parsed.step_type === 'final_answer' && parsed.content) {
-          block.result = parsed.content as string
-        }
-      }
-      continue
-    }
-
-    if (evt.event_type === 'subagent_end') {
-      const spanId = (parsed.span_id as string) || ''
-      const idx = spanToIndex.get(spanId)
-      if (idx !== undefined) {
-        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
-        block.status = 'done'
-        if (!block.result && typeof parsed.result === 'string') {
-          block.result = parsed.result
-        }
-      }
-      continue
-    }
-
-    if (evt.event_type === 'subagent_error') {
-      const spanId = (parsed.span_id as string) || ''
-      const idx = spanToIndex.get(spanId)
-      if (idx !== undefined) {
-        const block = blocks[idx] as Extract<ContentBlock, { type: 'subagent' }>
-        block.status = 'error'
-        block.error = (parsed.message as string) || '未知错误'
-      }
-      continue
-    }
-  }
-
-  flushText()
-  return blocks
-}
+export type WsV2Hook = ReturnType<typeof useWsV2>
