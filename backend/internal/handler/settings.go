@@ -63,6 +63,8 @@ type Settings struct {
 	SnapshotDir            string `json:"snapshot_dir"`
 	SnapshotEnabled        bool   `json:"snapshot_enabled"`
 	SnapshotIncludeSecrets bool   `json:"snapshot_include_secrets"`
+
+	ProtocolV2 bool `json:"protocol_v2"`
 }
 
 func DefaultSettings() Settings {
@@ -87,6 +89,7 @@ func DefaultSettings() Settings {
 		SidebarVisible:   true,
 		SidebarView:      "conversation",
 		TrashDir:         "",
+		ProtocolV2:       true,
 		SnapshotEnabled:  false,
 	}
 }
