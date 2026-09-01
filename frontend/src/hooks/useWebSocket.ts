@@ -143,7 +143,7 @@ export function useWsV2(callbacks: WsV2Callbacks) {
           clientInfo: {
             name: 'FlowPartner',
             title: 'FlowPartner',
-            version: window.flowPartner.getVersion?.() || '0.3.0',
+            version: window.flowPartner.getVersion?.() ?? '',
           },
         })
         sendNotification('initialized')

@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+const gracefulShutdownTimeout = 2 * time.Second
+
 func main() {
 	cfg := config.Load()
 	initializeKeystore()
@@ -162,7 +164,16 @@ func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
 		log.Println("[snapshot] 无法解析工作目录，快照未启用")
 		return
 	}
-	if err := snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+	if err := snapshotMgr.Configure(
+		workingDir,
+		settings.SnapshotDir,
+		settings.SnapshotEnabled,
+		settings.SnapshotIncludeSecrets,
+		settings.SnapshotDebounceSecs,
+		settings.SnapshotTickerMins,
+		settings.SnapshotRetentionDays,
+		settings.SnapshotMaxStorageMB,
+	); err != nil {
 		log.Printf("[snapshot] 启动配置失败: %v", err)
 	}
 }
@@ -206,7 +217,7 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, wsHandler *handl
 	}()
 	select {
 	case <-gracefulDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(gracefulShutdownTimeout):
 		log.Println("gRPC graceful stop timed out, forcing stop")
 		grpcServer.Stop()
 	}
@@ -214,7 +225,7 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, wsHandler *handl
 	wsHandler.Close()
 	threadMgr.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server did not shut down within timeout: %v", err)

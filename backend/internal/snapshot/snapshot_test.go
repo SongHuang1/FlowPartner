@@ -216,7 +216,7 @@ func TestRetention_TimeAndCapacity(t *testing.T) {
 		}
 	}
 	// 20260101 已超过 30 天 → 应被删除
-	deleted, err := Cleanup(dir, time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC))
+	deleted, err := Cleanup(dir, time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC), 30, 5120*1024*1024)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestRetention_TimeAndCapacity(t *testing.T) {
 	// 未完成快照应被清理
 	incomplete := filepath.Join(dir, "20260820-000000")
 	os.MkdirAll(incomplete, 0o755)
-	deleted, err = Cleanup(dir, time.Now())
+	deleted, err = Cleanup(dir, time.Now(), 30, 5120*1024*1024)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestRetention_SingleHugeSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 30 天内完整快照不应被清理误删；超容终止逻辑由 Cleanup 内部分支保证（单快照 > 5GB 时 break）。
-	deleted, err := Cleanup(dir, time.Now())
+	deleted, err := Cleanup(dir, time.Now(), 30, 5120*1024*1024)
 	if err != nil {
 		t.Fatal(err)
 	}

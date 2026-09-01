@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const maxUniqueNameAttempts = 1000
+
 type ModelConfigHandler struct{}
 
 func (h *ModelConfigHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +354,7 @@ func ensureUniqueName(name string, configs []ModelConfig, excludeID string) (str
 	if !existingNames[name] {
 		return name, nil
 	}
-	for i := 1; i < 1000; i++ {
+	for i := 1; i < maxUniqueNameAttempts; i++ {
 		candidate := fmt.Sprintf("%s (%d)", name, i)
 		if !existingNames[candidate] {
 			return candidate, nil

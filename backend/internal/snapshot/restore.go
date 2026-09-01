@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -85,7 +86,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if err := rebuildSymlink(opts.WorkingDir, link); err != nil {
+		if err := rebuildSymlink(opts.WorkingDir, snapshotPath, link); err != nil {
 			result.SymlinkFailures = append(result.SymlinkFailures, SkippedFile{
 				Path:   link.Path,
 				Reason: "symlink_restore_failed",
@@ -268,19 +269,76 @@ func deleteExtras(ctx context.Context, snapshotPath, workingDir string, ex *Excl
 	return deleted, nil
 }
 
-func rebuildSymlink(workingDir string, link SymlinkEntry) error {
+func rebuildSymlink(workingDir, snapshotPath string, link SymlinkEntry) error {
 	dest := filepath.Join(workingDir, filepath.FromSlash(link.Path))
 	if err := ensureRealParent(dest); err != nil {
 		return err
 	}
-	// 目标已存在（文件/目录/旧链接）时先移除。
 	if _, err := os.Lstat(dest); err == nil {
 		if err := os.Remove(dest); err != nil {
 			return err
 		}
 	}
-	return os.Symlink(link.Target, dest)
+	if err := os.Symlink(link.Target, dest); err != nil {
+		if runtime.GOOS == "windows" {
+			return windowsSymlinkFallback(snapshotPath, workingDir, link, dest)
+		}
+		return err
+	}
+	return nil
 }
+
+// windowsSymlinkFallback 在 Windows 上符号链接创建失败时，尝试从快照中复制目标文件/目录。
+// Windows 创建符号链接需要管理员权限或开发者模式，否则 os.Symlink 会失败。
+func windowsSymlinkFallback(snapshotPath, workingDir string, link SymlinkEntry, dest string) error {
+	resolvedTarget := link.Target
+	if !filepath.IsAbs(resolvedTarget) {
+		resolvedTarget = filepath.Join(filepath.Dir(dest), resolvedTarget)
+	}
+	if !filepath.IsAbs(resolvedTarget) {
+		resolvedTarget = filepath.Join(workingDir, resolvedTarget)
+	}
+	resolvedTarget = filepath.Clean(resolvedTarget)
+
+	targetInfo, err := os.Stat(resolvedTarget)
+	if err != nil {
+		return fmt.Errorf("符号链接创建失败且目标不可读（Windows 需管理员权限或开发者模式）: %w", err)
+	}
+	if targetInfo.IsDir() {
+		return copyDir(resolvedTarget, dest)
+	}
+	return copyFile(resolvedTarget, dest, 0o644)
+}
+
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if err := copyFile(srcPath, dstPath, info.Mode()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+
 
 // ProtectedEntry 受保护文件条目（还原确认框展示：被排除/跳过的文件）。
 type ProtectedEntry struct {

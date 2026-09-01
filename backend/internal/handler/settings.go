@@ -63,6 +63,10 @@ type Settings struct {
 	SnapshotDir            string `json:"snapshot_dir"`
 	SnapshotEnabled        bool   `json:"snapshot_enabled"`
 	SnapshotIncludeSecrets bool   `json:"snapshot_include_secrets"`
+	SnapshotDebounceSecs   int    `json:"snapshot_debounce_secs"`
+	SnapshotTickerMins     int    `json:"snapshot_ticker_mins"`
+	SnapshotRetentionDays  int    `json:"snapshot_retention_days"`
+	SnapshotMaxStorageMB   int64  `json:"snapshot_max_storage_mb"`
 
 	ProtocolV2 bool `json:"protocol_v2"`
 }
@@ -90,7 +94,11 @@ func DefaultSettings() Settings {
 		SidebarView:      "conversation",
 		TrashDir:         "",
 		ProtocolV2:       true,
-		SnapshotEnabled:  false,
+		SnapshotEnabled:        false,
+		SnapshotDebounceSecs:   60,
+		SnapshotTickerMins:     15,
+		SnapshotRetentionDays:  30,
+		SnapshotMaxStorageMB:   5120,
 	}
 }
 
@@ -136,6 +144,19 @@ func LoadSettings() Settings {
 		settings.WindowHeight = defaults.WindowHeight
 		settings.SidebarVisible = defaults.SidebarVisible
 		settings.SidebarView = defaults.SidebarView
+	}
+
+	if settings.SnapshotDebounceSecs == 0 {
+		settings.SnapshotDebounceSecs = defaults.SnapshotDebounceSecs
+	}
+	if settings.SnapshotTickerMins == 0 {
+		settings.SnapshotTickerMins = defaults.SnapshotTickerMins
+	}
+	if settings.SnapshotRetentionDays == 0 {
+		settings.SnapshotRetentionDays = defaults.SnapshotRetentionDays
+	}
+	if settings.SnapshotMaxStorageMB == 0 {
+		settings.SnapshotMaxStorageMB = defaults.SnapshotMaxStorageMB
 	}
 
 	settings.deriveFlatFields()
@@ -374,10 +395,10 @@ func (h *SettingsHandler) reconfigSnapshot(settings Settings) {
 	}
 	workingDir := ResolveWorkingDir(settings)
 	if workingDir == "" {
-		h.snapshotMgr.Configure("", "", false, false)
+		h.snapshotMgr.Configure("", "", false, false, 0, 0, 0, 0)
 		return
 	}
-	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets, settings.SnapshotDebounceSecs, settings.SnapshotTickerMins, settings.SnapshotRetentionDays, settings.SnapshotMaxStorageMB); err != nil {
 		// 配置失败（如工作区根不存在）时状态已置 error 并推送，不影响设置保存
 		log.Printf("[snapshot] 快照管理器配置失败: %v", err)
 	}
