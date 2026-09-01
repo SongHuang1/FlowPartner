@@ -68,7 +68,7 @@ func (e *ToolExecutor) executeEdit(ctx context.Context, args map[string]interfac
 	// 恰好匹配 1 次，执行替换
 	newContent := strings.Replace(content, oldString, newString, 1)
 
-	if err := os.WriteFile(resolved, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(resolved, []byte(newContent), 0o644); err != nil {
 		return ToolResult{Success: false, Result: fmt.Sprintf("写入文件失败: %v", err), ErrorCode: ErrToolError}
 	}
 

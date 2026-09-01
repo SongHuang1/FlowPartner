@@ -98,6 +98,10 @@ export interface Settings {
   snapshot_dir: string
   snapshot_enabled: boolean
   snapshot_include_secrets: boolean
+  snapshot_debounce_secs: number
+  snapshot_ticker_mins: number
+  snapshot_retention_days: number
+  snapshot_max_storage_mb: number
 
   protocol_v2: boolean
 }

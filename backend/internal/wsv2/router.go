@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"runtime"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -358,6 +359,5 @@ func Upgrade(w http.ResponseWriter, r *http.Request) (*Router, error) {
 }
 
 func getPlatformOS() string {
-	// Simplified; in production use runtime.GOOS
-	return "windows"
+	return runtime.GOOS
 }

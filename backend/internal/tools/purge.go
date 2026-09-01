@@ -125,7 +125,7 @@ func logPurgeAudit(ctx context.Context, target string, count int) {
 		return
 	}
 	path := filepath.Join(dir, "trash_audit.log")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		log.Printf("[purge] 无法写入审计日志: %v", err)
 		return

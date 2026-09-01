@@ -36,7 +36,7 @@ func (e *ToolExecutor) executeTrash(ctx context.Context, args map[string]interfa
 		return ToolResult{Success: false, Result: "缺少参数: path 或 paths 不能为空", ErrorCode: ErrToolError}
 	}
 
-	if err := os.MkdirAll(trashDir, 0755); err != nil {
+	if err := os.MkdirAll(trashDir, 0o755); err != nil {
 		return ToolResult{Success: false, Result: fmt.Sprintf("创建回收站目录失败: %v", err), ErrorCode: ErrToolError}
 	}
 
@@ -158,7 +158,7 @@ func copyFile(src, dest string) error {
 	}
 	defer in.Close()
 
-	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func copyFile(src, dest string) error {
 }
 
 func copyDir(src, dest string) error {
-	if err := os.MkdirAll(dest, 0755); err != nil {
+	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
 	entries, err := os.ReadDir(src)
@@ -228,7 +228,7 @@ func writeTrashMeta(trashDir, name, originalPath string) {
 		return
 	}
 	metaPath := filepath.Join(trashDir, name+".meta.json")
-	if err := os.WriteFile(metaPath, data, 0600); err != nil {
+	if err := os.WriteFile(metaPath, data, 0o600); err != nil {
 		log.Printf("[trash] 写入元数据失败: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import type { Settings } from '@/types'
 import { getSettings, saveSettings } from '@/lib/api'
 
+// 注意：默认值必须与 backend/internal/handler/settings.go 的 DefaultSettings() 保持同步。
 export function DefaultSettings(): Settings {
   return {
     model: 'gpt-4',
@@ -26,6 +27,10 @@ export function DefaultSettings(): Settings {
     snapshot_dir: '',
     snapshot_enabled: false,
     snapshot_include_secrets: false,
+    snapshot_debounce_secs: 60,
+    snapshot_ticker_mins: 15,
+    snapshot_retention_days: 30,
+    snapshot_max_storage_mb: 5120,
     protocol_v2: true,
   }
 }
