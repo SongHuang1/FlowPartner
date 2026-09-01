@@ -1,11 +1,11 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Message, PermissionRequestPayload, AgentMeta } from '@/types'
+import type { Message, AgentMeta } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { useWebSocket, deriveContentBlocks } from '@/hooks/useWebSocket'
+import { useWsV2, type ApprovalRequestPayload as WsApprovalRequest } from '@/hooks/useWebSocket'
 import { listAgents } from '@/lib/api'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
@@ -14,7 +14,6 @@ import { ConnectionStatus } from './ConnectionStatus'
 import { PermissionDialog } from './PermissionDialog'
 import { AgentSelector } from './AgentSelector'
 import { MentionTextarea } from './MentionTextarea'
-
 
 export function MessageList({ messages, streamingContent, agentNames }: { messages: Message[]; streamingContent: string; agentNames: Set<string> }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -66,9 +65,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
   }, [])
 
-  useEffect(() => {
-    adjustHeight()
-  }, [value, adjustHeight])
+  useEffect(() => { adjustHeight() }, [value, adjustHeight])
 
   const handleSend = () => {
     const trimmed = value.trim()
@@ -108,24 +105,11 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
           rows={1}
         />
         {loading ? (
-          <Button
-            size="icon"
-            variant="destructive"
-            onClick={handleStop}
-            disabled={cancelClicked}
-            aria-label="停止"
-            className="shrink-0"
-          >
+          <Button size="icon" variant="destructive" onClick={handleStop} disabled={cancelClicked} aria-label="停止" className="shrink-0">
             <Square className="w-4 h-4" />
           </Button>
         ) : (
-          <Button
-            size="icon"
-            disabled={!value.trim() || disabled}
-            onClick={handleSend}
-            aria-label="发送"
-            className="shrink-0"
-          >
+          <Button size="icon" disabled={!value.trim() || disabled} onClick={handleSend} aria-label="发送" className="shrink-0">
             <Send className="w-4 h-4" />
           </Button>
         )}
@@ -159,101 +143,78 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation }: ChatAreaProps) {
-  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeWithBlocks, updateContentBlocks } = conversation
+  const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
-  const {
-    connected,
-    reconnecting,
-    reconnectAttempts,
-    isReconnectExhausted,
-    processing,
-    sendMessage: wsSendMessage,
-    sendCancel,
-    sendPermissionResponse,
-    manualReconnect,
-    onStreamChunk,
-    onAgentsChanged,
-    onError,
-    onSecurityEvent,
-    onPermissionRequest,
-    events,
-  } = useWebSocket()
 
   const [inputValue, setInputValue] = useState('')
   const [chatError, setChatError] = useState<string | null>(null)
-  const [securityWarning, setSecurityWarning] = useState<string | null>(null)
-  const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null)
+  const [pendingApproval, setPendingApproval] = useState<WsApprovalRequest | null>(null)
   const [agents, setAgents] = useState<AgentMeta[]>([])
   const [executorAgentId, setExecutorAgentId] = useState('')
   const agentNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
 
+  const currentThreadIdRef = useRef<string>('')
+  const currentTurnIdRef = useRef<string>('')
+  const [processing, setProcessing] = useState(false)
+
   const refreshAgents = useCallback(() => {
-    listAgents()
-      .then((items) => setAgents(items))
-      .catch(() => {})
+    listAgents().then(setAgents).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    refreshAgents()
+  useEffect(() => { refreshAgents() }, [refreshAgents])
+
+  const handleThreadEvent = useCallback((method: string, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined
+    switch (method) {
+      case 'turn/started':
+        setProcessing(true)
+        currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
+        break
+      case 'item/agentMessage/delta': {
+        const delta = (p as { delta?: string })?.delta
+        if (typeof delta === 'string') appendStreamChunk(delta)
+        break
+      }
+      case 'item/completed': {
+        const text = (p as { item?: { text?: string } })?.item?.text
+        if (typeof text === 'string') finalizeStream(text)
+        setProcessing(false)
+        break
+      }
+      case 'turn/completed':
+      case 'turn/interrupted':
+        setProcessing(false)
+        finalizeStream()
+        break
+      case 'error': {
+        const msg = (p as { message?: string })?.message
+        if (msg) setChatError(msg)
+        setProcessing(false)
+        break
+      }
+    }
+  }, [appendStreamChunk, finalizeStream])
+
+  const handleGlobalEvent = useCallback((eventType: string, _payload: string) => {
+    if (eventType === 'agents_changed') refreshAgents()
   }, [refreshAgents])
 
-  // 监听 agents_changed 事件，自动刷新智能体列表
-  useEffect(() => {
-    const unregister = onAgentsChanged(() => {
-      refreshAgents()
-    })
-    return unregister
-  }, [onAgentsChanged, refreshAgents])
+  const handleRequestApproval = useCallback((payload: WsApprovalRequest) => {
+    setPendingApproval(payload)
+  }, [])
 
-  // 从事件流按时间顺序构建内容块（文本 + 子智能体卡片穿插）；
-  // 检测到终态事件（final_answer）时用当前完整事件流定稿消息，保证文本不缺尾
-  useEffect(() => {
-    const blocks = deriveContentBlocks(events)
-    updateContentBlocks(blocks)
-    for (let i = events.length - 1; i >= 0; i--) {
-      const evt = events[i]
-      if (evt.event_type !== 'final_answer') continue
-      try {
-        const parsed = JSON.parse(evt.payload) as { text?: unknown }
-        if (typeof parsed.text === 'string') {
-          finalizeWithBlocks(parsed.text, blocks)
-        }
-      } catch {
-        console.error('Failed to parse final_answer payload:', evt.payload)
-      }
-      break
-    }
-  }, [events, updateContentBlocks, finalizeWithBlocks])
+  const { connectionState, connect, startChat, interrupt, respondToApproval } = useWsV2({
+    onThreadEvent: handleThreadEvent,
+    onGlobalEvent: handleGlobalEvent,
+    onRequestApproval: handleRequestApproval,
+  })
 
-  const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
-  const unregisterErrorRef = useRef<(() => void) | null>(null)
-  const unregisterSecurityRef = useRef<(() => void) | null>(null)
-  const unregisterPermissionRef = useRef<(() => void) | null>(null)
+  const connected = connectionState === 'connected'
+  const reconnecting = connectionState === 'reconnecting'
+  const isReconnectExhausted = connectionState === 'reconnect_exhausted'
 
-  useEffect(() => {
-    unregisterStreamChunkRef.current = onStreamChunk((chunk) => {
-      appendStreamChunk(chunk)
-    })
-    unregisterErrorRef.current = onError((message) => {
-      setChatError(message)
-    })
-    unregisterSecurityRef.current = onSecurityEvent((message) => {
-      setSecurityWarning(message)
-    })
-    unregisterPermissionRef.current = onPermissionRequest((payload) => {
-      setPendingPermission(payload)
-    })
-
-    return () => {
-      unregisterStreamChunkRef.current?.()
-      unregisterErrorRef.current?.()
-      unregisterSecurityRef.current?.()
-      unregisterPermissionRef.current?.()
-    }
-  }, [onStreamChunk, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk])
-
-  const handleSend = () => {
+  const handleSend = useCallback(async () => {
     const trimmed = inputValue.trim()
     if (!trimmed) return
 
@@ -264,41 +225,52 @@ export function ChatArea({ conversation }: ChatAreaProps) {
 
     setInputValue('')
     setChatError(null)
-    const history = sendMessage(trimmed)
+    sendMessage(trimmed)
 
-    const executor = executorAgentId || 'main'
-    console.log('[ChatArea] Sending message:', { content: trimmed, sessionId, executor, historyLen: history.length })
-    const sent = wsSendMessage(trimmed, sessionId, history, executor)
-    if (!sent) {
-      console.error('[ChatArea] Failed to send message via WebSocket')
-      if (!connected) {
-        setChatError('网络连接中，请稍后重试')
-      } else {
-        setChatError('消息发送失败，请重试')
-      }
+    try {
+      const result = await startChat({
+        input: [{ type: 'text', text: trimmed }],
+        agentId: executorAgentId || undefined,
+      })
+      currentThreadIdRef.current = result.threadId
+    } catch (e) {
+      setChatError(e instanceof Error ? e.message : '消息发送失败')
     }
-  }
+  }, [inputValue, lockStatus.locked, sendMessage, startChat, executorAgentId])
 
-  const handleStop = () => {
-    sendCancel(sessionId)
-  }
-
-  const handlePermissionDecision = (decision: 'allow' | 'allow_session' | 'deny') => {
-    if (pendingPermission) {
-      if (decision === 'allow_session') {
-        sendPermissionResponse(sessionId, pendingPermission.request_id, 'allow', 'session')
-      } else {
-        sendPermissionResponse(sessionId, pendingPermission.request_id, decision)
-      }
-      setPendingPermission(null)
+  const handleStop = useCallback(async () => {
+    if (currentThreadIdRef.current) {
+      try {
+        await interrupt({ threadId: currentThreadIdRef.current, turnId: currentTurnIdRef.current || undefined })
+      } catch { /* ignore */ }
     }
-  }
+  }, [interrupt])
+
+  const handlePermissionDecision = useCallback(async (decision: string) => {
+    if (pendingApproval) {
+      try {
+        await respondToApproval({
+          threadId: pendingApproval.threadId,
+          requestId: pendingApproval.requestId,
+          decision,
+        })
+      } catch { /* ignore */ }
+      setPendingApproval(null)
+    }
+  }, [pendingApproval, respondToApproval])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {pendingPermission && (
+      {pendingApproval && (
         <PermissionDialog
-          request={pendingPermission}
+          request={{
+            request_id: String(pendingApproval.requestId),
+            tool: pendingApproval.tool || 'bash',
+            path: pendingApproval.path || '',
+            operation: pendingApproval.operation || 'execute',
+            detail: pendingApproval.detail || '',
+            scope_options: pendingApproval.availableDecisions,
+          }}
           onDecision={handlePermissionDecision}
         />
       )}
@@ -312,32 +284,22 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           loading={processing}
           executorAgentId={executorAgentId}
           onExecutorChange={setExecutorAgentId}
-          onAgentsChanged={onAgentsChanged}
         />
       ) : (
         <>
           <ConnectionStatus
             connected={connected}
             reconnecting={reconnecting}
-            reconnectAttempts={reconnectAttempts}
+            reconnectAttempts={0}
             maxReconnectAttempts={5}
             reconnectExhausted={isReconnectExhausted}
-            onManualReconnect={manualReconnect}
+            onManualReconnect={connect}
           />
 
           <MessageList messages={messages} streamingContent={streamingContent} agentNames={agentNames} />
-          {processing && !streamingContent && (
-            <ThinkingIndicator />
-          )}
-          {securityWarning && (
-            <div className="px-4 py-2 text-sm text-amber-800 bg-amber-50 border-t border-amber-200">
-              {securityWarning}
-            </div>
-          )}
+          {processing && !streamingContent && <ThinkingIndicator />}
           {chatError && (
-            <div className="px-4 py-2 text-sm text-red-500 bg-red-50">
-              {chatError}
-            </div>
+            <div className="px-4 py-2 text-sm text-red-500 bg-red-50">{chatError}</div>
           )}
           <div className="flex items-center gap-3 px-4 pt-2">
             <AgentSelector
@@ -346,7 +308,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
               onChange={setExecutorAgentId}
               disabled={lockStatus.locked || processing}
             />
-            <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全，@智能体名 会建议主智能体调用子智能体</span>
+            <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全</span>
           </div>
           <ChatInput
             value={inputValue}

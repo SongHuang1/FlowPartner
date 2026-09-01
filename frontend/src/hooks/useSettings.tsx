@@ -26,6 +26,7 @@ export function DefaultSettings(): Settings {
     snapshot_dir: '',
     snapshot_enabled: false,
     snapshot_include_secrets: false,
+    protocol_v2: true,
   }
 }
 
