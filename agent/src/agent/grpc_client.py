@@ -226,7 +226,7 @@ class FlowPartnerClient:
         )
         self.tool_registry.register(
             name="bash",
-            description="Execute a shell command in the working directory. Timeout: 30 seconds.",
+            description="Execute a shell command in the working directory.",
             parameters={
                 "type": "object",
                 "properties": {

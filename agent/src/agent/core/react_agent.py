@@ -7,15 +7,11 @@ import time
 import uuid
 from typing import Any
 
+from agent.core.constants import LOOP_DEADLINE_SECONDS, MAX_ITERATIONS, STUCK_THRESHOLD, TOKEN_BUDGET
 from agent.core.turn_engine import TurnEngine, _LLMStreamResult
 from agent.core.tool_runtime import ToolCall
 
 logger = logging.getLogger(__name__)
-
-MAX_ITERATIONS = 15
-LOOP_DEADLINE_SECONDS = 5 * 60
-TOKEN_BUDGET = 60000000
-STUCK_THRESHOLD = 3
 
 DEFAULT_SYSTEM_PROMPT = (
     "你是一个强大的本地 AI 助手。你可以使用工具读取文件、写入文件、浏览目录等，"

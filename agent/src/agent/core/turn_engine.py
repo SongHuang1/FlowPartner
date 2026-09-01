@@ -15,15 +15,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
+from agent.core.constants import LOOP_DEADLINE_SECONDS, MAX_ITERATIONS, MAX_TOOL_RESULT_CHARS, STUCK_THRESHOLD
 from agent.core.steer import SteerInput, TurnContext
 from agent.core.tool_runtime import ParallelToolRuntime, ToolCall, ToolResult, WRITE_TOOLS
 
 logger = logging.getLogger(__name__)
-
-MAX_ITERATIONS = 15
-LOOP_DEADLINE_SECONDS = 5 * 60
-STUCK_THRESHOLD = 3
-MAX_TOOL_RESULT_CHARS = 10000
 
 
 @dataclass
