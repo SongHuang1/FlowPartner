@@ -4,6 +4,7 @@ const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_INTERVAL_MS = 3000
 const PORT_MIN = 1024
 const PORT_MAX = 65535
+const REQUEST_TIMEOUT_MS = 30000
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'reconnect_exhausted'
 
@@ -33,11 +34,18 @@ interface WsV2Callbacks {
   onGlobalEvent?: (eventType: string, payload: string) => void
 }
 
+interface PendingRequest {
+  resolve: (v: unknown) => void
+  reject: (e: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
 export function useWsV2(callbacks: WsV2Callbacks) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
   const requestIdRef = useRef(0)
-  const pendingReqsRef = useRef<Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>>(new Map())
+  const pendingReqsRef = useRef<Map<string, PendingRequest>>(new Map())
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const shouldReconnectRef = useRef(true)
@@ -46,10 +54,6 @@ export function useWsV2(callbacks: WsV2Callbacks) {
   const apiRef = useRef<{
     connect: () => void
     disconnect: () => void
-    handshake: () => void
-    attemptReconnect: () => void
-    handleEnvelope: (env: WsEnvelope) => void
-    handleLegacyMessage: (data: string) => void
   } | null>(null)
 
   useEffect(() => {
@@ -64,14 +68,14 @@ export function useWsV2(callbacks: WsV2Callbacks) {
     const id = `req-${++requestIdRef.current}`
     const envelope: WsEnvelope = { id, method, params: params ?? {} }
     return new Promise((resolve, reject) => {
-      pendingReqsRef.current.set(id, { resolve, reject })
-      ws.send(JSON.stringify(envelope))
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (pendingReqsRef.current.has(id)) {
           pendingReqsRef.current.delete(id)
           reject(new Error(`请求超时: ${method}`))
         }
-      }, 30000)
+      }, REQUEST_TIMEOUT_MS)
+      pendingReqsRef.current.set(id, { resolve, reject, timer })
+      ws.send(JSON.stringify(envelope))
     })
   }, [])
 
@@ -86,12 +90,13 @@ export function useWsV2(callbacks: WsV2Callbacks) {
 
     const handleEnvelope = (env: WsEnvelope) => {
       if (env.id !== undefined && pendingReqsRef.current.has(String(env.id))) {
-        const { resolve, reject } = pendingReqsRef.current.get(String(env.id))!
+        const pending = pendingReqsRef.current.get(String(env.id))!
         pendingReqsRef.current.delete(String(env.id))
+        clearTimeout(pending.timer)
         if (env.error) {
-          reject(new Error(env.error.message))
+          pending.reject(new Error(env.error.message))
         } else {
-          resolve(env.result)
+          pending.resolve(env.result)
         }
         return
       }
@@ -137,7 +142,19 @@ export function useWsV2(callbacks: WsV2Callbacks) {
       } catch { /* ignore */ }
     }
 
-    const handshake = async () => {
+    const waitForBackendPort = async (): Promise<number> => {
+      for (let i = 0; i < 60; i++) {
+        if (!mountedRef.current) throw new Error('component unmounted')
+        const port = await window.flowPartner.fetchBackendPort()
+        if (typeof port === 'number' && !isNaN(port) && port >= PORT_MIN && port <= PORT_MAX) {
+          return port
+        }
+        await new Promise(r => setTimeout(r, 500))
+      }
+      throw new Error('等待后端就绪超时')
+    }
+
+    const handshake = async (ws: WebSocket) => {
       try {
         await sendRequest('initialize', {
           clientInfo: {
@@ -147,8 +164,11 @@ export function useWsV2(callbacks: WsV2Callbacks) {
           },
         })
         sendNotification('initialized')
-      } catch {
-        wsRef.current?.close()
+      } catch (e) {
+        console.warn('[WS] handshake failed:', e)
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close()
+        }
       }
     }
 
@@ -158,8 +178,9 @@ export function useWsV2(callbacks: WsV2Callbacks) {
         setConnectionState('reconnect_exhausted')
         return
       }
-      setConnectionState('reconnecting')
       reconnectAttemptsRef.current++
+      setReconnectAttempts(reconnectAttemptsRef.current)
+      setConnectionState('reconnecting')
       reconnectTimerRef.current = setTimeout(() => {
         doConnect()
       }, RECONNECT_INTERVAL_MS)
@@ -173,18 +194,16 @@ export function useWsV2(callbacks: WsV2Callbacks) {
       shouldReconnectRef.current = true
 
       try {
-        const port = await window.flowPartner.fetchBackendPort()
-        if (typeof port !== 'number' || isNaN(port) || port < PORT_MIN || port > PORT_MAX) {
-          throw new Error(`无效端口: ${port}`)
-        }
+        const port = await waitForBackendPort()
 
         const ws = new WebSocket(`ws://localhost:${port}/ws`)
         wsRef.current = ws
 
         ws.onopen = () => {
           reconnectAttemptsRef.current = 0
+          setReconnectAttempts(0)
           setConnectionState('connected')
-          handshake()
+          handshake(ws)
         }
 
         ws.onmessage = (event) => {
@@ -198,7 +217,10 @@ export function useWsV2(callbacks: WsV2Callbacks) {
 
         ws.onclose = () => {
           wsRef.current = null
-          pendingReqsRef.current.forEach(({ reject }) => reject(new Error('连接已断开')))
+          pendingReqsRef.current.forEach(({ reject, timer }) => {
+            clearTimeout(timer)
+            reject(new Error('连接已断开'))
+          })
           pendingReqsRef.current.clear()
           if (shouldReconnectRef.current && mountedRef.current) {
             attemptReconnect()
@@ -211,7 +233,11 @@ export function useWsV2(callbacks: WsV2Callbacks) {
           ws.close()
         }
       } catch {
-        setConnectionState('disconnected')
+        if (mountedRef.current && shouldReconnectRef.current) {
+          attemptReconnect()
+        } else {
+          setConnectionState('disconnected')
+        }
       }
     }
 
@@ -229,10 +255,6 @@ export function useWsV2(callbacks: WsV2Callbacks) {
     apiRef.current = {
       connect: doConnect,
       disconnect: doDisconnect,
-      handshake,
-      attemptReconnect,
-      handleEnvelope,
-      handleLegacyMessage,
     }
 
     doConnect()
@@ -244,6 +266,8 @@ export function useWsV2(callbacks: WsV2Callbacks) {
   }, [sendRequest, sendNotification])
 
   const connect = useCallback(() => {
+    reconnectAttemptsRef.current = 0
+    setReconnectAttempts(0)
     apiRef.current?.connect()
   }, [])
 
@@ -317,6 +341,7 @@ export function useWsV2(callbacks: WsV2Callbacks) {
 
   return {
     connectionState,
+    reconnectAttempts,
     sendRequest,
     sendNotification,
     connect,

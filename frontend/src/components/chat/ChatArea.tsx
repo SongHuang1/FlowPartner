@@ -204,7 +204,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     setPendingApproval(payload)
   }, [])
 
-  const { connectionState, connect, startChat, interrupt, respondToApproval } = useWsV2({
+  const { connectionState, reconnectAttempts, connect, startChat, interrupt, respondToApproval } = useWsV2({
     onThreadEvent: handleThreadEvent,
     onGlobalEvent: handleGlobalEvent,
     onRequestApproval: handleRequestApproval,
@@ -290,7 +290,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           <ConnectionStatus
             connected={connected}
             reconnecting={reconnecting}
-            reconnectAttempts={0}
+            reconnectAttempts={reconnectAttempts}
             maxReconnectAttempts={5}
             reconnectExhausted={isReconnectExhausted}
             onManualReconnect={connect}
