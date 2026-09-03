@@ -44,6 +44,7 @@ class ReactAgent:
         self.tools = tool_registry
 
     async def _emit(self, event_type: str, payload: dict) -> None:
+        payload["thread_id"] = self.session_id
         await self.send_event(self.session_id, event_type, payload)
 
     def _check_loop_termination(

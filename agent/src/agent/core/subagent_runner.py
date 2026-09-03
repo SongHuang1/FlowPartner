@@ -48,6 +48,7 @@ class SubAgentRunner:
             self.session_id,
             event_type,
             {
+                "thread_id": self.session_id,
                 "agent_id": self.agent_id,
                 "agent_name": self.agent_name,
                 "depth": self.depth,

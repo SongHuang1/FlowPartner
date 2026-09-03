@@ -325,6 +325,9 @@ class FlowPartnerClient:
 
     async def send_event(self, session_id: str, event_type: str, payload: dict, queue: asyncio.Queue):
         event = agent_pb2.AgentEvent(session_id=session_id)
+        thread_id = payload.get("thread_id", "")
+        if thread_id:
+            event.thread_id = thread_id
         _fill_event_payload(event, event_type, payload)
         await queue.put(event)
 
@@ -494,9 +497,10 @@ class FlowPartnerClient:
                     finish_reason = choices[0]["finish_reason"]
 
                 if send_event_func and delta.get("content"):
-                    await send_event_func(session_id, "llm_chunk", {
-                        "content": delta["content"],
-                        "iteration": iteration,
+                    await send_event_func(session_id, "item_delta", {
+                        "item_type": "agentMessage",
+                        "delta": delta["content"],
+                        "thread_id": session_id,
                     })
 
             if tool_calls_map:

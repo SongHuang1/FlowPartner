@@ -204,7 +204,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     setPendingApproval(payload)
   }, [])
 
-  const { connectionState, reconnectAttempts, connect, startChat, interrupt, respondToApproval } = useWsV2({
+  const { connectionState, reconnectAttempts, connect, startThread, startChat, interrupt, respondToApproval } = useWsV2({
     onThreadEvent: handleThreadEvent,
     onGlobalEvent: handleGlobalEvent,
     onRequestApproval: handleRequestApproval,
@@ -228,15 +228,23 @@ export function ChatArea({ conversation }: ChatAreaProps) {
     sendMessage(trimmed)
 
     try {
+      let threadId = currentThreadIdRef.current
+      if (!threadId) {
+        const threadResult = await startThread({
+          agentId: executorAgentId || undefined,
+        })
+        threadId = (threadResult as { threadId: string }).threadId
+        currentThreadIdRef.current = threadId
+      }
       const result = await startChat({
+        threadId,
         input: [{ type: 'text', text: trimmed }],
-        agentId: executorAgentId || undefined,
       })
       currentThreadIdRef.current = result.threadId
     } catch (e) {
       setChatError(e instanceof Error ? e.message : '消息发送失败')
     }
-  }, [inputValue, lockStatus.locked, sendMessage, startChat, executorAgentId])
+  }, [inputValue, lockStatus.locked, sendMessage, startThread, startChat, executorAgentId])
 
   const handleStop = useCallback(async () => {
     if (currentThreadIdRef.current) {
