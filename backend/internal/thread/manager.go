@@ -113,6 +113,17 @@ func (m *Manager) GetThread(id string) (*Thread, bool) {
 	return t, ok
 }
 
+// ThreadIDs returns all registered thread IDs (for debugging).
+func (m *Manager) ThreadIDs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ids := make([]string, 0, len(m.threads))
+	for id := range m.threads {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (m *Manager) ListThreads(cursor string, limit int, archived *bool) ([]*Thread, string) {
 	m.mu.RLock()
 	all := make([]*Thread, 0, len(m.threads))
@@ -213,8 +224,10 @@ func (t *Thread) Fanout(method string, params interface{}) {
 	for id, c := range t.conns {
 		conns[id] = c
 	}
+	connCount := len(t.conns)
 	t.mu.RUnlock()
 
+	log.Printf("[Thread:%s] Fanout method=%s conns=%d", t.ID, method, connCount)
 	for _, conn := range conns {
 		if err := conn.SendNotification(method, params); err != nil {
 			log.Printf("[Thread:%s] fanout failed: %v", t.ID, err)

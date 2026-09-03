@@ -206,6 +206,9 @@ func (r *Router) attachThread(env Envelope) {
 	if t, ok := r.threadMgr.GetThread(threadID); ok {
 		t.AttachConn(r.connID, r)
 		r.attached[threadID] = struct{}{}
+		log.Printf("[WS] attached thread %s to conn %s", threadID, r.connID)
+	} else {
+		log.Printf("[WS] thread not found for attach: %s", threadID)
 	}
 }
 
@@ -309,6 +312,7 @@ func (r *Router) SendNotification(method string, params interface{}) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("[WS] SendNotification method=%s connID=%s", method, r.connID)
 	r.send(env)
 	return nil
 }

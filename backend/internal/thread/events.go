@@ -22,9 +22,11 @@ func (c *EventConverter) Convert(event *proto.AgentEvent) {
 	threadID := event.ThreadId
 	turnID := event.TurnId
 
+	log.Printf("[EventConverter] Convert called: threadID=%q turnID=%q payload=%T session_id=%q", threadID, turnID, event.Payload, event.SessionId)
+
 	thread, ok := c.manager.GetThread(threadID)
 	if !ok {
-		log.Printf("[EventConverter] thread not found: %s", threadID)
+		log.Printf("[EventConverter] thread not found: %s (have threads: %v)", threadID, c.manager.ThreadIDs())
 		return
 	}
 
@@ -61,6 +63,7 @@ func (c *EventConverter) Convert(event *proto.AgentEvent) {
 		})
 
 	case *proto.AgentEvent_ItemDelta:
+		log.Printf("[EventConverter] item_delta: item_type=%s delta=%q thread=%s", p.ItemDelta.ItemType, p.ItemDelta.Delta, threadID)
 		c.emit(thread, "item/"+p.ItemDelta.ItemType+"/delta", map[string]interface{}{
 			"threadId": threadID,
 			"turnId":   turnID,
@@ -115,6 +118,7 @@ func (c *EventConverter) Convert(event *proto.AgentEvent) {
 }
 
 func (c *EventConverter) emit(thread *Thread, method string, params interface{}) {
+	log.Printf("[EventConverter] emit method=%s thread=%s", method, thread.ID)
 	thread.Fanout(method, params)
 }
 

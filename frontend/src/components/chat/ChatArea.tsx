@@ -165,6 +165,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
   useEffect(() => { refreshAgents() }, [refreshAgents])
 
   const handleThreadEvent = useCallback((method: string, params: unknown) => {
+    console.log('[WS Event]', method, params)
     const p = params as Record<string, unknown> | undefined
     switch (method) {
       case 'turn/started':
