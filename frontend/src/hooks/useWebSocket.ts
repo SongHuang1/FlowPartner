@@ -156,11 +156,12 @@ export function useWsV2(callbacks: WsV2Callbacks) {
 
     const handshake = async (ws: WebSocket) => {
       try {
+        const version = await window.flowPartner.getVersion?.() ?? ''
         await sendRequest('initialize', {
           clientInfo: {
             name: 'FlowPartner',
             title: 'FlowPartner',
-            version: window.flowPartner.getVersion?.() ?? '',
+            version,
           },
         })
         sendNotification('initialized')
