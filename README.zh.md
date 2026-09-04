@@ -14,6 +14,43 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 - **安全优先于功能。** 危险操作默认拦截。用户可以覆盖，但必须主动、有意识地选择。
 - **永远可恢复。**
 
+---
+
+## 项目亮点
+
+### 工业级安全架构
+
+- **双层路径验证**：所有文件操作经过词法检查 + 符号链接解析，防止路径穿越攻击（`path_guard.go`）
+- **AES-256-GCM + Argon2id 加密**：API Key 使用业界标准加密算法，内存中仅存解密态，锁定时显式零化（`crypto/`、`keystore/`）
+- **速率限制防暴力破解**：5 次密码错误触发 30 秒锁定，兼顾安全与可用性（`keystore.go`）
+- **错误信息脱敏**：7 个正则模式过滤日志中的 API Key、Token、密码等敏感信息（`sanitize/`）
+- **删除保护**：shell 删除命令（rm/del/Remove-Item 等）统一拦截，引导使用可恢复的回收站机制（`delete_guard.go`）
+
+### 高可靠通信链路
+
+- **WebSocket + gRPC 双向流**：前端 WebSocket ↔ Go bridge ↔ gRPC 双向流 ↔ Python Agent，全链路异步非阻塞
+- **服务端流式 LLM 调用**：SSE 流式解析 + 空闲超时 + 首 chunk 前自动重试，支持 OpenAI 兼容 API（`llm/`）
+- **背压控制**：WebSocket 入站队列满时返回过载错误，防止内存溢出（`wsv2/router.go`）
+- **优雅关闭**：gRPC GracefulStop → 断开 WebSocket → 关闭 HTTP，2 秒超时兜底（`main.go`）
+
+### 自动快照与可恢复性
+
+- **三路触发**：fsnotify 文件变更防抖 60s + 15min 周期兜底 + 锁屏 flush，确保不丢任何工作状态（`snapshot/manager.go`）
+- **还原前预快照**：每次还原自动先拍一张快照，保证还原操作本身也可逆（`snapshot/restore.go`）
+- **原子写入**：所有文件写入采用"写临时文件 + rename"策略，防止写入中途崩溃导致数据损坏（`snapshot/capture.go`、`storage/storage.go`）
+- **保留策略**：30 天 / 5GB 双维度自动清理，防止存储无限增长（`snapshot/retain.go`）
+
+### 多 Agent 编排
+
+- **主-子 Agent 架构**：主智能体通过 `agent__<name>` 工具调度子智能体，支持深度限制与事件转发（`agent_def.go`、`thread/`）
+- **定义热更新**：智能体定义变更经 gRPC 广播 `agents_changed` 失效通知，Python 侧 TTL 缓存自动刷新
+- **回合管理**：完整的 thread/turn 生命周期，支持中断（interrupt）和引导（steer）（`thread/handlers.go`）
+
+### 工程化质量
+
+- **CI/CD 全流程**：GitHub Actions 三语言（Go + TypeScript + Python）+ Electron 自动构建发布
+- **跨平台编译**：Windows / macOS / Linux × amd64 / arm64 一键交叉编译（`Makefile`）
+- **零冗余代码**：未使用的导入、被注释的旧代码、死代码测试一律清除
 
 ---
 
@@ -40,7 +77,8 @@ FlowPartner/
 ├── backend/              # Go 后端
 │   ├── cmd/server/main.go
 │   ├── internal/
-│   │   ├── bridge/       # WebSocket ↔ gRPC 桥接
+│   │   ├── wsv2/        # WebSocket v2 协议（信封、路由器、背压）
+│   │   ├── thread/       # 线程/回合管理（Manager、Handler、EventConverter）
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
 │   │   ├── tools/        # 工具执行层（read/write/bash/edit/trash/purge）
 │   │   ├── snapshot/     # 工作区快照子系统（自动捕获 + 还原）
@@ -64,6 +102,18 @@ FlowPartner/
 ├── Makefile
 └── README.md
 ```
+
+## 技术栈
+
+| 层级 | 技术 | 用途 |
+|------|------|------|
+| 前端 | Electron + React + TypeScript + Tailwind | 桌面应用 UI |
+| 后端 | Go 1.26+ | 通信桥接、工具执行、安全控制 |
+| Agent | Python 3.12+ | AI 编排、LLM 调用、工具注册 |
+| 通信 | WebSocket + gRPC 双向流 | 前后端 + 跨语言通信 |
+| 序列化 | Protocol Buffers | 跨语言消息定义 |
+| 加密 | AES-256-GCM + Argon2id | API Key 加密存储 |
+| 构建 | Makefile + GitHub Actions | CI/CD + 跨平台编译 |
 
 ## 贡献
 

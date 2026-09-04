@@ -14,6 +14,43 @@ This leads to a few non-negotiables:
 - **Safety over features.** Dangerous operations get blocked by default. The user can override, but they have to consciously choose to.
 - **Always recoverable.**
 
+---
+
+## Highlights
+
+### Industrial-Grade Security Architecture
+
+- **Dual-layer path validation**: All file operations pass through lexical checks + symlink resolution to prevent path traversal attacks (`path_guard.go`)
+- **AES-256-GCM + Argon2id encryption**: API Keys use industry-standard encryption, decrypted form lives only in memory, explicitly zeroized on lock (`crypto/`, `keystore/`)
+- **Rate limiting against brute force**: 5 failed password attempts trigger a 30-second lockout (`keystore.go`)
+- **Error sanitization**: 7 regex patterns filter API Keys, Tokens, passwords from logs (`sanitize/`)
+- **Delete protection**: Shell deletion commands (rm/del/Remove-Item, etc.) are intercepted and redirected to recoverable trash (`delete_guard.go`)
+
+### High-Reliability Communication Pipeline
+
+- **WebSocket + gRPC bidirectional streaming**: Frontend WebSocket ↔ Go bridge ↔ gRPC bidirectional stream ↔ Python Agent, fully async and non-blocking
+- **Server-streaming LLM calls**: SSE stream parsing + idle timeout + auto-retry before first chunk, OpenAI-compatible API support (`llm/`)
+- **Backpressure control**: WebSocket inbound queue returns overload errors when full, preventing memory exhaustion (`wsv2/router.go`)
+- **Graceful shutdown**: gRPC GracefulStop → disconnect WebSocket → close HTTP, with 2s timeout fallback (`main.go`)
+
+### Automatic Snapshots & Recoverability
+
+- **Triple-trigger mechanism**: fsnotify file change debounce 60s + 15min periodic fallback + lock screen flush, ensuring no work state is lost (`snapshot/manager.go`)
+- **Pre-restore snapshot**: Every restore automatically takes a snapshot first, making the restore operation itself reversible (`snapshot/restore.go`)
+- **Atomic writes**: All file writes use "write temp file + rename" strategy, preventing data corruption from interrupted writes (`snapshot/capture.go`, `storage/storage.go`)
+- **Retention policy**: 30-day / 5GB dual-dimension auto-cleanup, preventing unbounded storage growth (`snapshot/retain.go`)
+
+### Multi-Agent Orchestration
+
+- **Main-sub Agent architecture**: Main agent dispatches sub-agents via `agent__<name>` tools, with depth limits and event forwarding (`agent_def.go`, `thread/`)
+- **Hot-reloadable definitions**: Agent definition changes broadcast `agents_changed` invalidation via gRPC, Python-side TTL cache auto-refreshes
+- **Turn management**: Complete thread/turn lifecycle with interrupt and steer support (`thread/handlers.go`)
+
+### Engineering Quality
+
+- **Full CI/CD pipeline**: GitHub Actions for three languages (Go + TypeScript + Python) + Electron auto-build & release
+- **Cross-platform compilation**: Windows / macOS / Linux × amd64 / arm64 one-command cross-compile (`Makefile`)
+- **Zero dead code**: No unused imports, no commented-out legacy code, no dead-code tests
 
 ---
 
@@ -40,7 +77,8 @@ FlowPartner/
 ├── backend/              # Go backend
 │   ├── cmd/server/main.go
 │   ├── internal/
-│   │   ├── bridge/       # WebSocket ↔ gRPC bridge
+│   │   ├── wsv2/        # WebSocket v2 protocol (envelope, router, backpressure)
+│   │   ├── thread/       # Thread/turn management (Manager, Handler, EventConverter)
 │   │   ├── handler/      # HTTP handlers + WebSocket/gRPC handlers
 │   │   ├── tools/        # Tool execution layer (read/write/bash/edit/trash/purge)
 │   │   ├── snapshot/     # Workspace snapshot subsystem (auto capture + restore)
@@ -64,6 +102,18 @@ FlowPartner/
 ├── Makefile
 └── README.md
 ```
+
+## Tech stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | Electron + React + TypeScript + Tailwind | Desktop app UI |
+| Backend | Go 1.26+ | Communication bridge, tool execution, security control |
+| Agent | Python 3.12+ | AI orchestration, LLM calls, tool registry |
+| Communication | WebSocket + gRPC bidirectional streaming | Frontend-backend + cross-language communication |
+| Serialization | Protocol Buffers | Cross-language message definitions |
+| Encryption | AES-256-GCM + Argon2id | API Key encrypted storage |
+| Build | Makefile + GitHub Actions | CI/CD + cross-platform compilation |
 
 ## Contributing
 
