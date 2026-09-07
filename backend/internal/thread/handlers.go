@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 // HandlerError is a structured error from a thread/turn handler.
@@ -18,11 +20,17 @@ func (e *HandlerError) Error() string {
 	return fmt.Sprintf("[%d] %s", e.Code, e.Message)
 }
 
+// CommandSender sends a command to the Python agent.
+type CommandSender interface {
+	SendCommand(cmd *proto.ServerCommand)
+}
+
 // Handler implements the thread/* and turn/* method handlers.
 type Handler struct {
 	manager   *Manager
 	scheduler *Scheduler
 	methods   map[string]func(json.RawMessage) (interface{}, *HandlerError)
+	cmdSender CommandSender
 }
 
 // NewHandler creates a new Handler.
@@ -30,6 +38,11 @@ func NewHandler(m *Manager, s *Scheduler) *Handler {
 	h := &Handler{manager: m, scheduler: s, methods: make(map[string]func(json.RawMessage) (interface{}, *HandlerError))}
 	h.register()
 	return h
+}
+
+// SetCommandSender sets the command sender for dispatching commands to Python.
+func (h *Handler) SetCommandSender(s CommandSender) {
+	h.cmdSender = s
 }
 
 func (h *Handler) register() {
@@ -314,6 +327,31 @@ func (h *Handler) handleTurnStart(params json.RawMessage) (interface{}, *Handler
 	turnID := generateTurnID()
 	if err := thread.StartTurn(turnID); err != nil {
 		return nil, &HandlerError{Code: -32002, Message: fmt.Sprintf("回合冲突: %v", err)}
+	}
+
+	if h.cmdSender != nil {
+		userMessage := ""
+		for _, input := range p.Input {
+			if input.Type == "text" && input.Text != "" {
+				userMessage = input.Text
+				break
+			}
+		}
+		executorAgentID := ""
+		if p.Overrides != nil {
+			if v, ok := (*p.Overrides)["agentId"].(string); ok {
+				executorAgentID = v
+			}
+		}
+		startChatPayload, _ := json.Marshal(map[string]interface{}{
+			"user_message":      userMessage,
+			"executor_agent_id": executorAgentID,
+		})
+		h.cmdSender.SendCommand(&proto.ServerCommand{
+			SessionId:   p.ThreadID,
+			CommandType: "start_chat",
+			Payload:     string(startChatPayload),
+		})
 	}
 
 	return turnStartResult{

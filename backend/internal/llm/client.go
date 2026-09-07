@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/songhuang/flowpartner/backend/proto"
@@ -52,10 +52,6 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		sanitizedURL.RawQuery = "***"
 	}
 	log.Printf("[LLM] Request: %s %s", req.Method, sanitizedURL.String())
-
-	if auth := req.Header.Get("Authorization"); auth != "" {
-		log.Printf("[LLM] Authorization: Bearer ***")
-	}
 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
@@ -173,6 +169,8 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 
 	if resp.StatusCode != http.StatusOK {
 		retryAfter := resp.Header.Get("Retry-After")
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[LLM] Error response body: %s", string(body))
 		return false, ClassifyHTTPError(resp.StatusCode, retryAfter)
 	}
 

@@ -224,10 +224,8 @@ func (t *Thread) Fanout(method string, params interface{}) {
 	for id, c := range t.conns {
 		conns[id] = c
 	}
-	connCount := len(t.conns)
 	t.mu.RUnlock()
 
-	log.Printf("[Thread:%s] Fanout method=%s conns=%d", t.ID, method, connCount)
 	for _, conn := range conns {
 		if err := conn.SendNotification(method, params); err != nil {
 			log.Printf("[Thread:%s] fanout failed: %v", t.ID, err)

@@ -48,8 +48,6 @@ func main() {
 		},
 	)
 
-	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh)
-	go wsHandler.StartBroadcastLoop(globalEventCh)
 	applySnapshotConfig(snapshotMgr)
 
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
@@ -68,6 +66,9 @@ func main() {
 	grpcServer := grpc.NewServer()
 	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
 	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
+
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh, agentHandler)
+	go wsHandler.StartBroadcastLoop(globalEventCh)
 
 	go agentHandler.StartEventPump(agentEventCh)
 

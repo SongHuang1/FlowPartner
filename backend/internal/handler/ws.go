@@ -10,6 +10,7 @@ import (
 	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/wsv2"
+	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 // GlobalEvent is a system-level event to broadcast to all frontends.
@@ -18,11 +19,17 @@ type GlobalEvent struct {
 	Payload   string
 }
 
+// CommandSender sends commands to the Python agent.
+type CommandSender interface {
+	SendCommand(cmd *proto.ServerCommand)
+}
+
 // WebSocketHandler is the v2-only WebSocket handler.
 type WebSocketHandler struct {
 	threadMgr     *thread.Manager
 	snapshotMgr   *snapshot.Manager
 	globalEventCh chan<- GlobalEvent
+	cmdSender     CommandSender
 
 	mu    sync.Mutex
 	conns map[*wsConn]struct{}
@@ -34,11 +41,12 @@ type wsConn struct {
 }
 
 // NewWebSocketHandler creates a new v2 WebSocket handler.
-func NewWebSocketHandler(threadMgr *thread.Manager, snapshotMgr *snapshot.Manager, globalEventCh chan<- GlobalEvent) *WebSocketHandler {
+func NewWebSocketHandler(threadMgr *thread.Manager, snapshotMgr *snapshot.Manager, globalEventCh chan<- GlobalEvent, cmdSender CommandSender) *WebSocketHandler {
 	return &WebSocketHandler{
 		threadMgr:     threadMgr,
 		snapshotMgr:   snapshotMgr,
 		globalEventCh: globalEventCh,
+		cmdSender:     cmdSender,
 		conns:         make(map[*wsConn]struct{}),
 	}
 }
@@ -136,6 +144,7 @@ func (h *WebSocketHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	router := wsv2.NewRouter(conn)
 	threadHandler := thread.NewHandler(h.threadMgr, thread.NewScheduler())
+	threadHandler.SetCommandSender(h.cmdSender)
 
 	for _, method := range threadHandler.MethodNames() {
 		m := method
