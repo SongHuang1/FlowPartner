@@ -525,6 +525,13 @@ class FlowPartnerClient:
             else:
                 tool_calls_list = []
 
+            if send_event_func and full_content:
+                await send_event_func(session_id, "item_completed", {
+                    "item_type": "agentMessage",
+                    "payload": full_content,
+                    "thread_id": session_id,
+                })
+
             result: dict = {
                 "success": True,
                 "content": full_content,

@@ -177,9 +177,6 @@ export function ChatArea({ conversation }: ChatAreaProps) {
         break
       }
       case 'item/completed': {
-        const text = (p as { item?: { text?: string } })?.item?.text
-          ?? (p as { payload?: string })?.payload
-        if (typeof text === 'string') finalizeStream(text)
         break
       }
       case 'turn/completed':
