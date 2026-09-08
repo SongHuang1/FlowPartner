@@ -14,9 +14,12 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   const [sidebarVisible, setSidebarVisible] = useState(true)
+  const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0)
   const { updateSettings } = useSettings()
   const conversation = useConversation()
   useWindowState()
+
+  const triggerHistoryRefresh = () => setHistoryRefreshTrigger((n) => n + 1)
 
   useEffect(() => {
     window.flowPartner.onCloseAction(() => {
@@ -45,8 +48,12 @@ export default function App() {
         <Sidebar
           visible={sidebarVisible}
           onClose={() => setSidebarVisible(false)}
-          onNewChat={conversation.startNewConversation}
+          onNewChat={() => {
+            conversation.startNewConversation()
+            triggerHistoryRefresh()
+          }}
           onLoadSession={conversation.loadConversation}
+          refreshTrigger={historyRefreshTrigger}
         />
         <ChatArea conversation={conversation} />
       </div>

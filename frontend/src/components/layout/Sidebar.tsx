@@ -6,19 +6,63 @@ import { getHistoryList, getHistorySession, deleteHistory } from '@/lib/api'
 import { buildHistoryContentBlocks, buildToolResultMap } from '@/lib/history'
 import type { HistoryEntry, Message } from '@/types'
 
+function DeleteConfirmDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div className="bg-white rounded-xl shadow-2xl w-80 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+          <h3 className="text-sm font-semibold text-neutral-800">删除对话</h3>
+          <button
+            onClick={onCancel}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+            aria-label="关闭"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-neutral-600 mb-4">确定要删除这条对话记录吗？删除后无法恢复。</p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
+            >
+              确认删除
+            </button>
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-sm font-medium text-neutral-600 bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface SidebarProps {
   visible: boolean
   onClose: () => void
   onNewChat: () => void
   onLoadSession: (sessionId: string, messages: Message[]) => void
+  refreshTrigger?: number
 }
 
-export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarProps) {
+export function Sidebar({ visible, onClose, onNewChat, onLoadSession, refreshTrigger }: SidebarProps) {
   const [historyList, setHistoryList] = useState<HistoryEntry[]>([])
   // 挂载时即开始加载历史，初始状态直接为加载中，避免 effect 内同步 setState。
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const loadHistory = useCallback(async () => {
     try {
@@ -37,6 +81,12 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
     const timer = setTimeout(loadHistory, 0)
     return () => clearTimeout(timer)
   }, [loadHistory])
+
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      loadHistory()
+    }
+  }, [refreshTrigger, loadHistory])
 
   const handleLoadSession = async (sessionId: string) => {
     setHistoryLoading(true)
@@ -63,9 +113,15 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
     }
   }
 
-  const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
+  const handleDelete = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('确定要删除这条对话记录吗？')) return
+    setDeleteConfirmId(sessionId)
+  }
+
+  const handleDeleteConfirm = async () => {
+    const sessionId = deleteConfirmId
+    setDeleteConfirmId(null)
+    if (!sessionId) return
     setDeletingId(sessionId)
     try {
       await deleteHistory(sessionId)
@@ -146,14 +202,20 @@ export function Sidebar({ visible, onClose, onNewChat, onLoadSession }: SidebarP
               </div>
             ))}
 
-            {!historyLoading && !historyError && historyList.length > 0 && (
-              <Button variant="ghost" className="justify-start text-xs text-neutral-400 mt-1" onClick={loadHistory}>
-                刷新列表
-              </Button>
-            )}
-          </div>
-        </div>
+             {!historyLoading && !historyError && historyList.length > 0 && (
+               <Button variant="ghost" className="justify-start text-xs text-neutral-400 mt-1" onClick={loadHistory}>
+                 刷新列表
+               </Button>
+             )}
+           </div>
+         </div>
       </div>
+      {deleteConfirmId && (
+        <DeleteConfirmDialog
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteConfirmId(null)}
+        />
+      )}
     </div>
   )
 }
