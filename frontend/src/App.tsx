@@ -55,7 +55,7 @@ export default function App() {
           onLoadSession={conversation.loadConversation}
           refreshTrigger={historyRefreshTrigger}
         />
-        <ChatArea conversation={conversation} />
+        <ChatArea conversation={conversation} onFirstMessageSent={triggerHistoryRefresh} />
       </div>
       <StatusBar />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

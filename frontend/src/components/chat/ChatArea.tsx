@@ -140,9 +140,10 @@ function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorPr
 
 interface ChatAreaProps {
   conversation: UseConversationReturn
+  onFirstMessageSent?: () => void
 }
 
-export function ChatArea({ conversation }: ChatAreaProps) {
+export function ChatArea({ conversation, onFirstMessageSent }: ChatAreaProps) {
   const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
@@ -232,6 +233,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
         })
         threadId = (threadResult as { threadId: string }).threadId
         currentThreadIdRef.current = threadId
+        onFirstMessageSent?.()
       }
       const result = await startChat({
         threadId,
