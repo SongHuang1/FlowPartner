@@ -324,6 +324,7 @@ func (h *Handler) handleTurnStart(params json.RawMessage) (interface{}, *Handler
 		return nil, &HandlerError{Code: -32602, Message: "该会话已归档，无法启动新回合"}
 	}
 
+	thread.EndTurn()
 	turnID := generateTurnID()
 	if err := thread.StartTurn(turnID); err != nil {
 		return nil, &HandlerError{Code: -32002, Message: fmt.Sprintf("回合冲突: %v", err)}
