@@ -216,9 +216,7 @@ class TurnEngine:
                     "role": "assistant",
                     "content": stream_result.content,
                 })
-                if stream_result.finish_reason == "stop":
-                    return
-                continue
+                return
 
             # ⑥ 记录 assistant message with tool_calls
             assistant_msg: dict[str, Any] = {
