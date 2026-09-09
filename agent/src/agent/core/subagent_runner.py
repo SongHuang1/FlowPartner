@@ -62,6 +62,9 @@ class SubAgentRunner:
     async def _forward(self, session_id: str, event_type: str, payload: dict) -> None:
         if event_type == "llm_chunk":
             await self._emit("subagent_step", {"step_type": "thinking", "content": payload.get("content", "")})
+        elif event_type == "item_delta":
+            if payload.get("item_type") == "agentMessage" and payload.get("delta"):
+                await self._emit("subagent_step", {"step_type": "thinking", "content": payload["delta"]})
         elif event_type == "tool_call":
             # 旧格式（forced_tool_call 仍使用）
             await self._emit(

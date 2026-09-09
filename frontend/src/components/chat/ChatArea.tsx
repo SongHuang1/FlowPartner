@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Message, AgentMeta } from '@/types'
+import type { Message, AgentMeta, SubAgentRun, SubAgentStep, ContentBlock } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
@@ -141,10 +141,11 @@ function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorPr
 interface ChatAreaProps {
   conversation: UseConversationReturn
   onFirstMessageSent?: () => void
+  onTurnCompleted?: () => void
 }
 
-export function ChatArea({ conversation, onFirstMessageSent }: ChatAreaProps) {
-  const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream } = conversation
+export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: ChatAreaProps) {
+  const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream, updateContentBlocks } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
 
@@ -158,12 +159,27 @@ export function ChatArea({ conversation, onFirstMessageSent }: ChatAreaProps) {
   const currentThreadIdRef = useRef<string>('')
   const currentTurnIdRef = useRef<string>('')
   const [processing, setProcessing] = useState(false)
+  const [subagentRuns, setSubagentRuns] = useState<Map<string, SubAgentRun>>(new Map())
 
   const refreshAgents = useCallback(() => {
     listAgents().then(setAgents).catch(() => {})
   }, [])
 
   useEffect(() => { refreshAgents() }, [refreshAgents])
+
+  useEffect(() => {
+    const blocks: ContentBlock[] = Array.from(subagentRuns.values()).map((run) => ({
+      type: 'subagent' as const,
+      span_id: run.span_id,
+      agent_name: run.agent_name,
+      task: run.task || '',
+      status: run.status,
+      steps: run.steps || [],
+      result: run.result,
+      error: run.error,
+    }))
+    updateContentBlocks(blocks)
+  }, [subagentRuns, updateContentBlocks])
 
   const handleThreadEvent = useCallback((method: string, params: unknown) => {
     const p = params as Record<string, unknown> | undefined
@@ -181,6 +197,10 @@ export function ChatArea({ conversation, onFirstMessageSent }: ChatAreaProps) {
         break
       }
       case 'turn/completed':
+        onTurnCompleted?.()
+        setProcessing(false)
+        finalizeStream()
+        break
       case 'turn/interrupted':
         setProcessing(false)
         finalizeStream()
@@ -191,8 +211,62 @@ export function ChatArea({ conversation, onFirstMessageSent }: ChatAreaProps) {
         setProcessing(false)
         break
       }
+      default:
+        if (method.startsWith('subagent/')) {
+          handleSubagentEvent(method, p)
+        }
+        break
     }
-  }, [appendStreamChunk, finalizeStream])
+  }, [appendStreamChunk, finalizeStream, onTurnCompleted])
+
+  const handleSubagentEvent = useCallback((method: string, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined
+    let payload: Record<string, unknown> = {}
+    if (p?.payload && typeof p.payload === 'string') {
+      try { payload = JSON.parse(p.payload) } catch { /* ignore */ }
+    }
+    const merged = { ...p, ...payload }
+    const spanId = (merged.span_id as string) || (p?.span_id as string) || ''
+    if (!spanId) return
+
+    setSubagentRuns((prev) => {
+      const next = new Map(prev)
+      const existing = next.get(spanId) || {
+        agent_id: (merged.agent_id as string) || '',
+        agent_name: (merged.agent_name as string) || '子智能体',
+        depth: (merged.depth as number) || 1,
+        span_id: spanId,
+        trace_id: (merged.trace_id as string) || '',
+        parent_span_id: merged.parent_span_id as string | undefined,
+        status: 'running' as const,
+        task: (merged.task as string) || undefined,
+        steps: [],
+      }
+
+      if (method === 'subagent/subagent_start') {
+        existing.task = (merged.task as string) || existing.task
+        existing.status = 'running'
+      } else if (method === 'subagent/subagent_step') {
+        const steps = [...(existing.steps || [])]
+        if (merged.content) {
+          steps.push({
+            step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking',
+            content: merged.content as string,
+          })
+        }
+        existing.steps = steps
+      } else if (method === 'subagent/subagent_end') {
+        existing.status = 'done'
+        existing.result = merged.result as string | undefined
+      } else if (method === 'subagent/subagent_error') {
+        existing.status = 'error'
+        existing.error = merged.error as string | undefined
+      }
+
+      next.set(spanId, existing)
+      return next
+    })
+  }, [])
 
   const handleGlobalEvent = useCallback((eventType: string, _payload: string) => {
     if (eventType === 'agents_changed') refreshAgents()
