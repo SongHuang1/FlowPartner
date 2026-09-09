@@ -18,12 +18,10 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   const isCompleted = message.status === 'completed'
   const isStreaming = message.status === 'streaming'
   const contentBlocks = message.content_blocks
-  const hasBlocks = contentBlocks && contentBlocks.length > 0
-  const displayContent = !hasBlocks && isStreaming && streamingContent ? streamingContent : message.content
-  // 复制仅包含主智能体的文字（text 块），不包含子智能体卡片内容
-  const copyContent = hasBlocks
-    ? contentBlocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n').trim() || message.content
-    : message.content
+  const subagentBlocks = contentBlocks?.filter((b) => b.type === 'subagent') || []
+  const hasSubagentBlocks = subagentBlocks.length > 0
+  const displayContent = isStreaming && streamingContent ? streamingContent : message.content
+  const copyContent = displayContent
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -113,27 +111,16 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     <div className="flex justify-start">
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
-        {hasBlocks ? (
-          <div className="space-y-2">
-            {contentBlocks.map((block, i) =>
-              block.type === 'text' ? (
-                block.content.trim() ? (
-                  <div key={i} className="text-sm text-neutral-800 prose prose-sm max-w-none">
-                    <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-                      {block.content}
-                    </Markdown>
-                  </div>
-                ) : null
-              ) : (
-                renderSubagentBlock(block, i)
-              )
-            )}
-          </div>
-        ) : (
+        {displayContent.trim() && (
           <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
             <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
               {displayContent}
             </Markdown>
+          </div>
+        )}
+        {hasSubagentBlocks && (
+          <div className="space-y-2 mt-2">
+            {subagentBlocks.map((block, i) => renderSubagentBlock(block as Extract<ContentBlock, { type: 'subagent' }>, i))}
           </div>
         )}
         {isCompleted && <MessageToolbar content={copyContent} />}

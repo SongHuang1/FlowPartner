@@ -92,7 +92,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
 
   return (
     <div className="border-t border-neutral-200 p-3 bg-white">
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
         <MentionTextarea
           inputRef={textareaRef}
           value={value}
@@ -109,7 +109,13 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
             <Square className="w-4 h-4" />
           </Button>
         ) : (
-          <Button size="icon" disabled={!value.trim() || disabled} onClick={handleSend} aria-label="发送" className="shrink-0">
+          <Button
+            size="icon"
+            disabled={!value.trim() || disabled}
+            onClick={handleSend}
+            aria-label="发送"
+            className="shrink-0 transition-opacity"
+          >
             <Send className="w-4 h-4" />
           </Button>
         )}
@@ -181,49 +187,15 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
     updateContentBlocks(blocks)
   }, [subagentRuns, updateContentBlocks])
 
-  const handleThreadEvent = useCallback((method: string, params: unknown) => {
-    const p = params as Record<string, unknown> | undefined
-    switch (method) {
-      case 'turn/started':
-        setProcessing(true)
-        currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
-        break
-      case 'item/agentMessage/delta': {
-        const delta = (p as { delta?: string })?.delta
-        if (typeof delta === 'string') appendStreamChunk(delta)
-        break
-      }
-      case 'item/completed': {
-        break
-      }
-      case 'turn/completed':
-        onTurnCompleted?.()
-        setProcessing(false)
-        finalizeStream()
-        break
-      case 'turn/interrupted':
-        setProcessing(false)
-        finalizeStream()
-        break
-      case 'error': {
-        const msg = (p as { message?: string })?.message
-        if (msg) setChatError(msg)
-        setProcessing(false)
-        break
-      }
-      default:
-        if (method.startsWith('subagent/')) {
-          handleSubagentEvent(method, p)
-        }
-        break
-    }
-  }, [appendStreamChunk, finalizeStream, onTurnCompleted])
-
   const handleSubagentEvent = useCallback((method: string, params: unknown) => {
     const p = params as Record<string, unknown> | undefined
     let payload: Record<string, unknown> = {}
-    if (p?.payload && typeof p.payload === 'string') {
-      try { payload = JSON.parse(p.payload) } catch { /* ignore */ }
+    if (p?.payload) {
+      if (typeof p.payload === 'string') {
+        try { payload = JSON.parse(p.payload) } catch { /* ignore */ }
+      } else if (typeof p.payload === 'object') {
+        payload = p.payload as Record<string, unknown>
+      }
     }
     const merged = { ...p, ...payload }
     const spanId = (merged.span_id as string) || (p?.span_id as string) || ''
@@ -267,6 +239,44 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
       return next
     })
   }, [])
+
+  const handleThreadEvent = useCallback((method: string, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined
+    switch (method) {
+      case 'turn/started':
+        setProcessing(true)
+        currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
+        break
+      case 'item/agentMessage/delta': {
+        const delta = (p as { delta?: string })?.delta
+        if (typeof delta === 'string') appendStreamChunk(delta)
+        break
+      }
+      case 'item/completed': {
+        break
+      }
+      case 'turn/completed':
+        onTurnCompleted?.()
+        setProcessing(false)
+        finalizeStream()
+        break
+      case 'turn/interrupted':
+        setProcessing(false)
+        finalizeStream()
+        break
+      case 'error': {
+        const msg = (p as { message?: string })?.message
+        if (msg) setChatError(msg)
+        setProcessing(false)
+        break
+      }
+      default:
+        if (method.startsWith('subagent/')) {
+          handleSubagentEvent(method, p)
+        }
+        break
+    }
+  }, [appendStreamChunk, finalizeStream, onTurnCompleted, handleSubagentEvent])
 
   const handleGlobalEvent = useCallback((eventType: string, _payload: string) => {
     if (eventType === 'agents_changed') refreshAgents()
