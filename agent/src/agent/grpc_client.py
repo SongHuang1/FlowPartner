@@ -668,9 +668,12 @@ class FlowPartnerClient:
                     line = line.strip()
                     if not line:
                         continue
+                    # 跳过元数据行
+                    if line.startswith('{"meta":'):
+                        continue
                     try:
                         msg = json.loads(line)
-                        if msg.get("role") and msg.get("content"):
+                        if msg.get("role"):
                             history.append(msg)
                     except json.JSONDecodeError:
                         continue

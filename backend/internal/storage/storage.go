@@ -309,15 +309,20 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 			}
 		}
 
-		// 再尝试新格式：单条消息对象
-		var msg HistoryMessage
-		if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
-			result = append(result, msg)
-			continue
-		}
+	// 跳过元数据行（如 {"meta": {"executor_agent_id": "main"}}）
+	if strings.HasPrefix(line, `{"meta":`) {
+		continue
+	}
 
-		// 两种格式都失败，跳过损坏行
-		log.Printf("[Storage] Skipping malformed history line in %s", sessionID)
+	// 再尝试新格式：单条消息对象
+	var msg HistoryMessage
+	if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
+		result = append(result, msg)
+		continue
+	}
+
+	// 两种格式都失败，跳过损坏行
+	log.Printf("[Storage] Skipping malformed history line in %s: %s", sessionID, line[:min(80, len(line))])
 	}
 	return result, nil
 }

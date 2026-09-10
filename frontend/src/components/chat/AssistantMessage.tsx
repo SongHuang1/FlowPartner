@@ -4,7 +4,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import katex from 'katex'
-import { Loader2, ChevronRight } from 'lucide-react'
+import { Loader2, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import type { Message, ContentBlock } from '@/types'
 import { MessageToolbar } from './MessageToolbar'
@@ -18,7 +18,9 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   const isCompleted = message.status === 'completed'
   const isStreaming = message.status === 'streaming'
   const contentBlocks = message.content_blocks
+  const toolCallBlocks = contentBlocks?.filter((b) => b.type === 'tool_call') || []
   const subagentBlocks = contentBlocks?.filter((b) => b.type === 'subagent') || []
+  const hasToolCallBlocks = toolCallBlocks.length > 0
   const hasSubagentBlocks = subagentBlocks.length > 0
   const displayContent = isStreaming && streamingContent ? streamingContent : message.content
   const copyContent = displayContent
@@ -107,6 +109,47 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     )
   }
 
+  const renderToolCallBlock = (block: Extract<ContentBlock, { type: 'tool_call' }>, idx: number) => {
+    const key = block.call_id || `tool_${idx}`
+    let argsDisplay = ''
+    try {
+      argsDisplay = JSON.stringify(JSON.parse(block.arguments), null, 2)
+    } catch {
+      argsDisplay = block.arguments
+    }
+    return (
+      <div key={key} className="rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2">
+          {block.status === 'running' ? (
+            <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
+          ) : block.status === 'done' ? (
+            <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+          ) : (
+            <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+          )}
+          <span className="text-sm font-medium text-neutral-700">{block.tool_name}</span>
+          <span className="text-xs text-neutral-400 shrink-0">
+            {block.status === 'running' ? '执行中' : block.status === 'done' ? '已完成' : '失败'}
+          </span>
+        </div>
+        {argsDisplay && argsDisplay !== '{}' && (
+          <div className="px-3 pb-1">
+            <div className="text-xs text-neutral-500 font-mono bg-white rounded border border-neutral-100 p-2 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+              {argsDisplay}
+            </div>
+          </div>
+        )}
+        {(block.result || block.error) && (
+          <div className="px-3 pb-2 pt-1">
+            <div className="text-xs text-neutral-600 font-mono bg-white rounded border border-neutral-100 p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-all">
+              {block.error || block.result}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex justify-start">
       <div className="w-full min-w-0">
@@ -116,6 +159,11 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
             <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
               {displayContent}
             </Markdown>
+          </div>
+        )}
+        {hasToolCallBlocks && (
+          <div className="space-y-2 mt-2">
+            {toolCallBlocks.map((block, i) => renderToolCallBlock(block, i))}
           </div>
         )}
         {hasSubagentBlocks && (

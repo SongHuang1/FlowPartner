@@ -6,7 +6,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
@@ -349,7 +351,15 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 
 	return &proto.ToolResponse{
 		Success:   result.Success,
-		Result:    result.Result,
+		Result:    sanitizeUTF8(result.Result),
 		ErrorCode: result.ErrorCode,
 	}, nil
+}
+
+// sanitizeUTF8 replaces invalid UTF-8 byte sequences with the Unicode replacement character.
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
 }

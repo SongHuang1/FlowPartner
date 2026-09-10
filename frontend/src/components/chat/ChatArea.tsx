@@ -166,6 +166,7 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   const currentTurnIdRef = useRef<string>('')
   const [processing, setProcessing] = useState(false)
   const [subagentRuns, setSubagentRuns] = useState<Map<string, SubAgentRun>>(new Map())
+  const [toolCallBlocks, setToolCallBlocks] = useState<Map<string, ContentBlock & { type: 'tool_call' }>>(new Map())
 
   const refreshAgents = useCallback(() => {
     listAgents().then(setAgents).catch(() => {})
@@ -174,18 +175,24 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   useEffect(() => { refreshAgents() }, [refreshAgents])
 
   useEffect(() => {
-    const blocks: ContentBlock[] = Array.from(subagentRuns.values()).map((run) => ({
-      type: 'subagent' as const,
-      span_id: run.span_id,
-      agent_name: run.agent_name,
-      task: run.task || '',
-      status: run.status,
-      steps: run.steps || [],
-      result: run.result,
-      error: run.error,
-    }))
+    const blocks: ContentBlock[] = []
+    for (const block of toolCallBlocks.values()) {
+      blocks.push(block)
+    }
+    for (const run of subagentRuns.values()) {
+      blocks.push({
+        type: 'subagent',
+        span_id: run.span_id,
+        agent_name: run.agent_name,
+        task: run.task || '',
+        status: run.status,
+        steps: run.steps || [],
+        result: run.result,
+        error: run.error,
+      })
+    }
     updateContentBlocks(blocks)
-  }, [subagentRuns, updateContentBlocks])
+  }, [toolCallBlocks, subagentRuns, updateContentBlocks])
 
   const handleSubagentEvent = useCallback((method: string, params: unknown) => {
     const p = params as Record<string, unknown> | undefined
@@ -248,11 +255,77 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
         break
       case 'item/agentMessage/delta': {
-        const delta = (p as { delta?: string })?.delta
-        if (typeof delta === 'string') appendStreamChunk(delta)
+        const delta = p as {
+          delta?: {
+            content?: string
+            tool_calls?: Array<{
+              index: number
+              id?: string
+              function?: { name?: string; arguments?: string }
+            }>
+          }
+        }
+        if (delta?.delta?.content) {
+          appendStreamChunk(delta.delta.content)
+        }
+        if (delta?.delta?.tool_calls) {
+          for (const tc of delta.delta.tool_calls) {
+            const callId = tc.id || `call_${tc.index}`
+            setToolCallBlocks((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(callId) || {
+                type: 'tool_call' as const,
+                call_id: callId,
+                tool_name: '',
+                arguments: '',
+                status: 'running' as const,
+              }
+              if (tc.id) existing.call_id = callId
+              if (tc.function?.name) existing.tool_name = tc.function.name
+              if (tc.function?.arguments) existing.arguments += tc.function.arguments
+              next.set(callId, existing)
+              return next
+            })
+          }
+        }
+        break
+      }
+      case 'item/started': {
+        const item = p as { item?: { type?: string } }
+        if (item?.item?.type === 'commandExecution') {
+          setToolCallBlocks((prev) => {
+            const next = new Map(prev)
+            for (const [id, block] of next) {
+              if (block.status === 'running' && !block.result) {
+                next.set(id, { ...block })
+              }
+            }
+            return next
+          })
+        }
         break
       }
       case 'item/completed': {
+        const item = p as { item?: { itemId?: string; type?: string; text?: string }; payload?: string }
+        if (item?.item?.type === 'commandExecution') {
+          let resultText = item.item.text || ''
+          if (item.payload) {
+            try {
+              const parsed = JSON.parse(item.payload)
+              resultText = parsed.result || item.payload
+            } catch { /* use raw */ }
+          }
+          setToolCallBlocks((prev) => {
+            const next = new Map(prev)
+            for (const [id, block] of next) {
+              if (block.status === 'running') {
+                next.set(id, { ...block, status: 'done', result: resultText })
+                break
+              }
+            }
+            return next
+          })
+        }
         break
       }
       case 'turn/completed':

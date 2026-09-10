@@ -18,6 +18,15 @@ export interface SubAgentResult {
 export type ContentBlock =
   | { type: 'text'; content: string }
   | {
+      type: 'tool_call'
+      call_id: string
+      tool_name: string
+      arguments: string
+      status: 'running' | 'done' | 'error'
+      result?: string
+      error?: string
+    }
+  | {
       type: 'subagent'
       span_id: string
       agent_name: string
