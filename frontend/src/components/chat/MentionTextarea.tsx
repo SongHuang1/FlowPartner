@@ -137,12 +137,10 @@ export function MentionTextarea({
       >
         {parts.map((part, i) =>
           part.startsWith('@') && part.length > 1 && agentNames.has(part.slice(1)) ? (
-            <span key={i} className="font-semibold text-blue-600">
+            <span key={i} className="font-semibold text-blue-600 bg-blue-50 rounded px-0.5">
               {part}
             </span>
-          ) : (
-            <span key={i}>{part}</span>
-          ),
+          ) : null,
         )}
       </div>
       <textarea

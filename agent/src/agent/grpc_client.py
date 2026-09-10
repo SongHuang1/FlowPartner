@@ -656,6 +656,28 @@ class FlowPartnerClient:
             else:
                 logging.error("Max retries reached, giving up.")
 
+    def _load_history(self, session_id: str) -> list:
+        """从存储加载历史对话"""
+        history_file = self.history_dir / f"{session_id}.json"
+        if not history_file.exists():
+            return []
+        history = []
+        try:
+            with open(history_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                        if msg.get("role") and msg.get("content"):
+                            history.append(msg)
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            pass
+        return history
+
     async def _merge_subagents_file(self, session_id: str, new_runs: dict[str, dict]) -> None:
         """将本轮子智能体运行详情合并写入 {session_id}.subagents.json（原子替换）。"""
         path = self.history_dir / f"{session_id}.subagents.json"
@@ -697,6 +719,9 @@ class FlowPartnerClient:
             history = payload.get("history", [])
             if not isinstance(history, list):
                 history = []
+
+            if not history:
+                history = self._load_history(session_id)
 
 
             executor_agent_id = payload.get("executor_agent_id") or "main"

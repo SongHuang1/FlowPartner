@@ -19,14 +19,14 @@ export function MessageList({ messages, streamingContent, agentNames }: { messag
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: 'smooth',
-    })
+    const el = scrollRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [messages, streamingContent])
 
   return (
-    <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
+    <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1 min-h-0">
       {messages.map((msg) => {
         if (msg.role === 'user') {
           return <UserMessage key={msg.id} message={msg} agentNames={agentNames} />
