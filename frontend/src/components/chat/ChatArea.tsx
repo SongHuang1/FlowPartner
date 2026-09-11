@@ -18,6 +18,8 @@ import { MentionTextarea } from './MentionTextarea'
 export function MessageList({ messages, streamingContent, agentNames }: { messages: Message[]; streamingContent: string; agentNames: Set<string> }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  console.log('[MessageList] render', { msgCount: messages.length, streamingContent: streamingContent?.slice(0, 30) })
+
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el) {
@@ -151,6 +153,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: ChatAreaProps) {
+  console.log('[ChatArea] render', { messages: conversation.messages.length })
   const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream, updateContentBlocks } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
@@ -248,6 +251,7 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   }, [])
 
   const handleThreadEvent = useCallback((method: string, params: unknown) => {
+    console.log('[WS Event]', method)
     const p = params as Record<string, unknown> | undefined
     switch (method) {
       case 'turn/started':
@@ -255,38 +259,9 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
         break
       case 'item/agentMessage/delta': {
-        const delta = p as {
-          delta?: {
-            content?: string
-            tool_calls?: Array<{
-              index: number
-              id?: string
-              function?: { name?: string; arguments?: string }
-            }>
-          }
-        }
-        if (delta?.delta?.content) {
-          appendStreamChunk(delta.delta.content)
-        }
-        if (delta?.delta?.tool_calls) {
-          for (const tc of delta.delta.tool_calls) {
-            const callId = tc.id || `call_${tc.index}`
-            setToolCallBlocks((prev) => {
-              const next = new Map(prev)
-              const existing = next.get(callId) || {
-                type: 'tool_call' as const,
-                call_id: callId,
-                tool_name: '',
-                arguments: '',
-                status: 'running' as const,
-              }
-              if (tc.id) existing.call_id = callId
-              if (tc.function?.name) existing.tool_name = tc.function.name
-              if (tc.function?.arguments) existing.arguments += tc.function.arguments
-              next.set(callId, existing)
-              return next
-            })
-          }
+        const delta = p as { delta?: string }
+        if (typeof delta.delta === 'string' && delta.delta) {
+          appendStreamChunk(delta.delta)
         }
         break
       }
@@ -325,6 +300,8 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
             }
             return next
           })
+        } else if (item?.item?.type === 'agentMessage') {
+          finalizeStream(item.item.text)
         }
         break
       }

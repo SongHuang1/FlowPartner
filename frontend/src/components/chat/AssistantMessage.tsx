@@ -24,6 +24,8 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   const hasSubagentBlocks = subagentBlocks.length > 0
   const displayContent = isStreaming && streamingContent ? streamingContent : message.content
   const copyContent = displayContent
+
+  console.log('[AssistantMessage]', { isStreaming, displayContent: displayContent?.slice(0, 30), toolCalls: toolCallBlocks.length, subagents: subagentBlocks.length })
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
