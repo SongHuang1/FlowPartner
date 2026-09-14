@@ -230,19 +230,22 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         existing.status = 'running'
       } else if (method === 'subagent/subagent_step') {
         const steps = [...(existing.steps || [])]
-        if (merged.content) {
-          steps.push({
-            step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking',
-            content: merged.content as string,
-          })
+        const step: SubAgentStep = {
+          step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking',
         }
+        if (merged.content) step.content = merged.content as string
+        if (merged.tool) step.tool = merged.tool as string
+        if (merged.args) step.args = merged.args as Record<string, unknown>
+        if (merged.result) step.result = merged.result as string
+        if (merged.truncated) step.truncated = merged.truncated as boolean
+        steps.push(step)
         existing.steps = steps
       } else if (method === 'subagent/subagent_end') {
         existing.status = 'done'
         existing.result = merged.result as string | undefined
       } else if (method === 'subagent/subagent_error') {
         existing.status = 'error'
-        existing.error = merged.error as string | undefined
+        existing.error = (merged.message || merged.error || '') as string
       }
 
       next.set(spanId, existing)
@@ -300,8 +303,6 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
             }
             return next
           })
-        } else if (item?.item?.type === 'agentMessage') {
-          finalizeStream(item.item.text)
         }
         break
       }

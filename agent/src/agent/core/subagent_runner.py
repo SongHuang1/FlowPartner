@@ -97,12 +97,13 @@ class SubAgentRunner:
                 },
             )
         elif event_type == "item_completed":
-            # 新格式：工具执行完成（payload 为 JSON 字符串）
             import json
             try:
                 inner = json.loads(payload.get("payload", "{}"))
             except (json.JSONDecodeError, TypeError):
                 inner = {}
+            if not isinstance(inner, dict):
+                inner = {"result": str(inner)} if inner else {}
             await self._emit(
                 "subagent_step",
                 {

@@ -4,7 +4,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import katex from 'katex'
-import { Loader2, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import type { Message, ContentBlock } from '@/types'
 import { MessageToolbar } from './MessageToolbar'
@@ -82,32 +82,30 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     const isExpanded = expandedAgent === block.span_id
     const key = block.span_id || `subagent_${idx}`
     return (
-      <div key={key} className="rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setExpandedAgent(isExpanded ? null : (block.span_id || String(idx)))}
-          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-neutral-100 transition-colors"
-        >
-          <ChevronRight className={`w-3.5 h-3.5 text-neutral-400 transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
-          <span className="text-sm font-medium text-neutral-700">{block.agent_name}</span>
-          {block.task && <span className="text-xs text-neutral-400 truncate flex-1">{block.task}</span>}
-          {block.status === 'running' && (
-            <span className="text-xs text-blue-600 flex items-center gap-1 shrink-0">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              执行中
-            </span>
+      <span key={key} className="inline">
+        <span className="inline-flex items-center gap-1 text-sm text-neutral-500">
+          <span className="font-medium text-neutral-600">「{block.agent_name}」</span>
+          {block.status === 'running' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+          {block.status !== 'running' && block.result && <span>：{block.result}</span>}
+          {block.status === 'error' && <span>（执行失败）</span>}
+          {(block.result || block.error) && (
+            <button
+              type="button"
+              onClick={() => setExpandedAgent(isExpanded ? null : (block.span_id || String(idx)))}
+              className="text-blue-500 hover:underline text-xs ml-1"
+            >
+              {isExpanded ? '收起' : '详情'}
+            </button>
           )}
-          {block.status === 'done' && <span className="text-xs text-green-600 shrink-0">已完成</span>}
-          {block.status === 'error' && <span className="text-xs text-red-500 shrink-0">失败</span>}
-        </button>
+        </span>
         {isExpanded && (block.result || block.error) && (
-          <div className="px-3 py-2 text-sm text-neutral-800 prose prose-sm max-w-none border-t border-neutral-200">
+          <div className="mt-1 mb-1 text-sm text-neutral-800 prose prose-sm max-w-none">
             <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
               {block.error || block.result || ''}
             </Markdown>
           </div>
         )}
-      </div>
+      </span>
     )
   }
 
@@ -130,9 +128,6 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
             <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
           )}
           <span className="text-sm font-medium text-neutral-700">{block.tool_name}</span>
-          <span className="text-xs text-neutral-400 shrink-0">
-            {block.status === 'running' ? '执行中' : block.status === 'done' ? '已完成' : '失败'}
-          </span>
         </div>
         {argsDisplay && argsDisplay !== '{}' && (
           <div className="px-3 pb-1">
@@ -169,9 +164,9 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
           </div>
         )}
         {hasSubagentBlocks && (
-          <div className="space-y-2 mt-2">
+          <span className="inline-flex flex-wrap gap-x-3 gap-y-1 mt-1">
             {subagentBlocks.map((block, i) => renderSubagentBlock(block as Extract<ContentBlock, { type: 'subagent' }>, i))}
-          </div>
+          </span>
         )}
         {isCompleted && <MessageToolbar content={copyContent} />}
       </div>
