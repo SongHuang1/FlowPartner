@@ -170,6 +170,8 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   const [processing, setProcessing] = useState(false)
   const [blocks, setBlocks] = useState<ContentBlock[]>([])
   const prevStreamingRef = useRef('')
+  const pendingItemIdsRef = useRef<string[]>([])
+  const subagentItemIdsRef = useRef<Set<string>>(new Set())
 
   const refreshAgents = useCallback(() => {
     listAgents().then(setAgents).catch(() => {})
@@ -224,6 +226,13 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
 
       if (method === 'subagent/subagent_start') {
         if (idx >= 0) return prev
+        const pending = pendingItemIdsRef.current
+        if (pending.length > 0) {
+          const itemId = pending.shift()!
+          subagentItemIdsRef.current.add(itemId)
+          const toolIdx = next.findIndex(b => b.type === 'tool_call' && b.call_id === itemId)
+          if (toolIdx >= 0) next.splice(toolIdx, 1)
+        }
         next.push({
           type: 'subagent',
           span_id: spanId,
@@ -266,6 +275,8 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
         setBlocks([])
         prevStreamingRef.current = ''
+        pendingItemIdsRef.current = []
+        subagentItemIdsRef.current = new Set()
         break
       case 'item/agentMessage/delta': {
         const delta = p as { delta?: string }
@@ -278,13 +289,16 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         const item = p as { item?: { itemId?: string; type?: string } }
         if (item?.item?.type === 'commandExecution') {
           const itemId = item.item.itemId || ''
-          setBlocks(prev => [...prev, {
-            type: 'tool_call' as const,
-            call_id: itemId,
-            tool_name: 'command',
-            arguments: '',
-            status: 'running' as const,
-          }])
+          pendingItemIdsRef.current.push(itemId)
+          if (!subagentItemIdsRef.current.has(itemId)) {
+            setBlocks(prev => [...prev, {
+              type: 'tool_call' as const,
+              call_id: itemId,
+              tool_name: 'command',
+              arguments: '',
+              status: 'running' as const,
+            }])
+          }
         }
         break
       }
@@ -292,6 +306,10 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         const item = p as { item?: { itemId?: string; type?: string; text?: string }; payload?: string }
         if (item?.item?.type === 'commandExecution') {
           const toolId = item.item.itemId || ''
+          if (subagentItemIdsRef.current.has(toolId)) {
+            subagentItemIdsRef.current.delete(toolId)
+            break
+          }
           let resultText = item.item.text || ''
           if (item.payload) {
             try {
