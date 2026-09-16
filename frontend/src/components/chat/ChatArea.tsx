@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Message, AgentMeta, SubAgentRun, SubAgentStep, ContentBlock } from '@/types'
+import type { Message, AgentMeta, SubAgentStep, ContentBlock } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
@@ -168,8 +168,8 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   const currentThreadIdRef = useRef<string>('')
   const currentTurnIdRef = useRef<string>('')
   const [processing, setProcessing] = useState(false)
-  const [subagentRuns, setSubagentRuns] = useState<Map<string, SubAgentRun>>(new Map())
-  const [toolCallBlocks, setToolCallBlocks] = useState<Map<string, ContentBlock & { type: 'tool_call' }>>(new Map())
+  const [blocks, setBlocks] = useState<ContentBlock[]>([])
+  const prevStreamingRef = useRef('')
 
   const refreshAgents = useCallback(() => {
     listAgents().then(setAgents).catch(() => {})
@@ -178,24 +178,31 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
   useEffect(() => { refreshAgents() }, [refreshAgents])
 
   useEffect(() => {
-    const blocks: ContentBlock[] = []
-    for (const block of toolCallBlocks.values()) {
-      blocks.push(block)
-    }
-    for (const run of subagentRuns.values()) {
-      blocks.push({
-        type: 'subagent',
-        span_id: run.span_id,
-        agent_name: run.agent_name,
-        task: run.task || '',
-        status: run.status,
-        steps: run.steps || [],
-        result: run.result,
-        error: run.error,
-      })
-    }
+    setBlocks(prev => {
+      if (!streamingContent && streamingContent !== '') return prev
+      let delta: string
+      if (streamingContent.length >= prevStreamingRef.current.length) {
+        delta = streamingContent.slice(prevStreamingRef.current.length)
+      } else {
+        prevStreamingRef.current = ''
+        delta = streamingContent
+      }
+      prevStreamingRef.current = streamingContent
+      if (!delta) return prev
+      const next = [...prev]
+      const lastIdx = next.length - 1
+      if (lastIdx >= 0 && next[lastIdx].type === 'text') {
+        next[lastIdx] = { type: 'text', content: next[lastIdx].content + delta }
+      } else {
+        next.push({ type: 'text', content: delta })
+      }
+      return next
+    })
+  }, [streamingContent])
+
+  useEffect(() => {
     updateContentBlocks(blocks)
-  }, [toolCallBlocks, subagentRuns, updateContentBlocks])
+  }, [blocks, updateContentBlocks])
 
   const handleSubagentEvent = useCallback((method: string, params: unknown) => {
     const p = params as Record<string, unknown> | undefined
@@ -211,44 +218,41 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
     const spanId = (merged.span_id as string) || (p?.span_id as string) || ''
     if (!spanId) return
 
-    setSubagentRuns((prev) => {
-      const next = new Map(prev)
-      const existing = next.get(spanId) || {
-        agent_id: (merged.agent_id as string) || '',
-        agent_name: (merged.agent_name as string) || '子智能体',
-        depth: (merged.depth as number) || 1,
-        span_id: spanId,
-        trace_id: (merged.trace_id as string) || '',
-        parent_span_id: merged.parent_span_id as string | undefined,
-        status: 'running' as const,
-        task: (merged.task as string) || undefined,
-        steps: [],
-      }
+    setBlocks(prev => {
+      const next = [...prev]
+      const idx = next.findIndex(b => b.type === 'subagent' && b.span_id === spanId)
 
       if (method === 'subagent/subagent_start') {
-        existing.task = (merged.task as string) || existing.task
-        existing.status = 'running'
-      } else if (method === 'subagent/subagent_step') {
-        const steps = [...(existing.steps || [])]
-        const step: SubAgentStep = {
-          step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking',
+        if (idx >= 0) return prev
+        next.push({
+          type: 'subagent',
+          span_id: spanId,
+          agent_name: (merged.agent_name as string) || '子智能体',
+          task: (merged.task as string) || '',
+          status: 'running',
+          steps: [],
+        })
+      } else if (idx >= 0) {
+        const existing = { ...next[idx] } as Extract<ContentBlock, { type: 'subagent' }>
+        if (method === 'subagent/subagent_step') {
+          const steps = [...(existing.steps || [])]
+          const step: SubAgentStep = { step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking' }
+          if (merged.content) step.content = merged.content as string
+          if (merged.tool) step.tool = merged.tool as string
+          if (merged.args) step.args = merged.args as Record<string, unknown>
+          if (merged.result) step.result = merged.result as string
+          if (merged.truncated) step.truncated = merged.truncated as boolean
+          steps.push(step)
+          existing.steps = steps
+        } else if (method === 'subagent/subagent_end') {
+          existing.status = 'done'
+          existing.result = merged.result as string | undefined
+        } else if (method === 'subagent/subagent_error') {
+          existing.status = 'error'
+          existing.error = (merged.message || merged.error || '') as string
         }
-        if (merged.content) step.content = merged.content as string
-        if (merged.tool) step.tool = merged.tool as string
-        if (merged.args) step.args = merged.args as Record<string, unknown>
-        if (merged.result) step.result = merged.result as string
-        if (merged.truncated) step.truncated = merged.truncated as boolean
-        steps.push(step)
-        existing.steps = steps
-      } else if (method === 'subagent/subagent_end') {
-        existing.status = 'done'
-        existing.result = merged.result as string | undefined
-      } else if (method === 'subagent/subagent_error') {
-        existing.status = 'error'
-        existing.error = (merged.message || merged.error || '') as string
+        next[idx] = existing
       }
-
-      next.set(spanId, existing)
       return next
     })
   }, [])
@@ -260,6 +264,8 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
       case 'turn/started':
         setProcessing(true)
         currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
+        setBlocks([])
+        prevStreamingRef.current = ''
         break
       case 'item/agentMessage/delta': {
         const delta = p as { delta?: string }
@@ -269,23 +275,23 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
         break
       }
       case 'item/started': {
-        const item = p as { item?: { type?: string } }
+        const item = p as { item?: { itemId?: string; type?: string } }
         if (item?.item?.type === 'commandExecution') {
-          setToolCallBlocks((prev) => {
-            const next = new Map(prev)
-            for (const [id, block] of next) {
-              if (block.status === 'running' && !block.result) {
-                next.set(id, { ...block })
-              }
-            }
-            return next
-          })
+          const itemId = item.item.itemId || ''
+          setBlocks(prev => [...prev, {
+            type: 'tool_call' as const,
+            call_id: itemId,
+            tool_name: 'command',
+            arguments: '',
+            status: 'running' as const,
+          }])
         }
         break
       }
       case 'item/completed': {
         const item = p as { item?: { itemId?: string; type?: string; text?: string }; payload?: string }
         if (item?.item?.type === 'commandExecution') {
+          const toolId = item.item.itemId || ''
           let resultText = item.item.text || ''
           if (item.payload) {
             try {
@@ -293,16 +299,11 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
               resultText = parsed.result || item.payload
             } catch { /* use raw */ }
           }
-          setToolCallBlocks((prev) => {
-            const next = new Map(prev)
-            for (const [id, block] of next) {
-              if (block.status === 'running') {
-                next.set(id, { ...block, status: 'done', result: resultText })
-                break
-              }
-            }
-            return next
-          })
+          setBlocks(prev => prev.map(b =>
+            b.type === 'tool_call' && b.call_id === toolId
+              ? { ...b, status: 'done' as const, result: resultText }
+              : b
+          ))
         }
         break
       }

@@ -14,18 +14,11 @@ interface AssistantMessageProps {
   streamingContent?: string
 }
 
-export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
+export function AssistantMessage({ message }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
-  const isStreaming = message.status === 'streaming'
-  const contentBlocks = message.content_blocks
-  const toolCallBlocks = contentBlocks?.filter((b) => b.type === 'tool_call') || []
-  const subagentBlocks = contentBlocks?.filter((b) => b.type === 'subagent') || []
-  const hasToolCallBlocks = toolCallBlocks.length > 0
-  const hasSubagentBlocks = subagentBlocks.length > 0
-  const displayContent = isStreaming && streamingContent ? streamingContent : message.content
-  const copyContent = displayContent
+  const blocks = message.content_blocks || []
+  const copyContent = blocks.filter(b => b.type === 'text').map(b => b.content).join('')
 
-  console.log('[AssistantMessage]', { isStreaming, displayContent: displayContent?.slice(0, 30), toolCalls: toolCallBlocks.length, subagents: subagentBlocks.length })
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -147,27 +140,33 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
     )
   }
 
+  const renderBlock = (block: ContentBlock, idx: number) => {
+    switch (block.type) {
+      case 'text':
+        if (!block.content?.trim()) return null
+        return (
+          <div key={idx} className="text-sm text-neutral-800 prose prose-sm max-w-none">
+            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
+              {block.content}
+            </Markdown>
+          </div>
+        )
+      case 'tool_call':
+        return renderToolCallBlock(block, idx)
+      case 'subagent':
+        return renderSubagentBlock(block, idx)
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="flex justify-start">
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
-        {displayContent.trim() && (
-          <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
-            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-              {displayContent}
-            </Markdown>
-          </div>
-        )}
-        {hasToolCallBlocks && (
-          <div className="space-y-2 mt-2">
-            {toolCallBlocks.map((block, i) => renderToolCallBlock(block, i))}
-          </div>
-        )}
-        {hasSubagentBlocks && (
-          <span className="inline-flex flex-wrap gap-x-3 gap-y-1 mt-1">
-            {subagentBlocks.map((block, i) => renderSubagentBlock(block as Extract<ContentBlock, { type: 'subagent' }>, i))}
-          </span>
-        )}
+        <div className="space-y-2">
+          {blocks.map((block, i) => renderBlock(block, i))}
+        </div>
         {isCompleted && <MessageToolbar content={copyContent} />}
       </div>
     </div>
