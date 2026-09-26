@@ -155,6 +155,21 @@ describe('MentionTextarea', () => {
     expect(overlay!.textContent).toContain('你好')
   })
 
+  it('mirror layer reproduces preceding text so highlight is not shifted to start', () => {
+    render(<Wrapper initial="前面有字 @翻译官 后面有字" />)
+    const overlay = document.querySelector('[aria-hidden]')!
+    const highlightSpan = overlay.querySelector('.font-semibold')!
+    expect(highlightSpan.textContent).toBe('@翻译官')
+
+    // 高亮之前必须有等量的前置文本节点，否则高亮背景会画在句首
+    const preceding = Array.from(overlay.childNodes)
+      .slice(0, Array.from(overlay.childNodes).indexOf(highlightSpan))
+      .map((n) => n.textContent || '')
+      .join('')
+    expect(preceding).toBe('前面有字 ')
+    expect(overlay.textContent).toBe('前面有字 @翻译官 后面有字')
+  })
+
   it('does not highlight unknown @words in mirror layer', () => {
     render(<Wrapper initial="@路人甲 你好" />)
     const overlay = document.querySelector('[aria-hidden]')!

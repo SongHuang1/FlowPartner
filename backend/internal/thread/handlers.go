@@ -324,7 +324,8 @@ func (h *Handler) handleTurnStart(params json.RawMessage) (interface{}, *Handler
 		return nil, &HandlerError{Code: -32602, Message: "该会话已归档，无法启动新回合"}
 	}
 
-	thread.EndTurn()
+	// 不在此处 EndTurn：上一回合的 turn/completed 由 EventConverter 清除。
+	// 提前清除会让迟到的完成事件把新回合一起清掉。
 	turnID := generateTurnID()
 	if err := thread.StartTurn(turnID); err != nil {
 		return nil, &HandlerError{Code: -32002, Message: fmt.Sprintf("回合冲突: %v", err)}
@@ -390,7 +391,39 @@ func (h *Handler) handleTurnInterrupt(params json.RawMessage) (interface{}, *Han
 	thread.SetTurnStatus(TurnAborting)
 	thread.AbortPendingRequests("user_interrupt")
 
+	// 兜底：Python 未回 turn_aborted 时不能让线程永久卡在 TurnAborting，
+	// 否则用户再也无法发起新回合。超时后强制释放。
+	turnID := turn.ID
+	go h.releaseTurnAfterInterrupt(p.ThreadID, turnID)
+
 	return map[string]string{"threadId": p.ThreadID, "status": "aborting"}, nil
+}
+
+// interruptReleaseTimeout 中断后等待 Python 确认 turn_aborted 的上限。
+const interruptReleaseTimeout = 10 * time.Second
+
+// releaseTurnAfterInterrupt 在超时后释放仍处于 TurnAborting 的回合。
+// 若 Python 已正常回报 turn_aborted（状态已非 TurnAborting），则不做任何事。
+func (h *Handler) releaseTurnAfterInterrupt(threadID, turnID string) {
+	timer := time.NewTimer(interruptReleaseTimeout)
+	defer timer.Stop()
+	<-timer.C
+
+	thread, ok := h.manager.GetThread(threadID)
+	if !ok {
+		return
+	}
+	current := thread.GetTurn()
+	if current == nil || current.ID != turnID || current.Status != TurnAborting {
+		return
+	}
+	log.Printf("[thread] 中断确认超时，强制释放回合 %s (thread=%s)", turnID, threadID)
+	thread.EndTurn()
+	thread.Fanout("turn/interrupted", map[string]interface{}{
+		"threadId": threadID,
+		"turnId":   turnID,
+		"reason":   "interrupt_timeout",
+	})
 }
 
 // --- turn/steer ---

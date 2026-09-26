@@ -38,6 +38,62 @@ func TestEventConverter_TurnStarted(t *testing.T) {
 	}
 }
 
+func TestEventConverter_TurnCompletedReleasesTurn(t *testing.T) {
+	m := NewManager()
+	defer m.Close()
+	conv := NewEventConverter(m)
+
+	th, _ := m.CreateThread("t1", "main", "")
+	conn := &mockConn{}
+	th.AttachConn("c1", conn)
+
+	if err := th.StartTurn("u1"); err != nil {
+		t.Fatalf("StartTurn: %v", err)
+	}
+
+	conv.Convert(&proto.AgentEvent{
+		ThreadId: "t1",
+		TurnId:   "u1",
+		Payload: &proto.AgentEvent_TurnCompleted{
+			TurnCompleted: &proto.TurnCompleted{ThreadId: "t1", TurnId: "u1"},
+		},
+	})
+
+	// turn/completed 必须清除活跃回合，否则下一回合永远冲突
+	if turn := th.GetTurn(); turn != nil {
+		t.Fatalf("turn must be cleared after turn/completed, got %+v", turn)
+	}
+	if err := th.StartTurn("u2"); err != nil {
+		t.Errorf("must be able to start a new turn after completion: %v", err)
+	}
+}
+
+func TestEventConverter_TurnAbortedReleasesTurn(t *testing.T) {
+	m := NewManager()
+	defer m.Close()
+	conv := NewEventConverter(m)
+
+	th, _ := m.CreateThread("t1", "main", "")
+	th.AttachConn("c1", &mockConn{})
+
+	if err := th.StartTurn("u1"); err != nil {
+		t.Fatalf("StartTurn: %v", err)
+	}
+	th.SetTurnStatus(TurnAborting)
+
+	conv.Convert(&proto.AgentEvent{
+		ThreadId: "t1",
+		TurnId:   "u1",
+		Payload: &proto.AgentEvent_TurnAborted{
+			TurnAborted: &proto.TurnAborted{ThreadId: "t1", TurnId: "u1"},
+		},
+	})
+
+	if turn := th.GetTurn(); turn != nil {
+		t.Fatalf("turn must be cleared after turn/aborted, got %+v", turn)
+	}
+}
+
 func TestEventConverter_ItemDelta(t *testing.T) {
 	m := NewManager()
 	defer m.Close()

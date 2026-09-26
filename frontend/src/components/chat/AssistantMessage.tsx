@@ -14,10 +14,23 @@ interface AssistantMessageProps {
   streamingContent?: string
 }
 
-export function AssistantMessage({ message }: AssistantMessageProps) {
+export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
-  const blocks = message.content_blocks || []
-  const copyContent = blocks.filter(b => b.type === 'text').map(b => b.content).join('')
+  const blocks = message.content_blocks
+
+  // 无内容块时回退到扁平 content（历史消息、直接构造的消息）；
+  // 有内容块时仅从中取 text，保证文本与工具/子智能体块的时序不被破坏。
+  const effectiveBlocks: ContentBlock[] =
+    blocks && blocks.length > 0
+      ? blocks
+      : message.content
+        ? [{ type: 'text', content: message.content }]
+        : []
+
+  const liveText = streamingContent || message.content
+  const copyContent = (effectiveBlocks.some((b) => b.type === 'text')
+    ? effectiveBlocks.filter((b) => b.type === 'text').map((b) => b.content).join('')
+    : liveText) || ''
 
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
@@ -165,7 +178,7 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
         <div className="space-y-2">
-          {blocks.map((block, i) => renderBlock(block, i))}
+          {effectiveBlocks.map((block, i) => renderBlock(block, i))}
         </div>
         {isCompleted && <MessageToolbar content={copyContent} />}
       </div>

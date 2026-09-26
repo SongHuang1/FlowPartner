@@ -36,6 +36,8 @@ func (c *EventConverter) Convert(event *proto.AgentEvent) {
 		})
 
 	case *proto.AgentEvent_TurnCompleted:
+		// 回合真正结束，必须在此清除活跃回合；否则下一回合 StartTurn 永远冲突
+		thread.EndTurn()
 		c.emit(thread, "turn/completed", map[string]interface{}{
 			"threadId":         threadID,
 			"turnId":           turnID,
@@ -44,6 +46,7 @@ func (c *EventConverter) Convert(event *proto.AgentEvent) {
 		})
 
 	case *proto.AgentEvent_TurnAborted:
+		thread.EndTurn()
 		c.emit(thread, "turn/interrupted", map[string]interface{}{
 			"threadId": threadID,
 			"turnId":   turnID,

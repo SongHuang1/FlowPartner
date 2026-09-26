@@ -140,7 +140,10 @@ export function MentionTextarea({
             <span key={i} className="font-semibold text-blue-600 bg-blue-50 rounded px-0.5">
               {part}
             </span>
-          ) : null,
+          ) : (
+            // 镜像层必须复刻完整文本，否则高亮背景会错位到句首
+            <span key={i}>{part}</span>
+          ),
         )}
       </div>
       <textarea

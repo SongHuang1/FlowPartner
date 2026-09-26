@@ -103,4 +103,34 @@ describe('MessageList', () => {
     expect(consoleSpy).not.toHaveBeenCalled()
     consoleSpy.mockRestore()
   })
+
+  it('renders content_blocks in chronological order when present', () => {
+    const m: Message = {
+      id: '1',
+      role: 'assistant',
+      content: '第一段第二段',
+      timestamp: 1000,
+      content_blocks: [
+        { type: 'text', content: '第一段' },
+        { type: 'subagent', span_id: 's1', agent_name: '翻译官', task: '翻译', status: 'done', steps: [], result: '译文' },
+        { type: 'text', content: '第二段' },
+      ],
+    }
+    const { container } = render(<MessageList messages={[m]} streamingContent="" agentNames={new Set<string>()} />)
+
+    const nodes = Array.from(container.querySelectorAll('p, span'))
+    const idxFirst = nodes.findIndex((el) => el.textContent === '第一段')
+    const idxSub = nodes.findIndex((el) => el.textContent?.includes('翻译官'))
+    const idxSecond = nodes.findIndex((el) => el.textContent === '第二段')
+
+    expect(idxFirst).toBeGreaterThanOrEqual(0)
+    expect(idxSub).toBeGreaterThan(idxFirst)
+    expect(idxSecond).toBeGreaterThan(idxSub)
+  })
+
+  it('falls back to flat content when content_blocks is absent', () => {
+    const m: Message = { id: '1', role: 'assistant', content: '只有扁平内容', timestamp: 1000 }
+    render(<MessageList messages={[m]} streamingContent="" agentNames={new Set<string>()} />)
+    expect(screen.getByText('只有扁平内容')).toBeInTheDocument()
+  })
 })
