@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { clearApiKey, saveSettings } from '@/lib/api'
+import { clearApiKey, saveSettings, deleteModelConfig } from '@/lib/api'
 import type { Settings } from '@/types'
 import { isPasswordStrong } from '@/lib/validation'
 
@@ -192,14 +192,12 @@ export function APISettings() {
   const handleDeleteConfig = async (configId: string) => {
     setLocalError(null)
     setLocalSuccess(null)
-    const updatedConfigs = modelConfigs.filter(c => c.id !== configId)
-    const newActiveId = activeConfigId === configId
-      ? (updatedConfigs[0]?.id || '')
-      : activeConfigId
-
     try {
-      updateSettings({ model_configs: updatedConfigs, active_config_id: newActiveId } as typeof settings & { model_configs: ModelConfig[]; active_config_id: string })
+      // 走专用删除端点：PUT /api/settings 的 mergeModelConfigs 会把
+      // incoming 中缺失的 ID 原样保留，删除无法落盘
+      await deleteModelConfig(configId)
       setDeletingId(null)
+      await refreshSettings()
       await refreshStatus()
       setLocalSuccess('配置已删除')
     } catch (e) {

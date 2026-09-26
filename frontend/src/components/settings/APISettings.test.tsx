@@ -36,6 +36,7 @@ const mockLock = vi.fn()
 const mockRefreshStatus = vi.fn()
 const mockSaveSettings = vi.fn()
 const mockClearApiKey = vi.fn()
+const mockDeleteModelConfig = vi.fn()
 
 vi.mock('@/hooks/useSettings', () => ({
   useSettings: () => ({
@@ -58,6 +59,7 @@ vi.mock('@/hooks/useLock', () => ({
 vi.mock('@/lib/api', () => ({
   saveSettings: (s: unknown) => mockSaveSettings(s),
   clearApiKey: () => mockClearApiKey(),
+  deleteModelConfig: (id: string) => mockDeleteModelConfig(id),
 }))
 
 vi.mock('@/lib/validation', () => ({
@@ -89,6 +91,7 @@ beforeEach(() => {
   mockLock.mockResolvedValue(undefined)
   mockSaveSettings.mockResolvedValue(undefined)
   mockClearApiKey.mockResolvedValue(undefined)
+  mockDeleteModelConfig.mockResolvedValue(undefined)
 })
 
 describe('APISettings - Mode A: no API key configured', () => {
@@ -342,13 +345,33 @@ describe('APISettings - Mode C: unlocked with API key', () => {
     fireEvent.click(within(row as HTMLElement).getByRole('button'))
     fireEvent.click(screen.getByText('确认删除'))
 
-    expect(mockUpdateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ model_configs: [], active_config_id: '' }),
+    // 必须走 DELETE 端点：PUT /api/settings 的 merge 会把删除项复活
+    await waitFor(() => {
+      expect(mockDeleteModelConfig).toHaveBeenCalledWith('cfg-1')
+    })
+    expect(mockUpdateSettings).not.toHaveBeenCalledWith(
+      expect.objectContaining({ model_configs: [] }),
     )
+    expect(mockRefreshSettings).toHaveBeenCalled()
     expect(mockRefreshStatus).toHaveBeenCalled()
     await waitFor(() => {
       expect(screen.getByText('配置已删除')).toBeInTheDocument()
     })
+  })
+
+  it('surfaces delete failure and keeps the config', async () => {
+    mockSettings.model_configs = [configOne]
+    mockDeleteModelConfig.mockRejectedValueOnce(new Error('Model config not found'))
+    render(<APISettings />)
+
+    const row = screen.getByText('OpenAI 主账号').closest('.rounded-lg')!
+    fireEvent.click(within(row as HTMLElement).getByRole('button'))
+    fireEvent.click(screen.getByText('确认删除'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Model config not found')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('配置已删除')).not.toBeInTheDocument()
   })
 
   it('clicking a config row sets it active', () => {
