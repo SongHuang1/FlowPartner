@@ -7,6 +7,7 @@ import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
 import { useWsV2, type ApprovalRequestPayload as WsApprovalRequest } from '@/hooks/useWebSocket'
 import { listAgents } from '@/lib/api'
+import { buildToolCallBlock } from '@/lib/toolcall'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
@@ -291,10 +292,11 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
           const itemId = item.item.itemId || ''
           pendingItemIdsRef.current.push(itemId)
           if (!subagentItemIdsRef.current.has(itemId)) {
+            // 真实工具名与参数在 item/completed 的 payload 里，此处只占位
             setBlocks(prev => [...prev, {
               type: 'tool_call' as const,
               call_id: itemId,
-              tool_name: 'command',
+              tool_name: '',
               arguments: '',
               status: 'running' as const,
             }])
@@ -310,18 +312,11 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
             subagentItemIdsRef.current.delete(toolId)
             break
           }
-          let resultText = item.item.text || ''
-          if (item.payload) {
-            try {
-              const parsed = JSON.parse(item.payload)
-              resultText = parsed.result || item.payload
-            } catch { /* use raw */ }
-          }
-          setBlocks(prev => prev.map(b =>
-            b.type === 'tool_call' && b.call_id === toolId
-              ? { ...b, status: 'done' as const, result: resultText }
-              : b
-          ))
+          const built = buildToolCallBlock(toolId, item.payload, '工具')
+          setBlocks(prev => {
+            const without = prev.filter(b => !(b.type === 'tool_call' && b.call_id === toolId))
+            return built ? [...without, built] : without
+          })
         }
         break
       }

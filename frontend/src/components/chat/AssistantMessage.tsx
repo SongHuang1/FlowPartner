@@ -7,6 +7,7 @@ import katex from 'katex'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import type { Message, ContentBlock } from '@/types'
+import { tailSnippet } from '@/lib/toolcall'
 import { MessageToolbar } from './MessageToolbar'
 
 interface AssistantMessageProps {
@@ -85,70 +86,93 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   }
 
   const renderSubagentBlock = (block: Extract<ContentBlock, { type: 'subagent' }>, idx: number) => {
-    const isExpanded = expandedAgent === block.span_id
     const key = block.span_id || `subagent_${idx}`
+    const isExpanded = expandedAgent === block.span_id
+    const body = block.error || block.result || ''
+    const canToggle = !!body
+
     return (
-      <span key={key} className="inline">
-        <span className="inline-flex items-center gap-1 text-sm text-neutral-500">
-          <span className="font-medium text-neutral-600">「{block.agent_name}」</span>
-          {block.status === 'running' && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
-          {block.status !== 'running' && block.result && <span>：{block.result}</span>}
-          {block.status === 'error' && <span>（执行失败）</span>}
-          {(block.result || block.error) && (
+      <div key={key} className="text-sm">
+        {/* 名字加粗 + 灰色摘要，跟在正文流里，不占固定列宽 */}
+        <div className="flex items-start gap-1.5">
+          {block.status === 'running' && (
+            <Loader2 className="mt-1 w-3 h-3 shrink-0 animate-spin text-blue-500" />
+          )}
+          <span className="font-semibold text-neutral-800 shrink-0">{block.agent_name}</span>
+
+          {block.status === 'running' && !body && (
+            <span className="text-neutral-500">正在执行…</span>
+          )}
+
+          {block.status === 'error' && !body && (
+            <span className="text-neutral-500">执行失败</span>
+          )}
+
+          {body && (
+            isExpanded ? (
+              <span className="text-neutral-500 min-w-0 flex-1 whitespace-pre-wrap break-words">
+                {body}
+              </span>
+            ) : (
+              <span className="text-neutral-500 min-w-0 flex-1 inline-block align-top whitespace-pre-wrap break-words max-h-[3em] overflow-y-auto">
+                {tailSnippet(body)}
+              </span>
+            )
+          )}
+
+          {canToggle && (
             <button
               type="button"
               onClick={() => setExpandedAgent(isExpanded ? null : (block.span_id || String(idx)))}
-              className="text-blue-500 hover:underline text-xs ml-1"
+              className="shrink-0 text-xs text-blue-500 hover:underline mt-0.5"
             >
-              {isExpanded ? '收起' : '详情'}
+              {isExpanded ? '收起' : '展开'}
             </button>
           )}
-        </span>
-        {isExpanded && (block.result || block.error) && (
-          <div className="mt-1 mb-1 text-sm text-neutral-800 prose prose-sm max-w-none">
-            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-              {block.error || block.result || ''}
-            </Markdown>
-          </div>
-        )}
-      </span>
+        </div>
+      </div>
     )
   }
 
   const renderToolCallBlock = (block: Extract<ContentBlock, { type: 'tool_call' }>, idx: number) => {
     const key = block.call_id || `tool_${idx}`
-    let argsDisplay = ''
-    try {
-      argsDisplay = JSON.stringify(JSON.parse(block.arguments), null, 2)
-    } catch {
-      argsDisplay = block.arguments
-    }
+    const isRunning = block.status === 'running'
+    // 调用失败 ≠ 执行失败：status 反映能否拿到结果，success 反映工具自身是否成功
+    const callFailed = block.status === 'error'
+    const execFailed = !isRunning && !callFailed && block.success === false
+
     return (
-      <div key={key} className="rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-2">
-          {block.status === 'running' ? (
-            <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
-          ) : block.status === 'done' ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
-          ) : (
-            <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+      <div key={key} className="flex items-start gap-1.5 text-sm">
+        {isRunning ? (
+          <Loader2 className="mt-1 w-3.5 h-3.5 shrink-0 animate-spin text-blue-500" />
+        ) : callFailed || execFailed ? (
+          <XCircle className="mt-1 w-3.5 h-3.5 shrink-0 text-red-500" />
+        ) : (
+          <CheckCircle2 className="mt-1 w-3.5 h-3.5 shrink-0 text-green-500" />
+        )}
+
+        <span className="min-w-0 flex-1">
+          <span className="text-neutral-800">
+            {block.tool_name || '工具'}
+            {block.summary && <span className="text-neutral-500"> {block.summary}</span>}
+          </span>
+
+          <span className="text-xs text-neutral-400 ml-1.5">
+            {isRunning ? '执行中' : callFailed ? '调用失败' : execFailed ? '执行失败' : '执行成功'}
+          </span>
+
+          {/* 结果文本本身就是用户需要的输出，不再展示原始 JSON 信封 */}
+          {!isRunning && block.result && !execFailed && (
+            <span className="block text-neutral-500 text-xs font-mono mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+              {block.result}
+            </span>
           )}
-          <span className="text-sm font-medium text-neutral-700">{block.tool_name}</span>
-        </div>
-        {argsDisplay && argsDisplay !== '{}' && (
-          <div className="px-3 pb-1">
-            <div className="text-xs text-neutral-500 font-mono bg-white rounded border border-neutral-100 p-2 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
-              {argsDisplay}
-            </div>
-          </div>
-        )}
-        {(block.result || block.error) && (
-          <div className="px-3 pb-2 pt-1">
-            <div className="text-xs text-neutral-600 font-mono bg-white rounded border border-neutral-100 p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-all">
+          {!isRunning && (execFailed || callFailed) && (block.error || block.result) && (
+            <span className="block text-red-500 text-xs font-mono mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
               {block.error || block.result}
-            </div>
-          </div>
-        )}
+            </span>
+          )}
+        </span>
       </div>
     )
   }

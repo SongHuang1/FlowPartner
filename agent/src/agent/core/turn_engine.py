@@ -306,10 +306,13 @@ class TurnEngine:
                 "item_type": item_type,
                 "thread_id": self.thread_id,
                 "turn_id": self.turn_id,
+                # 前端据此渲染"执行了什么"与"执行是否成功"，不做二次猜测
                 "payload": json.dumps({
                     "success": tr.success,
                     "result": tr.result,
                     "error_code": tr.error_code,
+                    "tool_name": tc.tool_name,
+                    "arguments": tc.arguments,
                 }, ensure_ascii=False),
             })
 

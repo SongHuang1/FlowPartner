@@ -137,12 +137,15 @@ export function MentionTextarea({
       >
         {parts.map((part, i) =>
           part.startsWith('@') && part.length > 1 && agentNames.has(part.slice(1)) ? (
-            <span key={i} className="font-semibold text-blue-600 bg-blue-50 rounded px-0.5">
+            // 镜像层只负责画高亮背景；文字保持透明避免与 textarea 叠加出重影
+            <span key={i} className="bg-blue-50 rounded px-0.5 text-transparent">
               {part}
             </span>
           ) : (
-            // 镜像层必须复刻完整文本，否则高亮背景会错位到句首
-            <span key={i}>{part}</span>
+            // 镜像层必须复刻完整文本占位，否则高亮背景会错位到句首
+            <span key={i} className="text-transparent">
+              {part}
+            </span>
           ),
         )}
       </div>

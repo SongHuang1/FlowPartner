@@ -22,7 +22,12 @@ export type ContentBlock =
       call_id: string
       tool_name: string
       arguments: string
+      /** 调用生命周期：是否成功发起并拿到结果 */
       status: 'running' | 'done' | 'error'
+      /** 工具自身返回的执行结果是否成功（与 status 区分） */
+      success?: boolean
+      /** 面向用户的一句话摘要，如 `read src/main.ts`、`ls -la` */
+      summary?: string
       result?: string
       error?: string
     }
