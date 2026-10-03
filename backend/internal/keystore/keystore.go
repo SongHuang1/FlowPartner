@@ -8,6 +8,11 @@ import (
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 )
 
+const (
+	maxFailedAttempts = 5
+	lockoutDuration   = 30 * time.Second
+)
+
 type LockStatus struct {
 	Locked         bool      `json:"locked"`
 	LockedUntil    time.Time `json:"locked_until,omitempty"`
@@ -75,8 +80,8 @@ func (ks *KeyStore) RecordFailedAttempt() {
 // recordFailedAttempt 内部方法（调用方需持有写锁）
 func (ks *KeyStore) recordFailedAttempt() {
 	ks.failedAttempts++
-	if ks.failedAttempts >= 5 {
-		ks.lockedUntil = time.Now().Add(30 * time.Second)
+	if ks.failedAttempts >= maxFailedAttempts {
+		ks.lockedUntil = time.Now().Add(lockoutDuration)
 	}
 }
 

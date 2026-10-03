@@ -149,10 +149,34 @@ describe('MentionTextarea', () => {
     render(<Wrapper initial="@翻译官 你好" />)
     const overlay = document.querySelector('[aria-hidden]')
     expect(overlay).not.toBeNull()
-    const highlightSpan = overlay!.querySelector('.font-semibold')
+    const highlightSpan = overlay!.querySelector('.bg-blue-50')
     expect(highlightSpan).not.toBeNull()
     expect(highlightSpan!.textContent).toBe('@翻译官')
     expect(overlay!.textContent).toContain('你好')
+  })
+
+  it('mirror layer reproduces preceding text so highlight is not shifted to start', () => {
+    render(<Wrapper initial="前面有字 @翻译官 后面有字" />)
+    const overlay = document.querySelector('[aria-hidden]')!
+    const highlightSpan = overlay.querySelector('.bg-blue-50')!
+    expect(highlightSpan.textContent).toBe('@翻译官')
+
+    // 高亮之前必须有等量的前置文本节点，否则高亮背景会画在句首
+    const preceding = Array.from(overlay.childNodes)
+      .slice(0, Array.from(overlay.childNodes).indexOf(highlightSpan))
+      .map((n) => n.textContent || '')
+      .join('')
+    expect(preceding).toBe('前面有字 ')
+    expect(overlay.textContent).toBe('前面有字 @翻译官 后面有字')
+  })
+
+  it('mirror layer text is transparent so it does not double-render over the textarea', () => {
+    render(<Wrapper initial="@翻译官 你好" />)
+    const overlay = document.querySelector('[aria-hidden]')!
+    // 镜像层与 textarea 叠放：文字必须透明，只画高亮背景，否则出现重影
+    for (const node of Array.from(overlay.querySelectorAll('span'))) {
+      expect(node.className).toContain('text-transparent')
+    }
   })
 
   it('does not highlight unknown @words in mirror layer', () => {

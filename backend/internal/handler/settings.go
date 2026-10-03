@@ -63,6 +63,12 @@ type Settings struct {
 	SnapshotDir            string `json:"snapshot_dir"`
 	SnapshotEnabled        bool   `json:"snapshot_enabled"`
 	SnapshotIncludeSecrets bool   `json:"snapshot_include_secrets"`
+	SnapshotDebounceSecs   int    `json:"snapshot_debounce_secs"`
+	SnapshotTickerMins     int    `json:"snapshot_ticker_mins"`
+	SnapshotRetentionDays  int    `json:"snapshot_retention_days"`
+	SnapshotMaxStorageMB   int64  `json:"snapshot_max_storage_mb"`
+
+	ProtocolV2 bool `json:"protocol_v2"`
 }
 
 func DefaultSettings() Settings {
@@ -87,7 +93,12 @@ func DefaultSettings() Settings {
 		SidebarVisible:   true,
 		SidebarView:      "conversation",
 		TrashDir:         "",
-		SnapshotEnabled:  false,
+		ProtocolV2:       true,
+		SnapshotEnabled:        false,
+		SnapshotDebounceSecs:   60,
+		SnapshotTickerMins:     15,
+		SnapshotRetentionDays:  30,
+		SnapshotMaxStorageMB:   5120,
 	}
 }
 
@@ -133,6 +144,19 @@ func LoadSettings() Settings {
 		settings.WindowHeight = defaults.WindowHeight
 		settings.SidebarVisible = defaults.SidebarVisible
 		settings.SidebarView = defaults.SidebarView
+	}
+
+	if settings.SnapshotDebounceSecs == 0 {
+		settings.SnapshotDebounceSecs = defaults.SnapshotDebounceSecs
+	}
+	if settings.SnapshotTickerMins == 0 {
+		settings.SnapshotTickerMins = defaults.SnapshotTickerMins
+	}
+	if settings.SnapshotRetentionDays == 0 {
+		settings.SnapshotRetentionDays = defaults.SnapshotRetentionDays
+	}
+	if settings.SnapshotMaxStorageMB == 0 {
+		settings.SnapshotMaxStorageMB = defaults.SnapshotMaxStorageMB
 	}
 
 	settings.deriveFlatFields()
@@ -371,10 +395,10 @@ func (h *SettingsHandler) reconfigSnapshot(settings Settings) {
 	}
 	workingDir := ResolveWorkingDir(settings)
 	if workingDir == "" {
-		h.snapshotMgr.Configure("", "", false, false)
+		h.snapshotMgr.Configure("", "", false, false, 0, 0, 0, 0)
 		return
 	}
-	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+	if err := h.snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets, settings.SnapshotDebounceSecs, settings.SnapshotTickerMins, settings.SnapshotRetentionDays, settings.SnapshotMaxStorageMB); err != nil {
 		// 配置失败（如工作区根不存在）时状态已置 error 并推送，不影响设置保存
 		log.Printf("[snapshot] 快照管理器配置失败: %v", err)
 	}
@@ -550,34 +574,30 @@ func (h *SettingsHandler) Put(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, response.Success(settings))
 }
 
-// mergeModelConfigs 按 ID 合并配置：已存在的更新，不存在的新增，未传的保留
-// 安全注意：若 incoming 配置的 EncryptedAPIKey 为空，保留 existing 的加密密钥
+// mergeModelConfigs 按 ID 合并配置：incoming 是权威列表（决定增删），
+// existing 仅用于回填 incoming 未携带的 encrypted_api_key。
+//
+// 关键：existing 中存在但 incoming 未传回的 ID 视为"删除"，不得保留。
+// 反之会让 PUT /api/settings 无法删除配置（前端改用 DELETE 端点，但此处
+// 必须保持正确语义，否则任何走 PUT 的删除路径都会被静默撤销）。
+// incoming 为 nil 时（客户端未提供 model_configs 字段）才回退为 existing。
 func mergeModelConfigs(existing, incoming []ModelConfig) []ModelConfig {
-	configMap := make(map[string]ModelConfig, len(existing))
-	for _, cfg := range existing {
-		configMap[cfg.ID] = cfg
+	if incoming == nil {
+		return existing
 	}
-	for _, cfg := range incoming {
-		if cfg.EncryptedAPIKey == "" {
-			if existingCfg, ok := configMap[cfg.ID]; ok {
-				cfg.EncryptedAPIKey = existingCfg.EncryptedAPIKey
-			}
-		}
-		configMap[cfg.ID] = cfg
+	existingByID := make(map[string]ModelConfig, len(existing))
+	for _, cfg := range existing {
+		existingByID[cfg.ID] = cfg
 	}
 
-	result := make([]ModelConfig, 0, len(configMap))
-	for _, cfg := range existing {
-		if merged, ok := configMap[cfg.ID]; ok {
-			result = append(result, merged)
-			delete(configMap, cfg.ID)
-		}
-	}
+	result := make([]ModelConfig, 0, len(incoming))
 	for _, cfg := range incoming {
-		if _, ok := configMap[cfg.ID]; ok {
-			result = append(result, cfg)
-			delete(configMap, cfg.ID)
+		if cfg.EncryptedAPIKey == "" {
+			if prev, ok := existingByID[cfg.ID]; ok {
+				cfg.EncryptedAPIKey = prev.EncryptedAPIKey
+			}
 		}
+		result = append(result, cfg)
 	}
 	return result
 }

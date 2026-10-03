@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 const defaultChunkBufferSize = 64
@@ -29,8 +32,9 @@ type StreamRequest struct {
 
 // StreamChunk 流式响应块
 type StreamChunk struct {
-	Data string
-	Done bool
+	Data  string
+	Done  bool
+	Usage *proto.UsagePayload
 }
 
 // LLMClient LLM HTTP 流式客户端
@@ -49,10 +53,6 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		sanitizedURL.RawQuery = "***"
 	}
 	log.Printf("[LLM] Request: %s %s", req.Method, sanitizedURL.String())
-
-	if auth := req.Header.Get("Authorization"); auth != "" {
-		log.Printf("[LLM] Authorization: Bearer ***")
-	}
 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
@@ -170,6 +170,8 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 
 	if resp.StatusCode != http.StatusOK {
 		retryAfter := resp.Header.Get("Retry-After")
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[LLM] Error response body: %s", string(body))
 		return false, ClassifyHTTPError(resp.StatusCode, retryAfter)
 	}
 
@@ -185,6 +187,7 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 
 	scanner := NewSSEScanner(resp.Body)
 	dataSent := false
+	var usage *proto.UsagePayload
 	for {
 		event, done, err := scanner.Scan()
 		if err != nil {
@@ -195,11 +198,16 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 		}
 
 		if done {
-			chunkChan <- StreamChunk{Done: true}
+			chunkChan <- StreamChunk{Done: true, Usage: usage}
 			return false, nil
 		}
 
 		if event.Data == "" {
+			continue
+		}
+
+		if u, ok := parseUsage(event.Data); ok {
+			usage = u
 			continue
 		}
 
@@ -232,6 +240,39 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 	}
 }
 
+// parseUsage 尝试从 SSE chunk JSON 中提取 usage 尾帧
+func parseUsage(data string) (*proto.UsagePayload, bool) {
+	var chunk map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return nil, false
+	}
+	usageRaw, ok := chunk["usage"]
+	if !ok || usageRaw == nil {
+		return nil, false
+	}
+	usageMap, ok := usageRaw.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	u := &proto.UsagePayload{}
+	if v, ok := usageMap["prompt_tokens"].(float64); ok {
+		u.PromptTokens = int32(v)
+	}
+	if v, ok := usageMap["cached_tokens"].(float64); ok {
+		u.CachedTokens = int32(v)
+	}
+	if v, ok := usageMap["completion_tokens"].(float64); ok {
+		u.CompletionTokens = int32(v)
+	}
+	if v, ok := usageMap["reasoning_tokens"].(float64); ok {
+		u.ReasoningTokens = int32(v)
+	}
+	if v, ok := usageMap["total_tokens"].(float64); ok {
+		u.TotalTokens = int32(v)
+	}
+	return u, true
+}
+
 func buildRequestBody(req StreamRequest) ([]byte, error) {
 	var payload map[string]interface{}
 	if len(req.RawPayload) > 0 {
@@ -254,6 +295,7 @@ func buildRequestBody(req StreamRequest) ([]byte, error) {
 	payload["model"] = req.Model
 	payload["temperature"] = req.Temperature
 	payload["stream"] = true
+	payload["stream_options"] = map[string]bool{"include_usage": true}
 
 	if req.ResponseFormat != "" && req.ResponseFormat != "text" {
 		payload["response_format"] = map[string]string{"type": req.ResponseFormat}

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/response"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 )
 
 func newTestAgentDefHandler() *AgentDefHandler {
-	return NewAgentDefHandler(bridge.NewManager(), nil)
+	return NewAgentDefHandler(thread.NewManager(), nil, nil)
 }
 
 func decodeAgentDefResponse(t *testing.T, rec *httptest.ResponseRecorder) storage.AgentDef {

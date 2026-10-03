@@ -171,20 +171,20 @@ func TestApprovalManager_Consume_Denied(t *testing.T) {
 	}
 }
 
-func TestApprovalManager_CancelSession(t *testing.T) {
+func TestApprovalManager_CancelThread(t *testing.T) {
 	m := NewApprovalManager()
 	id1 := m.Create("sess-1", "read", "/tmp/a.txt", "/tmp/a.txt")
 	id2 := m.Create("sess-1", "read", "/tmp/b.txt", "/tmp/b.txt")
 	m.Create("sess-2", "read", "/tmp/c.txt", "/tmp/c.txt")
 
-	m.CancelSession("sess-1")
+	m.CancelThread("sess-1")
 
 	// sess-1 的审批已取消，不能再消费
 	if m.Consume("sess-1", id1, "read", "/tmp/a.txt") {
-		t.Error("expected Consume to fail after CancelSession")
+		t.Error("expected Consume to fail after CancelThread")
 	}
 	if m.Consume("sess-1", id2, "read", "/tmp/b.txt") {
-		t.Error("expected Consume to fail after CancelSession")
+		t.Error("expected Consume to fail after CancelThread")
 	}
 
 	// sess-2 不受影响
@@ -194,14 +194,14 @@ func TestApprovalManager_CancelSession(t *testing.T) {
 	}
 }
 
-func TestApprovalManager_CancelSession_OnlyPending(t *testing.T) {
+func TestApprovalManager_CancelThread_OnlyPending(t *testing.T) {
 	m := NewApprovalManager()
 	requestID := m.Create("sess-1", "read", "/tmp/a.txt", "/tmp/a.txt")
 	m.Resolve("sess-1", requestID, "allow")
 
-	m.CancelSession("sess-1")
+	m.CancelThread("sess-1")
 
-	// 已批准的记录不受 CancelSession 影响（只有 Pending 状态才被取消）
+	// 已批准的记录不受 CancelThread 影响（只有 Pending 状态才被取消）
 	granted := m.Consume("sess-1", requestID, "read", "/tmp/a.txt")
 	if !granted {
 		t.Error("expected Consume to succeed for already-granted approval")

@@ -70,6 +70,7 @@ export function useConversation(): UseConversationReturn {
   }, [])
 
   const appendStreamChunk = useCallback((chunk: string) => {
+    console.log('[appendStreamChunk]', chunk, 'streamingId:', streamingIdRef.current)
     if (!streamingIdRef.current) {
       const id = generateMessageId()
       streamingIdRef.current = id
@@ -87,14 +88,16 @@ export function useConversation(): UseConversationReturn {
     }
     streamingContentRef.current += chunk
     setStreamingContent(streamingContentRef.current)
+    console.log('[appendStreamChunk] streamingContent:', streamingContentRef.current.slice(0, 50))
   }, [])
 
   const finalizeStream = useCallback((finalContent?: string) => {
+    console.log('[finalizeStream]', { streamingId: streamingIdRef.current, content: finalContent?.slice(0, 30) })
     if (streamingIdRef.current) {
       const id = streamingIdRef.current
       const content = finalContent ?? streamingContentRef.current
       const updated = messagesRef.current.map(m =>
-        m.id === id ? { ...m, status: 'completed' as const, content: m.content || content } : m
+        m.id === id ? { ...m, status: 'completed' as const, content: m.content || content, content_blocks: m.content_blocks } : m
       )
       messagesRef.current = updated
       setMessages(updated)

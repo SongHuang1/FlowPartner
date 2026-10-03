@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { useSnapshot, SnapshotProvider } from '@/hooks/useSnapshot'
-import type { SnapshotStatus, SnapshotMessage } from '@/types'
+import type { SnapshotStatus } from '@/types'
 
 const mockGetSnapshots = vi.fn()
 const mockGetSnapshotDetail = vi.fn()
@@ -10,8 +10,7 @@ const mockSendManualSnapshot = vi.fn()
 const mockSendRestore = vi.fn()
 const mockSendSystemLock = vi.fn()
 
-let snapshotStatusCb: ((s: SnapshotStatus) => void) | null = null
-let snapshotMessageCb: ((m: SnapshotMessage) => void) | null = null
+let capturedGlobalEventCb: ((eventType: string, payload: string) => void) | null = null
 let mockSettingsDir = ''
 
 vi.mock('@/lib/api', () => ({
@@ -31,19 +30,14 @@ vi.mock('@/hooks/useSettings', () => ({
 }))
 
 vi.mock('@/hooks/useWebSocket', () => ({
-  useWebSocket: () => ({
-    sendManualSnapshot: () => mockSendManualSnapshot(),
-    sendRestore: (snapshotId: string, deleteExtras: boolean) => mockSendRestore(snapshotId, deleteExtras),
-    sendSystemLock: () => mockSendSystemLock(),
-    onSnapshotStatus: (cb: (s: SnapshotStatus) => void) => {
-      snapshotStatusCb = cb
-      return () => { snapshotStatusCb = null }
-    },
-    onSnapshotMessage: (cb: (m: SnapshotMessage) => void) => {
-      snapshotMessageCb = cb
-      return () => { snapshotMessageCb = null }
-    },
-  }),
+  useWsV2: (callbacks: { onGlobalEvent?: (eventType: string, payload: string) => void }) => {
+    capturedGlobalEventCb = callbacks.onGlobalEvent ?? null
+    return {
+      triggerSnapshot: () => mockSendManualSnapshot(),
+      restoreSnapshot: (snapshotId: string, deleteExtras: boolean) => mockSendRestore(snapshotId, deleteExtras),
+      systemLock: () => mockSendSystemLock(),
+    }
+  },
 }))
 
 function snapshotWrapper({ children }: { children: ReactNode }) {
@@ -57,8 +51,7 @@ function makeStatus(overrides: Partial<SnapshotStatus> = {}): SnapshotStatus {
 describe('useSnapshot', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    snapshotStatusCb = null
-    snapshotMessageCb = null
+    capturedGlobalEventCb = null
     mockSettingsDir = ''
     mockGetSnapshots.mockResolvedValue([])
     mockGetSnapshotDetail.mockResolvedValue(null)
@@ -99,7 +92,7 @@ describe('useSnapshot', () => {
   it('updates status on snapshot_status event', () => {
     const { result } = renderHook(() => useSnapshot(), { wrapper: snapshotWrapper })
     act(() => {
-      snapshotStatusCb?.(makeStatus({ phase: 'snapshotting' }))
+      capturedGlobalEventCb?.('snapshot_status', JSON.stringify(makeStatus({ phase: 'snapshotting' })))
     })
     expect(result.current.status?.phase).toBe('snapshotting')
   })
@@ -107,8 +100,8 @@ describe('useSnapshot', () => {
   it('appends messages on snapshot_message events', () => {
     const { result } = renderHook(() => useSnapshot(), { wrapper: snapshotWrapper })
     act(() => {
-      snapshotMessageCb?.({ type: 'info', text: '还原完成' })
-      snapshotMessageCb?.({ type: 'error', text: '还原失败' })
+      capturedGlobalEventCb?.('snapshot_message', JSON.stringify({ type: 'info', text: '还原完成' }))
+      capturedGlobalEventCb?.('snapshot_message', JSON.stringify({ type: 'error', text: '还原失败' }))
     })
     expect(result.current.messages).toHaveLength(2)
     expect(result.current.messages[1].type).toBe('error')
@@ -118,7 +111,7 @@ describe('useSnapshot', () => {
     const { result } = renderHook(() => useSnapshot(), { wrapper: snapshotWrapper })
     act(() => {
       for (let i = 0; i < 7; i++) {
-        snapshotMessageCb?.({ type: 'info', text: `msg-${i}` })
+        capturedGlobalEventCb?.('snapshot_message', JSON.stringify({ type: 'info', text: `msg-${i}` }))
       }
     })
     expect(result.current.messages).toHaveLength(5)
@@ -128,7 +121,7 @@ describe('useSnapshot', () => {
   it('dismissMessages clears messages', () => {
     const { result } = renderHook(() => useSnapshot(), { wrapper: snapshotWrapper })
     act(() => {
-      snapshotMessageCb?.({ type: 'info', text: 'hello' })
+      capturedGlobalEventCb?.('snapshot_message', JSON.stringify({ type: 'info', text: 'hello' }))
     })
     expect(result.current.messages).toHaveLength(1)
     act(() => {

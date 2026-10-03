@@ -13,10 +13,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// 触发间隔常量
+// 默认触发间隔（当 Settings 未配置时使用）
 const (
-	debounceInterval = 60 * time.Second
-	tickerInterval   = 15 * time.Minute
+	defaultDebounceSecs = 60
+	defaultTickerMins   = 15
+	defaultMaxStorageMB = 5120
 )
 
 // Status 快照状态（通过 WebSocket snapshot_status 事件下发给前端）。
@@ -50,11 +51,15 @@ type Manager struct {
 	opMu           sync.Mutex // 串行化快照与清理操作（防止启动清理删除进行中的快照）
 	statusFunc     StatusFunc
 	messageFunc    MessageFunc
-	workingDir     string
-	snapshotDir    string
-	includeSecrets bool
-	enabled        bool
-	projectID      string
+	workingDir        string
+	snapshotDir       string
+	includeSecrets    bool
+	enabled           bool
+	projectID         string
+	debounceSecs      int
+	tickerMins        int
+	retentionDays     int
+	maxStorageMB      int64
 
 	watcher  *fsnotify.Watcher
 	watchCtx context.CancelFunc
@@ -157,11 +162,32 @@ func (m *Manager) IncludeSecrets() bool {
 // Configure 应用配置。工作区根与储存目录任一变更为均整体重建监听。
 // enabled=false 时停止监听与定时器，保留状态展示。
 // 返回错误时不会启用（工作区根不存在等），并置 phase=error。
-func (m *Manager) Configure(workingDir, snapshotDir string, enabled, includeSecrets bool) error {
+func (m *Manager) Configure(workingDir, snapshotDir string, enabled, includeSecrets bool, debounceSecs, tickerMins, retentionDays int, maxStorageMB int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.includeSecrets = includeSecrets
+
+	if debounceSecs > 0 {
+		m.debounceSecs = debounceSecs
+	} else {
+		m.debounceSecs = defaultDebounceSecs
+	}
+	if tickerMins > 0 {
+		m.tickerMins = tickerMins
+	} else {
+		m.tickerMins = defaultTickerMins
+	}
+	if retentionDays > 0 {
+		m.retentionDays = retentionDays
+	} else {
+		m.retentionDays = defaultRetentionDays
+	}
+	if maxStorageMB > 0 {
+		m.maxStorageMB = maxStorageMB
+	} else {
+		m.maxStorageMB = defaultMaxStorageMB
+	}
 
 	// 停掉旧监听与定时器（幂等）。
 	m.stopWatchLocked()
@@ -228,7 +254,7 @@ func (m *Manager) Configure(workingDir, snapshotDir string, enabled, includeSecr
 		return err
 	}
 
-	m.ticker = time.NewTicker(tickerInterval)
+	m.ticker = time.NewTicker(time.Duration(m.tickerMins) * time.Minute)
 	go m.tickerLoop(ctx, m.ticker)
 	go m.cleanupAndRefresh()
 	m.pushStatusLocked()
@@ -317,7 +343,7 @@ func (m *Manager) runSnapshot(reason Reason) {
 // finishSnapshot 快照结束：执行保留策略清理、重算统计、处理补触发与手动排队。
 func (m *Manager) finishSnapshot(reason Reason, snapshotDir, projectID string) {
 	projectDir := filepath.Join(snapshotDir, projectID)
-	if deleted, err := Cleanup(projectDir, time.Now()); err != nil {
+	if deleted, err := Cleanup(projectDir, time.Now(), m.retentionDays, m.maxStorageMB*1024*1024); err != nil {
 		log.Printf("[snapshot] 清理失败: %v", err)
 	} else if len(deleted) > 0 {
 		log.Printf("[snapshot] 清理完成，删除 %d 个快照", len(deleted))
@@ -468,14 +494,14 @@ func (m *Manager) handleWatchEvent(watcher *fsnotify.Watcher, evt fsnotify.Event
 		return
 	}
 	if m.debounceTimer == nil {
-		m.debounceTimer = time.AfterFunc(debounceInterval, func() {
+		m.debounceTimer = time.AfterFunc(time.Duration(m.debounceSecs)*time.Second, func() {
 			m.mu.Lock()
 			m.debounceTimer = nil
 			m.mu.Unlock()
 			m.trigger(ReasonDebounce)
 		})
 	} else {
-		m.debounceTimer.Reset(debounceInterval)
+		m.debounceTimer.Reset(time.Duration(m.debounceSecs) * time.Second)
 	}
 	m.mu.Unlock()
 }
@@ -516,7 +542,7 @@ func (m *Manager) cleanupAndRefresh() {
 	snapshotDir, projectID := m.snapshotDir, m.projectID
 	m.mu.Unlock()
 	projectDir := filepath.Join(snapshotDir, projectID)
-	if deleted, err := Cleanup(projectDir, time.Now()); err != nil {
+	if deleted, err := Cleanup(projectDir, time.Now(), m.retentionDays, m.maxStorageMB*1024*1024); err != nil {
 		log.Printf("[snapshot] 启动清理失败: %v", err)
 	} else if len(deleted) > 0 {
 		log.Printf("[snapshot] 启动清理完成，删除 %d 个快照", len(deleted))

@@ -4,6 +4,8 @@
 
 FlowPartner is an AI agent desktop app built for non-technical users. People who don't have a computer background tend to trust AI too much — so the software itself has to be the safety gatekeeper, not the user.
 
+As you can see, FlowPartner is an open-source client. This means that every alteration will be clearly visible. We will not steal your code, information or files from within the client.
+
 ## The core idea
 
 Most AI tools assume the user knows what they're doing. FlowPartner assumes the opposite. Every design decision starts from the same question: *what happens if the user blindly trusts the AI?*

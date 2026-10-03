@@ -10,9 +10,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/response"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/proto"
 )
 
@@ -31,16 +31,17 @@ const (
 )
 
 // AgentDefHandler 处理 /api/agents 的 REST CRUD。
-// manager 用于在定义变更后广播失效通知，让 Python 侧缓存立即失效。
-// broadcastFn 用于向所有前端 WebSocket 连接广播 agents_changed 事件。
+// sendCmd 用于向 Python 侧发送 agents_changed 指令。
+// notifyFrontend 用于向所有前端广播 agents_changed 事件。
 type AgentDefHandler struct {
-	manager     *bridge.Manager
-	broadcastFn func(eventType, payload string)
+	threadMgr     *thread.Manager
+	sendCmd       func(cmd *proto.ServerCommand)
+	notifyFrontend func(eventType, payload string)
 }
 
 // NewAgentDefHandler 创建智能体定义处理器。
-func NewAgentDefHandler(manager *bridge.Manager, broadcastFn func(eventType, payload string)) *AgentDefHandler {
-	return &AgentDefHandler{manager: manager, broadcastFn: broadcastFn}
+func NewAgentDefHandler(threadMgr *thread.Manager, sendCmd func(cmd *proto.ServerCommand), notifyFrontend func(eventType, payload string)) *AgentDefHandler {
+	return &AgentDefHandler{threadMgr: threadMgr, sendCmd: sendCmd, notifyFrontend: notifyFrontend}
 }
 
 // BuiltinMainAgent 构造内置主智能体定义。
@@ -369,23 +370,17 @@ func (h *AgentDefHandler) audit(op, id string) {
 }
 
 // notifyAgentsChanged 广播智能体定义失效事件：
-// 1. Python 侧收到后立即刷新缓存（3.3 变更通知为主）
+// 1. Python 侧收到后立即刷新缓存
 // 2. 前端 WebSocket 收到后立即刷新智能体列表
 func (h *AgentDefHandler) notifyAgentsChanged() {
-	if h.manager == nil {
-		return
-	}
 	cmd := &proto.ServerCommand{
 		CommandType: "agents_changed",
 		Payload:     "{}",
 	}
-	select {
-	case h.manager.CmdChan <- cmd:
-	default:
-		log.Printf("[Audit] agents_changed broadcast dropped: CmdChan full")
+	if h.sendCmd != nil {
+		h.sendCmd(cmd)
 	}
-	// 同时广播给所有前端连接
-	if h.broadcastFn != nil {
-		h.broadcastFn("agents_changed", "{}")
+	if h.notifyFrontend != nil {
+		h.notifyFrontend("agents_changed", "{}")
 	}
 }

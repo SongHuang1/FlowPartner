@@ -137,11 +137,15 @@ export function MentionTextarea({
       >
         {parts.map((part, i) =>
           part.startsWith('@') && part.length > 1 && agentNames.has(part.slice(1)) ? (
-            <span key={i} className="font-semibold text-blue-600">
+            // 镜像层只负责画高亮背景；文字保持透明避免与 textarea 叠加出重影
+            <span key={i} className="bg-blue-50 rounded px-0.5 text-transparent">
               {part}
             </span>
           ) : (
-            <span key={i}>{part}</span>
+            // 镜像层必须复刻完整文本占位，否则高亮背景会错位到句首
+            <span key={i} className="text-transparent">
+              {part}
+            </span>
           ),
         )}
       </div>
@@ -169,7 +173,7 @@ export function MentionTextarea({
         rows={rows}
         disabled={disabled}
         data-testid="mention-textarea"
-        className="relative w-full resize-none overflow-y-auto rounded-md border border-neutral-200 bg-transparent px-3 py-2 text-sm caret-neutral-800 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-300 disabled:opacity-50 min-h-[40px] max-h-[200px]"
+        className="relative w-full resize-none overflow-y-auto rounded-md border border-neutral-200 bg-transparent px-3 py-2 text-sm caret-neutral-800 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-300 disabled:opacity-50 disabled:cursor-not-allowed min-h-[36px] max-h-[200px]"
       />
       {open && (
         <ul

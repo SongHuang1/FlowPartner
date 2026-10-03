@@ -32,12 +32,12 @@ func (e *ToolExecutor) executeWrite(ctx context.Context, args map[string]interfa
 
 	// 自动创建父目录
 	dir := filepath.Dir(resolved)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ToolResult{Success: false, Result: fmt.Sprintf("创建父目录失败: %v", err), ErrorCode: ErrToolError}
 	}
 
 	// 写入文件
-	if err := os.WriteFile(resolved, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(resolved, []byte(content), 0o644); err != nil {
 		return ToolResult{Success: false, Result: fmt.Sprintf("写入文件失败: %v", err), ErrorCode: ErrToolError}
 	}
 

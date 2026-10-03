@@ -9,13 +9,19 @@ import (
 	"time"
 )
 
-// 保留策略常量
+// 默认保留策略（当 Settings 未配置时使用）
 const (
-	retentionDays   = 30
-	maxStorageBytes = int64(5) * 1024 * 1024 * 1024 // 5GB
+	defaultRetentionDays   = 30
+	defaultMaxStorageBytes = int64(5) * 1024 * 1024 * 1024 // 5GB
 )
 
-func Cleanup(projectDir string, now time.Time) (deleted []string, err error) {
+func Cleanup(projectDir string, now time.Time, retentionDays int, maxStorageBytes int64) (deleted []string, err error) {
+	if retentionDays <= 0 {
+		retentionDays = defaultRetentionDays
+	}
+	if maxStorageBytes <= 0 {
+		maxStorageBytes = defaultMaxStorageBytes
+	}
 	snapshots, err := listSnapshotDirs(projectDir)
 	if err != nil {
 		return nil, err
@@ -43,7 +49,7 @@ func Cleanup(projectDir string, now time.Time) (deleted []string, err error) {
 	sort.Slice(completed, func(i, j int) bool { return completed[i].created.Before(completed[j].created) })
 
 	// 2. 时间保留：删除超过 30 天的快照。
-	cutoff := now.Add(-retentionDays * 24 * time.Hour)
+	cutoff := now.Add(-time.Duration(retentionDays) * 24 * time.Hour)
 	for _, s := range completed {
 		if s.created.Before(cutoff) {
 			log.Printf("[snapshot] 清理过期快照: %s (created=%s)", s.id, s.created.Format(time.RFC3339))
@@ -54,7 +60,7 @@ func Cleanup(projectDir string, now time.Time) (deleted []string, err error) {
 		}
 	}
 
-	// 3. 容量保留：总占用 > 5GB 时从旧到新删除。
+	// 3. 容量保留：总占用超过上限时从旧到新删除。
 	remaining := make([]snapshotInfo, 0, len(completed))
 	for _, s := range completed {
 		if !containsStr(deleted, s.id) {
@@ -73,7 +79,7 @@ func Cleanup(projectDir string, now time.Time) (deleted []string, err error) {
 				oldest.id, formatSize(oldest.size))
 			break
 		}
-		log.Printf("[snapshot] 容量清理: 删除快照 %s (总占用 %s > 5GB)", oldest.id, formatSize(total))
+		log.Printf("[snapshot] 容量清理: 删除快照 %s (总占用 %s > %s)", oldest.id, formatSize(total), formatSize(maxStorageBytes))
 		if err := os.RemoveAll(oldest.path); err != nil {
 			return deleted, fmt.Errorf("容量清理删除快照 %s 失败: %w", oldest.id, err)
 		}

@@ -18,6 +18,20 @@ export interface SubAgentResult {
 export type ContentBlock =
   | { type: 'text'; content: string }
   | {
+      type: 'tool_call'
+      call_id: string
+      tool_name: string
+      arguments: string
+      /** 调用生命周期：是否成功发起并拿到结果 */
+      status: 'running' | 'done' | 'error'
+      /** 工具自身返回的执行结果是否成功（与 status 区分） */
+      success?: boolean
+      /** 面向用户的一句话摘要，如 `read src/main.ts`、`ls -la` */
+      summary?: string
+      result?: string
+      error?: string
+    }
+  | {
       type: 'subagent'
       span_id: string
       agent_name: string
@@ -98,6 +112,12 @@ export interface Settings {
   snapshot_dir: string
   snapshot_enabled: boolean
   snapshot_include_secrets: boolean
+  snapshot_debounce_secs: number
+  snapshot_ticker_mins: number
+  snapshot_retention_days: number
+  snapshot_max_storage_mb: number
+
+  protocol_v2: boolean
 }
 
 export interface SnapshotStatus {
@@ -235,4 +255,22 @@ export interface SubAgentRun {
   result?: string
   error?: string
   steps: SubAgentStep[]
+}
+
+export interface UsageUpdate {
+  input_tokens: number
+  cached_input_tokens: number
+  output_tokens: number
+  reasoning_output_tokens: number
+  total_tokens: number
+  model_context_window: number
+  estimated: boolean
+}
+
+export interface TurnInfo {
+  thread_id: string
+  turn_id: string
+  status: 'active' | 'completed' | 'aborted'
+  last_agent_message?: string
+  duration_ms?: number
 }

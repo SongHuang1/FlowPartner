@@ -45,6 +45,11 @@ describe('api', () => {
         snapshot_dir: '',
         snapshot_enabled: false,
         snapshot_include_secrets: false,
+        snapshot_debounce_secs: 60,
+        snapshot_ticker_mins: 15,
+        snapshot_retention_days: 30,
+        snapshot_max_storage_mb: 5120,
+        protocol_v2: false,
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: mockSettings, timestamp: 123, request_id: 'uuid' })
@@ -99,6 +104,11 @@ describe('api', () => {
         snapshot_dir: '',
         snapshot_enabled: false,
         snapshot_include_secrets: false,
+        snapshot_debounce_secs: 60,
+        snapshot_ticker_mins: 15,
+        snapshot_retention_days: 30,
+        snapshot_max_storage_mb: 5120,
+        protocol_v2: false,
       }
       mockFetch.mockResolvedValue(
         mockResponse({ code: 0, message: 'success', data: null, timestamp: 123, request_id: 'uuid' })

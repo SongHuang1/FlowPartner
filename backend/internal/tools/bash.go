@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -173,7 +174,7 @@ func buildCommand(ctx context.Context, command string) *exec.Cmd {
 }
 
 func isWindows() bool {
-	return exec.Command("cmd", "/c", "echo").Run() == nil
+	return runtime.GOOS == "windows"
 }
 
 func deletionBlockedMessage(a deletionAnalysis) string {

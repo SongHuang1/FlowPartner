@@ -100,6 +100,17 @@ export async function saveSettings(settings: Settings): Promise<Settings> {
   return data.data
 }
 
+export async function deleteModelConfig(configId: string): Promise<void> {
+  await ensureReady()
+  const res = await fetchWithTimeout(`${BASE}/model_configs/${encodeURIComponent(configId)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.error?.message || `删除配置失败（HTTP ${res.status}）`)
+  }
+}
+
 export async function getHistoryList(): Promise<HistoryEntry[]> {
   await ensureReady()
   const res = await fetchWithTimeout(`${BASE}/history`)

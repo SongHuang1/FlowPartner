@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/response"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
-	"github.com/google/uuid"
 )
+
+const maxUniqueNameAttempts = 1000
 
 type ModelConfigHandler struct{}
 
@@ -53,14 +55,14 @@ func (h *ModelConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *ModelConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name            string  `json:"name"`
-		BaseURL         string  `json:"base_url"`
-		ModelName       string  `json:"model_name"`
-		APIKey          string  `json:"api_key"`
-		Password        string  `json:"password"`
-		Temperature     float64 `json:"temperature"`
-		ResponseFormat  string  `json:"response_format"`
-		TimeoutSecs     int     `json:"timeout_secs"`
+		Name           string  `json:"name"`
+		BaseURL        string  `json:"base_url"`
+		ModelName      string  `json:"model_name"`
+		APIKey         string  `json:"api_key"`
+		Password       string  `json:"password"`
+		Temperature    float64 `json:"temperature"`
+		ResponseFormat string  `json:"response_format"`
+		TimeoutSecs    int     `json:"timeout_secs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest,
@@ -122,15 +124,15 @@ func (h *ModelConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *ModelConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID              string  `json:"id"`
-		Name            string  `json:"name"`
-		BaseURL         string  `json:"base_url"`
-		ModelName       string  `json:"model_name"`
-		APIKey          string  `json:"api_key"`
-		Password        string  `json:"password"`
-		Temperature     float64 `json:"temperature"`
-		ResponseFormat  string  `json:"response_format"`
-		TimeoutSecs     int     `json:"timeout_secs"`
+		ID             string  `json:"id"`
+		Name           string  `json:"name"`
+		BaseURL        string  `json:"base_url"`
+		ModelName      string  `json:"model_name"`
+		APIKey         string  `json:"api_key"`
+		Password       string  `json:"password"`
+		Temperature    float64 `json:"temperature"`
+		ResponseFormat string  `json:"response_format"`
+		TimeoutSecs    int     `json:"timeout_secs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest,
@@ -174,14 +176,14 @@ func (h *ModelConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 			} else {
 				cfg.EncryptedAPIKey = settings.ModelConfigs[i].EncryptedAPIKey
 			}
-		uniqueName, err := ensureUniqueName(cfg.Name, settings.ModelConfigs, cfg.ID)
-		if err != nil {
-			response.WriteJSON(w, http.StatusInternalServerError,
-				response.Error(response.CodeInternalError, err.Error()))
-			return
-		}
-		cfg.Name = uniqueName
-		settings.ModelConfigs[i] = cfg
+			uniqueName, err := ensureUniqueName(cfg.Name, settings.ModelConfigs, cfg.ID)
+			if err != nil {
+				response.WriteJSON(w, http.StatusInternalServerError,
+					response.Error(response.CodeInternalError, err.Error()))
+				return
+			}
+			cfg.Name = uniqueName
+			settings.ModelConfigs[i] = cfg
 			found = true
 			break
 		}
@@ -333,8 +335,8 @@ func validateModelConfig(cfg *ModelConfig) error {
 	if cfg.ModelName == "" {
 		return fmt.Errorf("模型名称不能为空")
 	}
-	if cfg.Temperature < 0 || cfg.Temperature > 2.0 {
-		return fmt.Errorf("温度必须在 0.0 到 2.0 之间")
+	if cfg.Temperature < 0 || cfg.Temperature > 1.0 {
+		return fmt.Errorf("温度必须在 0.0 到 1.0 之间")
 	}
 	if cfg.ResponseFormat != "" && cfg.ResponseFormat != "text" && cfg.ResponseFormat != "json_object" {
 		return fmt.Errorf("response_format 必须是 'text' 或 'json_object'")
@@ -352,7 +354,7 @@ func ensureUniqueName(name string, configs []ModelConfig, excludeID string) (str
 	if !existingNames[name] {
 		return name, nil
 	}
-	for i := 1; i < 1000; i++ {
+	for i := 1; i < maxUniqueNameAttempts; i++ {
 		candidate := fmt.Sprintf("%s (%d)", name, i)
 		if !existingNames[candidate] {
 			return candidate, nil

@@ -14,8 +14,7 @@ import (
 
 func setupTestStorage(t *testing.T) {
 	t.Helper()
-	dir := newPersistentTestDir(t)
-	storage.SetDataDirForTest(dir)
+	storage.SetDataDirForTest(t.TempDir())
 	keystore.Reset()
 }
 
@@ -233,10 +232,11 @@ func TestMergeModelConfigs(t *testing.T) {
 		{ID: "c", Name: "Config C", BaseURL: "https://c.com"},
 	}
 
+	// incoming 是权威列表：b 更新、c 新增、a 未传回即删除
 	result := mergeModelConfigs(existing, incoming)
 
-	if len(result) != 3 {
-		t.Fatalf("expected 3 configs, got %d", len(result))
+	if len(result) != 2 {
+		t.Fatalf("expected 2 configs (a deleted), got %d", len(result))
 	}
 
 	configMap := make(map[string]ModelConfig)
@@ -244,14 +244,38 @@ func TestMergeModelConfigs(t *testing.T) {
 		configMap[cfg.ID] = cfg
 	}
 
-	if configMap["a"].Name != "Config A" {
-		t.Errorf("config a should be unchanged")
+	if _, ok := configMap["a"]; ok {
+		t.Errorf("config a missing from incoming must be deleted, not preserved")
 	}
 	if configMap["b"].Name != "Config B Updated" {
 		t.Errorf("config b should be updated, got %s", configMap["b"].Name)
 	}
 	if configMap["c"].Name != "Config C" {
 		t.Errorf("config c should be added")
+	}
+}
+
+func TestMergeModelConfigs_PreservesEncryptedKey(t *testing.T) {
+	existing := []ModelConfig{
+		{ID: "a", Name: "A", EncryptedAPIKey: "enc-a"},
+	}
+	incoming := []ModelConfig{
+		{ID: "a", Name: "A Renamed"}, // 前端拿不到密钥，必须回填
+	}
+	result := mergeModelConfigs(existing, incoming)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 config, got %d", len(result))
+	}
+	if result[0].EncryptedAPIKey != "enc-a" {
+		t.Errorf("encrypted key must be preserved, got %q", result[0].EncryptedAPIKey)
+	}
+}
+
+func TestMergeModelConfigs_NilIncomingKeepsExisting(t *testing.T) {
+	existing := []ModelConfig{{ID: "a", Name: "A"}}
+	result := mergeModelConfigs(existing, nil)
+	if len(result) != 1 || result[0].ID != "a" {
+		t.Errorf("nil incoming (field absent) must keep existing, got %+v", result)
 	}
 }
 

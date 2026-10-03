@@ -1,12 +1,13 @@
 import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from 'react'
 import { Send, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Message, PermissionRequestPayload, AgentMeta } from '@/types'
+import type { Message, AgentMeta, SubAgentStep, ContentBlock } from '@/types'
 import type { UseConversationReturn } from '@/hooks/useConversation'
 import { useSettings } from '@/hooks/useSettings'
 import { useLock } from '@/hooks/useLock'
-import { useWebSocket, deriveContentBlocks } from '@/hooks/useWebSocket'
+import { useWsV2, type ApprovalRequestPayload as WsApprovalRequest } from '@/hooks/useWebSocket'
 import { listAgents } from '@/lib/api'
+import { buildToolCallBlock } from '@/lib/toolcall'
 import { UserMessage } from './UserMessage'
 import { AssistantMessage } from './AssistantMessage'
 import { WelcomeView } from './WelcomeView'
@@ -15,19 +16,29 @@ import { PermissionDialog } from './PermissionDialog'
 import { AgentSelector } from './AgentSelector'
 import { MentionTextarea } from './MentionTextarea'
 
+/**
+ * 判断 item 是否为工具执行。
+ * 后端 turn_engine 把工具映射为 commandExecution（read/bash 等）
+ * 与 patchApply（write/edit/trash/purge 等）；agentMessage 是正文，不是工具。
+ */
+function isToolItem(type: string | undefined): boolean {
+  return type === 'commandExecution' || type === 'patchApply'
+}
 
 export function MessageList({ messages, streamingContent, agentNames }: { messages: Message[]; streamingContent: string; agentNames: Set<string> }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  console.log('[MessageList] render', { msgCount: messages.length, streamingContent: streamingContent?.slice(0, 30) })
+
   useLayoutEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: 'smooth',
-    })
+    const el = scrollRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [messages, streamingContent])
 
   return (
-    <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
+    <div ref={scrollRef} className="flex flex-col gap-3 p-4 overflow-y-auto flex-1 min-h-0">
       {messages.map((msg) => {
         if (msg.role === 'user') {
           return <UserMessage key={msg.id} message={msg} agentNames={agentNames} />
@@ -66,9 +77,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
   }, [])
 
-  useEffect(() => {
-    adjustHeight()
-  }, [value, adjustHeight])
+  useEffect(() => { adjustHeight() }, [value, adjustHeight])
 
   const handleSend = () => {
     const trimmed = value.trim()
@@ -95,7 +104,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
 
   return (
     <div className="border-t border-neutral-200 p-3 bg-white">
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
         <MentionTextarea
           inputRef={textareaRef}
           value={value}
@@ -108,14 +117,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
           rows={1}
         />
         {loading ? (
-          <Button
-            size="icon"
-            variant="destructive"
-            onClick={handleStop}
-            disabled={cancelClicked}
-            aria-label="停止"
-            className="shrink-0"
-          >
+          <Button size="icon" variant="destructive" onClick={handleStop} disabled={cancelClicked} aria-label="停止" className="shrink-0">
             <Square className="w-4 h-4" />
           </Button>
         ) : (
@@ -124,7 +126,7 @@ export function ChatInput({ value, onChange, onSend, onStop, disabled, loading, 
             disabled={!value.trim() || disabled}
             onClick={handleSend}
             aria-label="发送"
-            className="shrink-0"
+            className="shrink-0 transition-opacity"
           >
             <Send className="w-4 h-4" />
           </Button>
@@ -156,104 +158,225 @@ function ThinkingIndicator({ iteration = 0, maxIterations }: ThinkingIndicatorPr
 
 interface ChatAreaProps {
   conversation: UseConversationReturn
+  onFirstMessageSent?: () => void
+  onTurnCompleted?: () => void
 }
 
-export function ChatArea({ conversation }: ChatAreaProps) {
-  const { messages, sessionId, streamingContent, sendMessage, appendStreamChunk, finalizeWithBlocks, updateContentBlocks } = conversation
+export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: ChatAreaProps) {
+  console.log('[ChatArea] render', { messages: conversation.messages.length })
+  const { messages, streamingContent, sendMessage, appendStreamChunk, finalizeStream, updateContentBlocks } = conversation
   const { settings } = useSettings()
   const { lockStatus } = useLock()
-  const {
-    connected,
-    reconnecting,
-    reconnectAttempts,
-    isReconnectExhausted,
-    processing,
-    sendMessage: wsSendMessage,
-    sendCancel,
-    sendPermissionResponse,
-    manualReconnect,
-    onStreamChunk,
-    onAgentsChanged,
-    onError,
-    onSecurityEvent,
-    onPermissionRequest,
-    events,
-  } = useWebSocket()
 
   const [inputValue, setInputValue] = useState('')
   const [chatError, setChatError] = useState<string | null>(null)
-  const [securityWarning, setSecurityWarning] = useState<string | null>(null)
-  const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null)
+  const [pendingApproval, setPendingApproval] = useState<WsApprovalRequest | null>(null)
   const [agents, setAgents] = useState<AgentMeta[]>([])
   const [executorAgentId, setExecutorAgentId] = useState('')
   const agentNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
 
+  const currentThreadIdRef = useRef<string>('')
+  const currentTurnIdRef = useRef<string>('')
+  const [processing, setProcessing] = useState(false)
+  const [blocks, setBlocks] = useState<ContentBlock[]>([])
+  const prevStreamingRef = useRef('')
+  const pendingItemIdsRef = useRef<string[]>([])
+  const subagentItemIdsRef = useRef<Set<string>>(new Set())
+
   const refreshAgents = useCallback(() => {
-    listAgents()
-      .then((items) => setAgents(items))
-      .catch(() => {})
+    listAgents().then(setAgents).catch(() => {})
   }, [])
 
+  useEffect(() => { refreshAgents() }, [refreshAgents])
+
   useEffect(() => {
-    refreshAgents()
+    setBlocks(prev => {
+      if (!streamingContent && streamingContent !== '') return prev
+      let delta: string
+      if (streamingContent.length >= prevStreamingRef.current.length) {
+        delta = streamingContent.slice(prevStreamingRef.current.length)
+      } else {
+        prevStreamingRef.current = ''
+        delta = streamingContent
+      }
+      prevStreamingRef.current = streamingContent
+      if (!delta) return prev
+      const next = [...prev]
+      const lastIdx = next.length - 1
+      if (lastIdx >= 0 && next[lastIdx].type === 'text') {
+        next[lastIdx] = { type: 'text', content: next[lastIdx].content + delta }
+      } else {
+        next.push({ type: 'text', content: delta })
+      }
+      return next
+    })
+  }, [streamingContent])
+
+  useEffect(() => {
+    updateContentBlocks(blocks)
+  }, [blocks, updateContentBlocks])
+
+  const handleSubagentEvent = useCallback((method: string, params: unknown) => {
+    const p = params as Record<string, unknown> | undefined
+    let payload: Record<string, unknown> = {}
+    if (p?.payload) {
+      if (typeof p.payload === 'string') {
+        try { payload = JSON.parse(p.payload) } catch { /* ignore */ }
+      } else if (typeof p.payload === 'object') {
+        payload = p.payload as Record<string, unknown>
+      }
+    }
+    const merged = { ...p, ...payload }
+    const spanId = (merged.span_id as string) || (p?.span_id as string) || ''
+    if (!spanId) return
+
+    setBlocks(prev => {
+      const next = [...prev]
+      const idx = next.findIndex(b => b.type === 'subagent' && b.span_id === spanId)
+
+      if (method === 'subagent/subagent_start') {
+        if (idx >= 0) return prev
+        const pending = pendingItemIdsRef.current
+        if (pending.length > 0) {
+          const itemId = pending.shift()!
+          subagentItemIdsRef.current.add(itemId)
+          const toolIdx = next.findIndex(b => b.type === 'tool_call' && b.call_id === itemId)
+          if (toolIdx >= 0) next.splice(toolIdx, 1)
+        }
+        next.push({
+          type: 'subagent',
+          span_id: spanId,
+          agent_name: (merged.agent_name as string) || '子智能体',
+          task: (merged.task as string) || '',
+          status: 'running',
+          steps: [],
+        })
+      } else if (idx >= 0) {
+        const existing = { ...next[idx] } as Extract<ContentBlock, { type: 'subagent' }>
+        if (method === 'subagent/subagent_step') {
+          const steps = [...(existing.steps || [])]
+          const step: SubAgentStep = { step_type: (merged.step_type as SubAgentStep['step_type']) || 'thinking' }
+          if (merged.content) step.content = merged.content as string
+          if (merged.tool) step.tool = merged.tool as string
+          if (merged.args) step.args = merged.args as Record<string, unknown>
+          if (merged.result) step.result = merged.result as string
+          if (merged.truncated) step.truncated = merged.truncated as boolean
+          steps.push(step)
+          existing.steps = steps
+        } else if (method === 'subagent/subagent_end') {
+          existing.status = 'done'
+          existing.result = merged.result as string | undefined
+        } else if (method === 'subagent/subagent_error') {
+          existing.status = 'error'
+          existing.error = (merged.message || merged.error || '') as string
+        }
+        next[idx] = existing
+      }
+      return next
+    })
+  }, [])
+
+  const handleThreadEvent = useCallback((method: string, params: unknown) => {
+    console.log('[WS Event]', method)
+    const p = params as Record<string, unknown> | undefined
+    switch (method) {
+      case 'turn/started':
+        setProcessing(true)
+        currentTurnIdRef.current = (p as { turnId?: string })?.turnId || ''
+        setBlocks([])
+        prevStreamingRef.current = ''
+        pendingItemIdsRef.current = []
+        subagentItemIdsRef.current = new Set()
+        break
+      case 'item/agentMessage/delta': {
+        const delta = p as { delta?: string }
+        if (typeof delta.delta === 'string' && delta.delta) {
+          appendStreamChunk(delta.delta)
+        }
+        break
+      }
+      case 'item/started': {
+        const item = p as { item?: { itemId?: string; type?: string } }
+        if (isToolItem(item?.item?.type)) {
+          const itemId = item.item.itemId || ''
+          pendingItemIdsRef.current.push(itemId)
+          if (!subagentItemIdsRef.current.has(itemId)) {
+            // 真实工具名与参数在 item/completed 的 payload 里，此处只占位
+            setBlocks(prev => [...prev, {
+              type: 'tool_call' as const,
+              call_id: itemId,
+              tool_name: '',
+              arguments: '',
+              status: 'running' as const,
+            }])
+          }
+        }
+        break
+      }
+      case 'item/completed': {
+        const item = p as { item?: { itemId?: string; type?: string; text?: string }; payload?: string }
+        if (isToolItem(item?.item?.type)) {
+          const toolId = item.item.itemId || ''
+          if (subagentItemIdsRef.current.has(toolId)) {
+            subagentItemIdsRef.current.delete(toolId)
+            break
+          }
+          // 后端 events.go 把 payload 放在 item.text 里，params.payload 仅作兼容兜底
+          const raw = item.item.text || item.payload
+          const built = buildToolCallBlock(toolId, raw, '工具')
+          setBlocks(prev => {
+            const idx = prev.findIndex(b => b.type === 'tool_call' && b.call_id === toolId)
+            if (idx < 0) return built ? [...prev, built] : prev
+            if (!built) return prev.filter(b => !(b.type === 'tool_call' && b.call_id === toolId))
+            const next = [...prev]
+            next[idx] = built
+            return next
+          })
+        }
+        break
+      }
+      case 'turn/completed':
+        onTurnCompleted?.()
+        setProcessing(false)
+        finalizeStream()
+        break
+      case 'turn/interrupted':
+        setProcessing(false)
+        finalizeStream()
+        break
+      case 'error': {
+        const msg = (p as { message?: string })?.message
+        if (msg) setChatError(msg)
+        setProcessing(false)
+        break
+      }
+      default:
+        if (method.startsWith('subagent/')) {
+          handleSubagentEvent(method, p)
+        }
+        break
+    }
+  }, [appendStreamChunk, finalizeStream, onTurnCompleted, handleSubagentEvent])
+
+  const handleGlobalEvent = useCallback((eventType: string, _payload: string) => {
+    if (eventType === 'agents_changed') refreshAgents()
   }, [refreshAgents])
 
-  // 监听 agents_changed 事件，自动刷新智能体列表
-  useEffect(() => {
-    const unregister = onAgentsChanged(() => {
-      refreshAgents()
-    })
-    return unregister
-  }, [onAgentsChanged, refreshAgents])
+  const handleRequestApproval = useCallback((payload: WsApprovalRequest) => {
+    setPendingApproval(payload)
+  }, [])
 
-  // 从事件流按时间顺序构建内容块（文本 + 子智能体卡片穿插）；
-  // 检测到终态事件（final_answer）时用当前完整事件流定稿消息，保证文本不缺尾
-  useEffect(() => {
-    const blocks = deriveContentBlocks(events)
-    updateContentBlocks(blocks)
-    for (let i = events.length - 1; i >= 0; i--) {
-      const evt = events[i]
-      if (evt.event_type !== 'final_answer') continue
-      try {
-        const parsed = JSON.parse(evt.payload) as { text?: unknown }
-        if (typeof parsed.text === 'string') {
-          finalizeWithBlocks(parsed.text, blocks)
-        }
-      } catch {
-        console.error('Failed to parse final_answer payload:', evt.payload)
-      }
-      break
-    }
-  }, [events, updateContentBlocks, finalizeWithBlocks])
+  const { connectionState, reconnectAttempts, connect, startThread, startChat, interrupt, respondToApproval } = useWsV2({
+    onThreadEvent: handleThreadEvent,
+    onGlobalEvent: handleGlobalEvent,
+    onRequestApproval: handleRequestApproval,
+  })
 
-  const unregisterStreamChunkRef = useRef<(() => void) | null>(null)
-  const unregisterErrorRef = useRef<(() => void) | null>(null)
-  const unregisterSecurityRef = useRef<(() => void) | null>(null)
-  const unregisterPermissionRef = useRef<(() => void) | null>(null)
+  const connected = connectionState === 'connected'
+  const reconnecting = connectionState === 'reconnecting'
+  const isReconnectExhausted = connectionState === 'reconnect_exhausted'
 
-  useEffect(() => {
-    unregisterStreamChunkRef.current = onStreamChunk((chunk) => {
-      appendStreamChunk(chunk)
-    })
-    unregisterErrorRef.current = onError((message) => {
-      setChatError(message)
-    })
-    unregisterSecurityRef.current = onSecurityEvent((message) => {
-      setSecurityWarning(message)
-    })
-    unregisterPermissionRef.current = onPermissionRequest((payload) => {
-      setPendingPermission(payload)
-    })
-
-    return () => {
-      unregisterStreamChunkRef.current?.()
-      unregisterErrorRef.current?.()
-      unregisterSecurityRef.current?.()
-      unregisterPermissionRef.current?.()
-    }
-  }, [onStreamChunk, onError, onSecurityEvent, onPermissionRequest, appendStreamChunk])
-
-  const handleSend = () => {
+  const handleSend = useCallback(async () => {
     const trimmed = inputValue.trim()
     if (!trimmed) return
 
@@ -264,41 +387,61 @@ export function ChatArea({ conversation }: ChatAreaProps) {
 
     setInputValue('')
     setChatError(null)
-    const history = sendMessage(trimmed)
+    sendMessage(trimmed)
 
-    const executor = executorAgentId || 'main'
-    console.log('[ChatArea] Sending message:', { content: trimmed, sessionId, executor, historyLen: history.length })
-    const sent = wsSendMessage(trimmed, sessionId, history, executor)
-    if (!sent) {
-      console.error('[ChatArea] Failed to send message via WebSocket')
-      if (!connected) {
-        setChatError('网络连接中，请稍后重试')
-      } else {
-        setChatError('消息发送失败，请重试')
+    try {
+      let threadId = currentThreadIdRef.current
+      if (!threadId) {
+        const threadResult = await startThread({
+          agentId: executorAgentId || undefined,
+        })
+        threadId = (threadResult as { threadId: string }).threadId
+        currentThreadIdRef.current = threadId
+        onFirstMessageSent?.()
       }
+      const result = await startChat({
+        threadId,
+        input: [{ type: 'text', text: trimmed }],
+      })
+      currentThreadIdRef.current = result.threadId
+    } catch (e) {
+      setChatError(e instanceof Error ? e.message : '消息发送失败')
     }
-  }
+  }, [inputValue, lockStatus.locked, sendMessage, startThread, startChat, executorAgentId])
 
-  const handleStop = () => {
-    sendCancel(sessionId)
-  }
-
-  const handlePermissionDecision = (decision: 'allow' | 'allow_session' | 'deny') => {
-    if (pendingPermission) {
-      if (decision === 'allow_session') {
-        sendPermissionResponse(sessionId, pendingPermission.request_id, 'allow', 'session')
-      } else {
-        sendPermissionResponse(sessionId, pendingPermission.request_id, decision)
-      }
-      setPendingPermission(null)
+  const handleStop = useCallback(async () => {
+    if (currentThreadIdRef.current) {
+      try {
+        await interrupt({ threadId: currentThreadIdRef.current, turnId: currentTurnIdRef.current || undefined })
+      } catch { /* ignore */ }
     }
-  }
+  }, [interrupt])
+
+  const handlePermissionDecision = useCallback(async (decision: string) => {
+    if (pendingApproval) {
+      try {
+        await respondToApproval({
+          threadId: pendingApproval.threadId,
+          requestId: pendingApproval.requestId,
+          decision,
+        })
+      } catch { /* ignore */ }
+      setPendingApproval(null)
+    }
+  }, [pendingApproval, respondToApproval])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {pendingPermission && (
+      {pendingApproval && (
         <PermissionDialog
-          request={pendingPermission}
+          request={{
+            request_id: String(pendingApproval.requestId),
+            tool: pendingApproval.tool || 'bash',
+            path: pendingApproval.path || '',
+            operation: pendingApproval.operation || 'execute',
+            detail: pendingApproval.detail || '',
+            scope_options: pendingApproval.availableDecisions,
+          }}
           onDecision={handlePermissionDecision}
         />
       )}
@@ -312,7 +455,6 @@ export function ChatArea({ conversation }: ChatAreaProps) {
           loading={processing}
           executorAgentId={executorAgentId}
           onExecutorChange={setExecutorAgentId}
-          onAgentsChanged={onAgentsChanged}
         />
       ) : (
         <>
@@ -322,22 +464,13 @@ export function ChatArea({ conversation }: ChatAreaProps) {
             reconnectAttempts={reconnectAttempts}
             maxReconnectAttempts={5}
             reconnectExhausted={isReconnectExhausted}
-            onManualReconnect={manualReconnect}
+            onManualReconnect={connect}
           />
 
           <MessageList messages={messages} streamingContent={streamingContent} agentNames={agentNames} />
-          {processing && !streamingContent && (
-            <ThinkingIndicator />
-          )}
-          {securityWarning && (
-            <div className="px-4 py-2 text-sm text-amber-800 bg-amber-50 border-t border-amber-200">
-              {securityWarning}
-            </div>
-          )}
+          {processing && !streamingContent && <ThinkingIndicator />}
           {chatError && (
-            <div className="px-4 py-2 text-sm text-red-500 bg-red-50">
-              {chatError}
-            </div>
+            <div className="px-4 py-2 text-sm text-red-500 bg-red-50">{chatError}</div>
           )}
           <div className="flex items-center gap-3 px-4 pt-2">
             <AgentSelector
@@ -346,7 +479,7 @@ export function ChatArea({ conversation }: ChatAreaProps) {
               onChange={setExecutorAgentId}
               disabled={lockStatus.locked || processing}
             />
-            <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全，@智能体名 会建议主智能体调用子智能体</span>
+            <span className="text-xs text-neutral-400">输入 @ 可唤起智能体补全</span>
           </div>
           <ChatInput
             value={inputValue}

@@ -6,14 +6,16 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/llm"
 	"github.com/songhuang/flowpartner/backend/internal/sanitize"
 	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/internal/tools"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc/codes"
@@ -22,17 +24,37 @@ import (
 
 type AgentHandler struct {
 	proto.UnimplementedFlowPartnerServiceServer
-	manager         *bridge.Manager
-	llmClient       *llm.LLMClient
-	approvalManager *tools.ApprovalManager
+	threadMgr    *thread.Manager
+	llmClient    *llm.LLMClient
+	eventCh      chan<- *proto.AgentEvent
+	approvalMgr  *tools.ApprovalManager
+	cmdCh        chan *proto.ServerCommand
 }
 
-// NewAgentHandler 创建 AgentHandler。approvalManager 用于越权审批流程。
-func NewAgentHandler(m *bridge.Manager, am *tools.ApprovalManager) *AgentHandler {
+func NewAgentHandler(threadMgr *thread.Manager, eventCh chan<- *proto.AgentEvent) *AgentHandler {
 	return &AgentHandler{
-		manager:         m,
-		llmClient:       llm.NewClient(),
-		approvalManager: am,
+		threadMgr:   threadMgr,
+		llmClient:   llm.NewClient(),
+		eventCh:     eventCh,
+		approvalMgr: tools.NewApprovalManager(),
+		cmdCh:       make(chan *proto.ServerCommand, 100),
+	}
+}
+
+// SendCommand sends a command to the Python agent (non-blocking).
+func (h *AgentHandler) SendCommand(cmd *proto.ServerCommand) {
+	select {
+	case h.cmdCh <- cmd:
+	default:
+		log.Printf("[AgentHandler] cmdCh full, dropping command: %s", cmd.CommandType)
+	}
+}
+
+// StartEventPump starts a goroutine that converts gRPC events to WS notifications.
+func (h *AgentHandler) StartEventPump(evtCh <-chan *proto.AgentEvent) {
+	for event := range evtCh {
+		converter := thread.NewEventConverter(h.threadMgr)
+		converter.Convert(event)
 	}
 }
 
@@ -42,7 +64,7 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 	go func() {
 		for {
 			select {
-			case cmd := <-h.manager.CmdChan:
+			case cmd := <-h.cmdCh:
 				sendDone := make(chan error, 1)
 				go func() {
 					sendDone <- stream.Send(cmd)
@@ -53,11 +75,10 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 						log.Printf("Failed to send command to Python: %s", sanitize.Error(err))
 						return
 					}
-					log.Printf("[SyncChannel] Sent command to Python: type=%s session=%s", cmd.CommandType, cmd.SessionId)
 				case <-stream.Context().Done():
 					return
 				case <-time.After(30 * time.Second):
-					log.Println("Sending command to Python timed out, exiting goroutine")
+					log.Println("Sending command to Python timed out")
 					return
 				}
 			case <-stream.Context().Done():
@@ -76,11 +97,16 @@ func (h *AgentHandler) SyncChannel(stream proto.FlowPartnerService_SyncChannelSe
 			return status.Errorf(codes.Internal, "failed to receive event: %s", sanitize.Error(err))
 		}
 
-		h.manager.SendToSession(event.SessionId, event)
+		if h.eventCh != nil {
+			select {
+			case h.eventCh <- event:
+			default:
+				log.Printf("[SyncChannel] event channel full, dropping event")
+			}
+		}
 	}
 }
 
-// CallLLM 服务端流式 RPC：解析 Python 请求 → 合并配置 → 调用 LLM → 逐 chunk 返回
 func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerService_CallLLMServer) error {
 	log.Printf("[CallLLM] Session: %s, Payload length: %d", req.SessionId, len(req.JsonPayload))
 
@@ -161,7 +187,11 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		return h.sendError(stream, messageID, llm.NetworkError(err))
 	}
 
+	var lastUsage *proto.UsagePayload
 	for chunk := range chunkChan {
+		if chunk.Usage != nil {
+			lastUsage = chunk.Usage
+		}
 		if chunk.Done && chunk.Data == "" {
 			continue
 		}
@@ -169,10 +199,20 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 			IsError:      chunk.Done && chunk.Data != "",
 			JsonResponse: chunk.Data,
 			MessageId:    messageID,
+			Usage:        chunk.Usage,
 		}
 		if err := stream.Send(resp); err != nil {
 			log.Printf("[CallLLM] Send failed: %s", sanitize.Error(err))
 			return nil
+		}
+	}
+
+	if lastUsage != nil {
+		if err := stream.Send(&proto.LLMResponse{
+			MessageId: messageID,
+			Usage:     lastUsage,
+		}); err != nil {
+			log.Printf("[CallLLM] Send usage failed: %s", sanitize.Error(err))
 		}
 	}
 
@@ -215,7 +255,6 @@ func (h *AgentHandler) GetAgent(ctx context.Context, req *proto.AgentId) (*proto
 	return nil, status.Errorf(codes.NotFound, "智能体不存在: %s", req.Id)
 }
 
-// agentDefToProto 将存储层智能体定义转换为 proto 消息。
 func agentDefToProto(def storage.AgentDef) *proto.AgentDef {
 	return &proto.AgentDef{
 		Id:           def.ID,
@@ -225,13 +264,6 @@ func agentDefToProto(def storage.AgentDef) *proto.AgentDef {
 		CreatedAt:    def.CreatedAt,
 		UpdatedAt:    def.UpdatedAt,
 	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, messageID string, llmErr *llm.LLMError) error {
@@ -246,7 +278,6 @@ func (h *AgentHandler) sendError(stream proto.FlowPartnerService_CallLLMServer, 
 func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) (*proto.ToolResponse, error) {
 	log.Printf("[ExecuteTool] Session: %s, Tool: %s, Args length: %d", req.SessionId, req.ToolName, len(req.Arguments))
 
-	// 空 session_id 无法关联审批弹窗，直接拒绝（防呆：避免工具永久挂起等待用户响应）
 	if req.SessionId == "" {
 		return &proto.ToolResponse{
 			Success:   false,
@@ -258,7 +289,6 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 	settings := LoadSettings()
 	workingDir := settings.WorkingDirectory
 
-	// 工作目录为空时回退到用户主目录
 	if workingDir == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -283,7 +313,6 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 		}, nil
 	}
 
-	// 审批流程：检查路径是否越权
 	needsPermission, rawPath, resolvedPath, checkErr := executor.CheckPath(req.ToolName, req.Arguments)
 	if checkErr != nil {
 		log.Printf("[ExecuteTool] 路径检查异常: %v", checkErr)
@@ -296,30 +325,23 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 
 	if needsPermission {
 		if req.ApprovalId == "" {
-			if req.ToolName != "purge" && h.approvalManager.IsTrusted(req.SessionId, req.ToolName, resolvedPath) {
-				log.Printf("[ExecuteTool] Session trust hit, skipping approval: tool=%s path=%s", req.ToolName, resolvedPath)
-			} else {
-				requestID := h.approvalManager.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
-				log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
-				return &proto.ToolResponse{
-					NeedsPermission: true,
-					RequestId:       requestID,
-				}, nil
-			}
-		} else {
-			if !h.approvalManager.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
-				return &proto.ToolResponse{
-					Success:   false,
-					Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
-					ErrorCode: tools.ErrPathOutside,
-				}, nil
-			}
-			log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
+			requestID := h.approvalMgr.Create(req.SessionId, req.ToolName, rawPath, resolvedPath)
+			log.Printf("[ExecuteTool] 路径越权，已创建审批请求: request_id=%s path=%s", requestID, rawPath)
+			return &proto.ToolResponse{
+				NeedsPermission: true,
+				RequestId:       requestID,
+			}, nil
 		}
+		if !h.approvalMgr.Consume(req.SessionId, req.ApprovalId, req.ToolName, resolvedPath) {
+			return &proto.ToolResponse{
+				Success:   false,
+				Result:    "审批无效：审批记录不存在、已过期、参数不匹配或已被消费",
+				ErrorCode: tools.ErrPathOutside,
+			}, nil
+		}
+		log.Printf("[ExecuteTool] 审批已通过，执行工具: tool=%s path=%s", req.ToolName, resolvedPath)
 	}
 
-	// 正常执行（审批通过或路径在工作目录内）
-	// 审批通过时携带 WithApproval 标记，跳过工具内的二次路径校验
 	execCtx := ctx
 	if needsPermission {
 		execCtx = tools.WithApproval(ctx)
@@ -329,7 +351,15 @@ func (h *AgentHandler) ExecuteTool(ctx context.Context, req *proto.ToolRequest) 
 
 	return &proto.ToolResponse{
 		Success:   result.Success,
-		Result:    result.Result,
+		Result:    sanitizeUTF8(result.Result),
 		ErrorCode: result.ErrorCode,
 	}, nil
+}
+
+// sanitizeUTF8 replaces invalid UTF-8 byte sequences with the Unicode replacement character.
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
 }

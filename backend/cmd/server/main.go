@@ -12,51 +12,50 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/bridge"
 	"github.com/songhuang/flowpartner/backend/internal/config"
 	"github.com/songhuang/flowpartner/backend/internal/handler"
 	"github.com/songhuang/flowpartner/backend/internal/keystore"
 	"github.com/songhuang/flowpartner/backend/internal/server"
 	"github.com/songhuang/flowpartner/backend/internal/snapshot"
 	"github.com/songhuang/flowpartner/backend/internal/static"
-	"github.com/songhuang/flowpartner/backend/internal/tools"
+	"github.com/songhuang/flowpartner/backend/internal/thread"
 	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc"
 )
 
-func main() {
-	// 1. 读取配置
-	cfg := config.Load()
+const gracefulShutdownTimeout = 2 * time.Second
 
-	// 2. 初始化 keystore 状态（从已保存的 settings.json 恢复 hasAPIKey）
+func main() {
+	cfg := config.Load()
 	initializeKeystore()
 
-	// 3. 创建 bridge.Manager、WebSocketHandler 与快照管理器（共享桥接层）
-	mgr := bridge.NewManager()
-	approvalManager := tools.NewApprovalManager()
+	threadMgr := thread.NewManager()
+	agentEventCh := make(chan *proto.AgentEvent, 100)
+	globalEventCh := make(chan handler.GlobalEvent, 100)
 
-	// 快照管理器：状态与消息事件通过 WebSocket 广播到前端
-	var wsHandler *handler.WebSocketHandler
 	snapshotMgr := snapshot.NewManager(
 		func(status snapshot.Status) {
-			wsHandler.BroadcastEvent("snapshot_status", mustJSON(status))
+			select {
+			case globalEventCh <- handler.GlobalEvent{EventType: "snapshot_status", Payload: mustJSON(status)}:
+			default:
+			}
 		},
 		func(msg snapshot.Message) {
-			wsHandler.BroadcastEvent("snapshot_message", mustJSON(msg))
+			select {
+			case globalEventCh <- handler.GlobalEvent{EventType: "snapshot_message", Payload: mustJSON(msg)}:
+			default:
+			}
 		},
 	)
-	wsHandler = handler.NewWebSocketHandler(mgr, approvalManager, snapshotMgr)
-	// 启动时按已保存设置应用快照配置（含启动清理，后台执行）
+
 	applySnapshotConfig(snapshotMgr)
 
-	// 4. 端口探索
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
 	if err != nil {
 		log.Fatalf("HTTP port discovery failed: %v", err)
 	}
 	defer httpListener.Close()
 
-	// gRPC 端口探索，排除 HTTP 已占用的端口
 	exclude := map[string]bool{fmt.Sprintf("127.0.0.1:%d", httpPort): true}
 	grpcListener, grpcPort, err := server.FindAvailablePort(":50051", exclude)
 	if err != nil {
@@ -64,19 +63,22 @@ func main() {
 	}
 	defer grpcListener.Close()
 
-	// 5. 注册 HTTP 路由
+	grpcServer := grpc.NewServer()
+	agentHandler := handler.NewAgentHandler(threadMgr, agentEventCh)
+	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
+
+	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh, agentHandler)
+	go wsHandler.StartBroadcastLoop(globalEventCh)
+
+	go agentHandler.StartEventPump(agentEventCh)
+
 	mux := http.NewServeMux()
-	registerRoutes(mux, wsHandler, snapshotMgr, mgr)
+	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
 	staticHandler.Handle(mux)
 
 	httpServer := &http.Server{Handler: mux}
 
-	// 6. 创建 gRPC Server
-	grpcServer := grpc.NewServer()
-	proto.RegisterFlowPartnerServiceServer(grpcServer, handler.NewAgentHandler(mgr, approvalManager))
-
-	// 7. 启动 HTTP Server (goroutine)
 	httpErrChan := make(chan error, 1)
 	readyChan := make(chan struct{}, 2)
 	go func() {
@@ -87,7 +89,6 @@ func main() {
 		}
 	}()
 
-	// 8. 启动 gRPC Server (goroutine)
 	grpcErrChan := make(chan error, 1)
 	go func() {
 		log.Printf("gRPC server starting on :%d", grpcPort)
@@ -97,12 +98,10 @@ func main() {
 		}
 	}()
 
-	// 9. 等待两个服务 goroutine 启动后输出就绪信号（listener 已在端口探索时绑定，早到的连接由内核排队）
 	<-readyChan
 	<-readyChan
 	fmt.Fprintln(os.Stderr, readySignal(httpPort, grpcPort))
 
-	// 10. 优雅退出
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -113,19 +112,19 @@ func main() {
 		log.Fatalf("gRPC server error: %v", err)
 	case sig := <-quit:
 		log.Printf("Received signal %v, gracefully shutting down...", sig)
-		shutdown(grpcServer, httpServer, mgr, wsHandler, snapshotMgr)
+		shutdown(grpcServer, httpServer, wsHandler, snapshotMgr, threadMgr)
 	}
 
 	log.Println("Server exited")
 }
 
-func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, mgr *bridge.Manager) {
+func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager, agentHandler *handler.AgentHandler) {
 	settingsHandler := handler.NewSettingsHandler(snapshotMgr)
 	historyHandler := &handler.HistoryHandler{}
 	unlockHandler := &handler.UnlockHandler{}
 	modelConfigHandler := &handler.ModelConfigHandler{}
 	snapshotHandler := handler.NewSnapshotHandler(snapshotMgr)
-	agentDefHandler := handler.NewAgentDefHandler(mgr, wsHandler.BroadcastEvent)
+	agentDefHandler := handler.NewAgentDefHandler(threadMgr, agentHandler.SendCommand, wsHandler.BroadcastEvent)
 
 	mux.HandleFunc("/api/settings", settingsHandler.Handle)
 	mux.HandleFunc("/api/settings/clear_api_key", settingsHandler.HandleClearAPIKey)
@@ -159,7 +158,6 @@ func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, sna
 	mux.HandleFunc("/ws", wsHandler.HandleWS)
 }
 
-// applySnapshotConfig 按已保存设置启动快照管理器（工作区根与 PathGuard 同源）。
 func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
 	settings := handler.LoadSettings()
 	workingDir := handler.ResolveWorkingDir(settings)
@@ -167,12 +165,20 @@ func applySnapshotConfig(snapshotMgr *snapshot.Manager) {
 		log.Println("[snapshot] 无法解析工作目录，快照未启用")
 		return
 	}
-	if err := snapshotMgr.Configure(workingDir, settings.SnapshotDir, settings.SnapshotEnabled, settings.SnapshotIncludeSecrets); err != nil {
+	if err := snapshotMgr.Configure(
+		workingDir,
+		settings.SnapshotDir,
+		settings.SnapshotEnabled,
+		settings.SnapshotIncludeSecrets,
+		settings.SnapshotDebounceSecs,
+		settings.SnapshotTickerMins,
+		settings.SnapshotRetentionDays,
+		settings.SnapshotMaxStorageMB,
+	); err != nil {
 		log.Printf("[snapshot] 启动配置失败: %v", err)
 	}
 }
 
-// mustJSON 序列化状态/消息事件；失败时返回空对象占位。
 func mustJSON(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -181,7 +187,6 @@ func mustJSON(v interface{}) string {
 	return string(data)
 }
 
-// initializeKeystore 从已保存的 settings.json 恢复 keystore 的 hasAPIKey 状态
 func initializeKeystore() {
 	settings := handler.LoadSettings()
 	ks := keystore.Instance()
@@ -197,18 +202,15 @@ func initializeKeystore() {
 	}
 }
 
-// readySignal 生成 Electron 主进程识别的后端就绪信号
 func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }
 
-func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Manager, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager) {
-
+func shutdown(grpcServer *grpc.Server, httpServer *http.Server, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager) {
 	if snapshotMgr != nil {
 		snapshotMgr.Close()
 	}
 
-	// 1. 先关闭 gRPC Server（等待当前 RPC 完成，超时 2 秒强制停止）
 	gracefulDone := make(chan struct{})
 	go func() {
 		grpcServer.GracefulStop()
@@ -216,21 +218,19 @@ func shutdown(grpcServer *grpc.Server, httpServer *http.Server, mgr *bridge.Mana
 	}()
 	select {
 	case <-gracefulDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(gracefulShutdownTimeout):
 		log.Println("gRPC graceful stop timed out, forcing stop")
 		grpcServer.Stop()
 	}
 
-	// 2. 断开所有 WebSocket 连接
-	mgr.CloseAllSessions()
-
-	// 3. 关闭 WebSocketHandler 的 done channel，让 HandleWS 循环退出
 	wsHandler.Close()
+	threadMgr.Close()
 
-	// 4. 关闭 HTTP Server（2 秒超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server did not shut down within timeout: %v", err)
 	}
 }
+
+

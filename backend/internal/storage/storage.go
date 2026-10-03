@@ -33,7 +33,7 @@ func DataDir() (string, error) {
 		return "", fmt.Errorf("failed to get user home dir: %w", err)
 	}
 	dir := filepath.Join(home, ".flowpartner")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create data dir: %w", err)
 	}
 	dataDirCache = dir
@@ -94,7 +94,7 @@ func WriteJSON(filename string, src interface{}) error {
 		return fmt.Errorf("failed to marshal %s: %w", filename, err)
 	}
 	tmpPath := filepath.Join(dir, filename+".tmp")
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write temp file for %s: %w", filename, err)
 	}
 	finalPath := filepath.Join(dir, filename)
@@ -217,7 +217,7 @@ func HistoryDir() (string, error) {
 		return "", err
 	}
 	historyDir := filepath.Join(dir, "history")
-	if err := os.MkdirAll(historyDir, 0755); err != nil {
+	if err := os.MkdirAll(historyDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create history dir: %w", err)
 	}
 	return historyDir, nil
@@ -309,15 +309,20 @@ func ReadHistory(sessionID string) ([]HistoryMessage, error) {
 			}
 		}
 
-		// 再尝试新格式：单条消息对象
-		var msg HistoryMessage
-		if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
-			result = append(result, msg)
-			continue
-		}
+	// 跳过元数据行（如 {"meta": {"executor_agent_id": "main"}}）
+	if strings.HasPrefix(line, `{"meta":`) {
+		continue
+	}
 
-		// 两种格式都失败，跳过损坏行
-		log.Printf("[Storage] Skipping malformed history line in %s", sessionID)
+	// 再尝试新格式：单条消息对象
+	var msg HistoryMessage
+	if err := json.Unmarshal([]byte(line), &msg); err == nil && msg.Role != "" {
+		result = append(result, msg)
+		continue
+	}
+
+	// 两种格式都失败，跳过损坏行
+	log.Printf("[Storage] Skipping malformed history line in %s: %s", sessionID, line[:min(80, len(line))])
 	}
 	return result, nil
 }

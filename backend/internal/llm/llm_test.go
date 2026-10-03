@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 func TestNormalizeChatCompletionsURL(t *testing.T) {
@@ -212,14 +214,32 @@ func TestStream_Success(t *testing.T) {
 	}
 
 	var chunks []string
+	var usage *proto.UsagePayload
 	for chunk := range chunkChan {
-		if !chunk.Done {
-			chunks = append(chunks, chunk.Data)
+		if chunk.Done {
+			if chunk.Usage != nil {
+				usage = chunk.Usage
+			}
+			continue
 		}
+		chunks = append(chunks, chunk.Data)
 	}
 
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+
+	if usage == nil {
+		t.Fatal("expected usage in Done chunk, got nil")
+	}
+	if usage.PromptTokens != 10 {
+		t.Errorf("expected prompt_tokens=10, got %d", usage.PromptTokens)
+	}
+	if usage.CompletionTokens != 2 {
+		t.Errorf("expected completion_tokens=2, got %d", usage.CompletionTokens)
+	}
+	if usage.TotalTokens != 12 {
+		t.Errorf("expected total_tokens=12, got %d", usage.TotalTokens)
 	}
 }
 

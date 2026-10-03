@@ -26,7 +26,7 @@ func TestManager_ConfigureAndManualSnapshot(t *testing.T) {
 	workingDir, snapshotDir, _ := setup(t)
 	writeFile(t, filepath.Join(workingDir, "a.txt"), "a")
 	mgr := NewManager(nil, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, true, false); err != nil {
+	if err := mgr.Configure(workingDir, snapshotDir, true, false, 60, 15, 30, 5120); err != nil {
 		t.Fatal(err)
 	}
 	defer mgr.Close()
@@ -41,7 +41,7 @@ func TestManager_ManualQueuedWhileSnapshotting(t *testing.T) {
 	workingDir, snapshotDir, _ := setup(t)
 	writeFile(t, filepath.Join(workingDir, "a.txt"), "a")
 	mgr := NewManager(nil, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, true, false); err != nil {
+	if err := mgr.Configure(workingDir, snapshotDir, true, false, 60, 15, 30, 5120); err != nil {
 		t.Fatal(err)
 	}
 	defer mgr.Close()
@@ -91,7 +91,7 @@ func TestManager_RearmOnce(t *testing.T) {
 	workingDir, snapshotDir, _ := setup(t)
 	writeFile(t, filepath.Join(workingDir, "a.txt"), "a")
 	mgr := NewManager(nil, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, true, false); err != nil {
+	if err := mgr.Configure(workingDir, snapshotDir, true, false, 60, 15, 30, 5120); err != nil {
 		t.Fatal(err)
 	}
 	defer mgr.Close()
@@ -130,7 +130,7 @@ func TestManager_DisabledNoSnapshot(t *testing.T) {
 	workingDir, snapshotDir, _ := setup(t)
 	writeFile(t, filepath.Join(workingDir, "a.txt"), "a")
 	mgr := NewManager(nil, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, false, false); err != nil {
+	if err := mgr.Configure(workingDir, snapshotDir, false, false, 60, 15, 30, 5120); err != nil {
 		t.Fatal(err)
 	}
 	defer mgr.Close()
@@ -157,7 +157,7 @@ func TestManager_NestingRejected(t *testing.T) {
 		defer mu.Unlock()
 		lastStatus = s
 	}, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, true, false); err == nil {
+	if err := mgr.Configure(workingDir, snapshotDir, true, false, 60, 15, 30, 5120); err == nil {
 		t.Fatal("嵌套配置应被拒绝")
 	}
 	waitFor(t, 2*time.Second, func() bool {
@@ -177,7 +177,7 @@ func TestManager_WorkingDirMissing(t *testing.T) {
 	missing := filepath.Join(base, "not_exist")
 	snapshotDir := filepath.Join(base, "snaps")
 	mgr := NewManager(nil, nil)
-	if err := mgr.Configure(missing, snapshotDir, true, false); err == nil {
+	if err := mgr.Configure(missing, snapshotDir, true, false, 60, 15, 30, 5120); err == nil {
 		t.Fatal("工作区根不存在应报错")
 	}
 	if mgr.Enabled() {
@@ -205,7 +205,7 @@ func TestManager_PhaseReturnsToIdleAfterSnapshot(t *testing.T) {
 		lastPhase = s.Phase
 		mu.Unlock()
 	}, nil)
-	if err := mgr.Configure(workingDir, snapshotDir, true, false); err != nil {
+	if err := mgr.Configure(workingDir, snapshotDir, true, false, 60, 15, 30, 5120); err != nil {
 		t.Fatal(err)
 	}
 	defer mgr.Close()

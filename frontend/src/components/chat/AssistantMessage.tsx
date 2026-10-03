@@ -4,9 +4,10 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import katex from 'katex'
-import { Loader2, ChevronRight } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import type { Message, ContentBlock } from '@/types'
+import { tailSnippet } from '@/lib/toolcall'
 import { MessageToolbar } from './MessageToolbar'
 
 interface AssistantMessageProps {
@@ -16,14 +17,22 @@ interface AssistantMessageProps {
 
 export function AssistantMessage({ message, streamingContent }: AssistantMessageProps) {
   const isCompleted = message.status === 'completed'
-  const isStreaming = message.status === 'streaming'
-  const contentBlocks = message.content_blocks
-  const hasBlocks = contentBlocks && contentBlocks.length > 0
-  const displayContent = !hasBlocks && isStreaming && streamingContent ? streamingContent : message.content
-  // 复制仅包含主智能体的文字（text 块），不包含子智能体卡片内容
-  const copyContent = hasBlocks
-    ? contentBlocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n').trim() || message.content
-    : message.content
+  const blocks = message.content_blocks
+
+  // 无内容块时回退到扁平 content（历史消息、直接构造的消息）；
+  // 有内容块时仅从中取 text，保证文本与工具/子智能体块的时序不被破坏。
+  const effectiveBlocks: ContentBlock[] =
+    blocks && blocks.length > 0
+      ? blocks
+      : message.content
+        ? [{ type: 'text', content: message.content }]
+        : []
+
+  const liveText = streamingContent || message.content
+  const copyContent = (effectiveBlocks.some((b) => b.type === 'text')
+    ? effectiveBlocks.filter((b) => b.type === 'text').map((b) => b.content).join('')
+    : liveText) || ''
+
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
 
   const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -77,65 +86,124 @@ export function AssistantMessage({ message, streamingContent }: AssistantMessage
   }
 
   const renderSubagentBlock = (block: Extract<ContentBlock, { type: 'subagent' }>, idx: number) => {
-    const isExpanded = expandedAgent === block.span_id
     const key = block.span_id || `subagent_${idx}`
+    const isExpanded = expandedAgent === block.span_id
+    const body = block.error || block.result || ''
+    const canToggle = !!body
+
     return (
-      <div key={key} className="rounded-lg border border-neutral-200 bg-neutral-50 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setExpandedAgent(isExpanded ? null : (block.span_id || String(idx)))}
-          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-neutral-100 transition-colors"
-        >
-          <ChevronRight className={`w-3.5 h-3.5 text-neutral-400 transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
-          <span className="text-sm font-medium text-neutral-700">{block.agent_name}</span>
-          {block.task && <span className="text-xs text-neutral-400 truncate flex-1">{block.task}</span>}
+      <div key={key} className="text-sm">
+        {/* 名字加粗 + 灰色摘要，跟在正文流里，不占固定列宽 */}
+        <div className="flex items-start gap-1.5">
           {block.status === 'running' && (
-            <span className="text-xs text-blue-600 flex items-center gap-1 shrink-0">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              执行中
-            </span>
+            <Loader2 className="mt-1 w-3 h-3 shrink-0 animate-spin text-blue-500" />
           )}
-          {block.status === 'done' && <span className="text-xs text-green-600 shrink-0">已完成</span>}
-          {block.status === 'error' && <span className="text-xs text-red-500 shrink-0">失败</span>}
-        </button>
-        {isExpanded && (block.result || block.error) && (
-          <div className="px-3 py-2 text-sm text-neutral-800 prose prose-sm max-w-none border-t border-neutral-200">
-            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-              {block.error || block.result || ''}
-            </Markdown>
-          </div>
-        )}
+          <span className="font-semibold text-neutral-800 shrink-0">{block.agent_name}</span>
+
+          {block.status === 'running' && !body && (
+            <span className="text-neutral-500">正在执行…</span>
+          )}
+
+          {block.status === 'error' && !body && (
+            <span className="text-neutral-500">执行失败</span>
+          )}
+
+          {body && (
+            isExpanded ? (
+              <span className="text-neutral-500 min-w-0 flex-1 whitespace-pre-wrap break-words">
+                {body}
+              </span>
+            ) : (
+              <span className="text-neutral-500 min-w-0 flex-1 inline-block align-top whitespace-pre-wrap break-words max-h-[3em] overflow-y-auto">
+                {tailSnippet(body)}
+              </span>
+            )
+          )}
+
+          {canToggle && (
+            <button
+              type="button"
+              onClick={() => setExpandedAgent(isExpanded ? null : (block.span_id || String(idx)))}
+              className="shrink-0 text-xs text-blue-500 hover:underline mt-0.5"
+            >
+              {isExpanded ? '收起' : '展开'}
+            </button>
+          )}
+        </div>
       </div>
     )
+  }
+
+  const renderToolCallBlock = (block: Extract<ContentBlock, { type: 'tool_call' }>, idx: number) => {
+    const key = block.call_id || `tool_${idx}`
+    const isRunning = block.status === 'running'
+    // 调用失败 ≠ 执行失败：status 反映能否拿到结果，success 反映工具自身是否成功
+    const callFailed = block.status === 'error'
+    const execFailed = !isRunning && !callFailed && block.success === false
+
+    return (
+      <div key={key} className="flex items-start gap-1.5 text-sm">
+        {isRunning ? (
+          <Loader2 className="mt-1 w-3.5 h-3.5 shrink-0 animate-spin text-blue-500" />
+        ) : callFailed || execFailed ? (
+          <XCircle className="mt-1 w-3.5 h-3.5 shrink-0 text-red-500" />
+        ) : (
+          <CheckCircle2 className="mt-1 w-3.5 h-3.5 shrink-0 text-green-500" />
+        )}
+
+        <span className="min-w-0 flex-1">
+          <span className="text-neutral-800">
+            {block.tool_name || '工具'}
+            {block.summary && <span className="text-neutral-500"> {block.summary}</span>}
+          </span>
+
+          <span className="text-xs text-neutral-400 ml-1.5">
+            {isRunning ? '执行中' : callFailed ? '调用失败' : execFailed ? '执行失败' : '执行成功'}
+          </span>
+
+          {/* 结果文本本身就是用户需要的输出，不再展示原始 JSON 信封 */}
+          {!isRunning && block.result && !execFailed && (
+            <span className="block text-neutral-500 text-xs font-mono mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+              {block.result}
+            </span>
+          )}
+          {!isRunning && (execFailed || callFailed) && (block.error || block.result) && (
+            <span className="block text-red-500 text-xs font-mono mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+              {block.error || block.result}
+            </span>
+          )}
+        </span>
+      </div>
+    )
+  }
+
+  const renderBlock = (block: ContentBlock, idx: number) => {
+    switch (block.type) {
+      case 'text':
+        if (!block.content?.trim()) return null
+        return (
+          <div key={idx} className="text-sm text-neutral-800 prose prose-sm max-w-none">
+            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
+              {block.content}
+            </Markdown>
+          </div>
+        )
+      case 'tool_call':
+        return renderToolCallBlock(block, idx)
+      case 'subagent':
+        return renderSubagentBlock(block, idx)
+      default:
+        return null
+    }
   }
 
   return (
     <div className="flex justify-start">
       <div className="w-full min-w-0">
         <div className="text-xs text-neutral-500 mb-1">FlowPartner</div>
-        {hasBlocks ? (
-          <div className="space-y-2">
-            {contentBlocks.map((block, i) =>
-              block.type === 'text' ? (
-                block.content.trim() ? (
-                  <div key={i} className="text-sm text-neutral-800 prose prose-sm max-w-none">
-                    <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-                      {block.content}
-                    </Markdown>
-                  </div>
-                ) : null
-              ) : (
-                renderSubagentBlock(block, i)
-              )
-            )}
-          </div>
-        ) : (
-          <div className="text-sm text-neutral-800 prose prose-sm max-w-none">
-            <Markdown remarkPlugins={[remarkGfm, remarkMath]} components={mdComponents}>
-              {displayContent}
-            </Markdown>
-          </div>
-        )}
+        <div className="space-y-2">
+          {effectiveBlocks.map((block, i) => renderBlock(block, i))}
+        </div>
         {isCompleted && <MessageToolbar content={copyContent} />}
       </div>
     </div>
