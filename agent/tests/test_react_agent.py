@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent.core.react_agent import MAX_ITERATIONS, ReactAgent
-from agent.core.tool_runtime import ToolCall
 from agent.tools.registry import ToolRegistry
 
 

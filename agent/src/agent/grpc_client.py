@@ -663,7 +663,7 @@ class FlowPartnerClient:
             return []
         history = []
         try:
-            with open(history_file, "r", encoding="utf-8") as f:
+            with open(history_file, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:

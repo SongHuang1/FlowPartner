@@ -16,6 +16,15 @@ import { PermissionDialog } from './PermissionDialog'
 import { AgentSelector } from './AgentSelector'
 import { MentionTextarea } from './MentionTextarea'
 
+/**
+ * 判断 item 是否为工具执行。
+ * 后端 turn_engine 把工具映射为 commandExecution（read/bash 等）
+ * 与 patchApply（write/edit/trash/purge 等）；agentMessage 是正文，不是工具。
+ */
+function isToolItem(type: string | undefined): boolean {
+  return type === 'commandExecution' || type === 'patchApply'
+}
+
 export function MessageList({ messages, streamingContent, agentNames }: { messages: Message[]; streamingContent: string; agentNames: Set<string> }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -288,7 +297,7 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
       }
       case 'item/started': {
         const item = p as { item?: { itemId?: string; type?: string } }
-        if (item?.item?.type === 'commandExecution') {
+        if (isToolItem(item?.item?.type)) {
           const itemId = item.item.itemId || ''
           pendingItemIdsRef.current.push(itemId)
           if (!subagentItemIdsRef.current.has(itemId)) {
@@ -306,16 +315,22 @@ export function ChatArea({ conversation, onFirstMessageSent, onTurnCompleted }: 
       }
       case 'item/completed': {
         const item = p as { item?: { itemId?: string; type?: string; text?: string }; payload?: string }
-        if (item?.item?.type === 'commandExecution') {
+        if (isToolItem(item?.item?.type)) {
           const toolId = item.item.itemId || ''
           if (subagentItemIdsRef.current.has(toolId)) {
             subagentItemIdsRef.current.delete(toolId)
             break
           }
-          const built = buildToolCallBlock(toolId, item.payload, '工具')
+          // 后端 events.go 把 payload 放在 item.text 里，params.payload 仅作兼容兜底
+          const raw = item.item.text || item.payload
+          const built = buildToolCallBlock(toolId, raw, '工具')
           setBlocks(prev => {
-            const without = prev.filter(b => !(b.type === 'tool_call' && b.call_id === toolId))
-            return built ? [...without, built] : without
+            const idx = prev.findIndex(b => b.type === 'tool_call' && b.call_id === toolId)
+            if (idx < 0) return built ? [...prev, built] : prev
+            if (!built) return prev.filter(b => !(b.type === 'tool_call' && b.call_id === toolId))
+            const next = [...prev]
+            next[idx] = built
+            return next
           })
         }
         break

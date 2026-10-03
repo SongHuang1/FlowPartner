@@ -97,7 +97,6 @@ class SubAgentRunner:
                 },
             )
         elif event_type == "item_completed":
-            import json
             try:
                 inner = json.loads(payload.get("payload", "{}"))
             except (json.JSONDecodeError, TypeError):

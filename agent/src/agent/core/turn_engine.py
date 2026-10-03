@@ -12,12 +12,13 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from agent.core.constants import LOOP_DEADLINE_SECONDS, MAX_ITERATIONS, MAX_TOOL_RESULT_CHARS, STUCK_THRESHOLD
-from agent.core.steer import SteerInput, TurnContext
-from agent.core.tool_runtime import ParallelToolRuntime, ToolCall, ToolResult, WRITE_TOOLS
+from agent.core.steer import TurnContext
+from agent.core.tool_runtime import WRITE_TOOLS, ParallelToolRuntime, ToolCall, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class _LLMStreamResult:
 
 
 # Type aliases
-CallLLMFunc = Callable[[list[dict[str, Any]], list[dict[str, Any]], Optional[str]], Awaitable[_LLMStreamResult]]
+CallLLMFunc = Callable[[list[dict[str, Any]], list[dict[str, Any]], str | None], Awaitable[_LLMStreamResult]]
 ExecuteToolFunc = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 EmitEventFunc = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -91,7 +92,7 @@ class TurnEngine:
         system_prompt: str,
         tools_definition: list[dict[str, Any]],
         model_context_window: int = 0,
-        turn_ctx: Optional[TurnContext] = None,
+        turn_ctx: TurnContext | None = None,
     ) -> None:
         self.session_id = session_id
         self.thread_id = thread_id
@@ -123,7 +124,7 @@ class TurnEngine:
     async def run(
         self,
         user_message: str,
-        history: Optional[list[dict[str, Any]]] = None,
+        history: list[dict[str, Any]] | None = None,
     ) -> TurnResult:
         start_time = time.monotonic()
 
@@ -356,7 +357,7 @@ class TurnEngine:
         iteration: int,
         start_time: float,
         tool_call_signatures: list[str],
-    ) -> Optional[str]:
+    ) -> str | None:
         """检查循环终止条件。返回终止原因或 None。"""
         if iteration >= MAX_ITERATIONS:
             return f"max_iterations ({MAX_ITERATIONS})"

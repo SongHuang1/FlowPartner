@@ -79,8 +79,26 @@ describe('buildToolCallBlock', () => {
     expect(block!.error).toBe('命令返回非零')
   })
 
+  it('handles the real backend envelope shape sent under item.text', () => {
+    // 后端 events.go: "text": p.ItemCompleted.Payload —— payload 是 JSON 字符串
+    const payload = JSON.stringify({
+      success: true, result: 'hello', error_code: '',
+      tool_name: 'read', arguments: { path: 'a.txt' },
+    })
+    const block = buildToolCallBlock('c1', payload, '工具')
+    expect(block!.tool_name).toBe('read')
+    expect(block!.summary).toBe('a.txt')
+  })
+
+  it('falls back to the provided name when tool_name is absent', () => {
+    const payload = JSON.stringify({ success: true, result: 'ok' })
+    const block = buildToolCallBlock('c1', payload, '工具')
+    expect(block!.tool_name).toBe('工具')
+  })
+
   it('returns null when payload is unusable', () => {
     expect(buildToolCallBlock('c1', undefined, '工具')).toBeNull()
+    expect(buildToolCallBlock('c1', '', '工具')).toBeNull()
   })
 })
 

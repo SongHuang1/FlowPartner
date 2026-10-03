@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -69,5 +68,5 @@ class TurnContext:
         try:
             await asyncio.wait_for(self.interrupt_event.wait(), timeout=timeout)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -8,8 +7,8 @@ import uuid
 from typing import Any
 
 from agent.core.constants import LOOP_DEADLINE_SECONDS, MAX_ITERATIONS, STUCK_THRESHOLD, TOKEN_BUDGET
-from agent.core.turn_engine import TurnEngine, _LLMStreamResult
 from agent.core.tool_runtime import ToolCall
+from agent.core.turn_engine import TurnEngine, _LLMStreamResult
 
 logger = logging.getLogger(__name__)
 
