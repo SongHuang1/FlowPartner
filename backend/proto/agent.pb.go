@@ -7,12 +7,11 @@
 package proto
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -1692,7 +1691,7 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\vExecuteTool\x12\x18.flowpartner.ToolRequest\x1a\x19.flowpartner.ToolResponse\x12;\n" +
 	"\n" +
 	"ListAgents\x12\x12.flowpartner.Empty\x1a\x19.flowpartner.AgentDefList\x127\n" +
-	"\bGetAgent\x12\x14.flowpartner.AgentId\x1a\x15.flowpartner.AgentDefB6Z4github.com/SongHuang1/FlowPartner/backend/proto;protob\x06proto3"
+	"\bGetAgent\x12\x14.flowpartner.AgentId\x1a\x15.flowpartner.AgentDefB7Z5github.com/SongHuang1/FlowPartner/backend/proto;protob\x06proto3"
 
 var (
 	file_proto_agent_proto_rawDescOnce sync.Once
