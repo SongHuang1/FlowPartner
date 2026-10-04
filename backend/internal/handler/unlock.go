@@ -18,6 +18,10 @@ type UnlockRequest struct {
 
 type UnlockHandler struct{}
 
+func NewUnlockHandler() *UnlockHandler {
+	return &UnlockHandler{}
+}
+
 // Handle 根据路径和方法分发到 Post/Lock/Status
 func (h *UnlockHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {

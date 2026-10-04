@@ -52,7 +52,7 @@ func FindAvailablePort(startPort string, exclude map[string]bool) (net.Listener,
 			return nil, 0, fmt.Errorf("%w: start port %d exceeded upper limit after %d increments", ErrMaxAttemptsReached, port, attempt)
 		}
 
-		addr := fmt.Sprintf("%s:%d", listenAddr, currentPort)
+		addr := net.JoinHostPort(listenAddr, strconv.Itoa(currentPort))
 		if exclude[addr] {
 			continue
 		}

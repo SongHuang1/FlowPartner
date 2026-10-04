@@ -18,6 +18,10 @@ const maxUniqueNameAttempts = 1000
 
 type ModelConfigHandler struct{}
 
+func NewModelConfigHandler() *ModelConfigHandler {
+	return &ModelConfigHandler{}
+}
+
 func (h *ModelConfigHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

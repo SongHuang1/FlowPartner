@@ -74,17 +74,28 @@ function startGoProcess(port) {
     })
   }
 
-  goProcess.stderr.on('data', (data) => {
+  // Ready marker arrives on stdout (logs stay on stderr). Buffer across
+  // 'data' chunk boundaries so a signal split mid-string is still matched.
+  let readyBuf = ''
+  goProcess.stdout.on('data', (data) => {
     const output = data.toString()
-    process.stderr.write(output)
+    process.stdout.write(output)
+    readyBuf += output
 
-    if (output.includes('__FP_BACKEND_READY__') && backendPort === null) {
-      backendPort = port
-      const grpcMatch = output.match(/gRPC=::?(\d+)/)
+    if (readyBuf.includes('__FP_BACKEND_READY__') && backendPort === null) {
+      const httpMatch = readyBuf.match(/HTTP=:(\d+)/)
+      if (httpMatch) {
+        backendPort = parseInt(httpMatch[1], 10)
+      }
+      const grpcMatch = readyBuf.match(/gRPC=:(\d+)/)
       if (grpcMatch) {
         backendGrpcPort = parseInt(grpcMatch[1], 10)
       }
     }
+  })
+
+  goProcess.stderr.on('data', (data) => {
+    process.stderr.write(data.toString())
   })
 
   goProcess.on('error', (err) => {

@@ -12,6 +12,10 @@ import (
 // HistoryHandler 处理历史记录相关请求
 type HistoryHandler struct{}
 
+func NewHistoryHandler() *HistoryHandler {
+	return &HistoryHandler{}
+}
+
 // Handle 根据 HTTP 方法分发
 func (h *HistoryHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
