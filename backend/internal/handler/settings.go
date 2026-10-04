@@ -13,11 +13,11 @@ import (
 	"runtime"
 	"strings"
 
-	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/snapshot"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
+	flowcrypto "github.com/SongHuang1/FlowPartner/backend/internal/crypto"
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/snapshot"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 )
 
 type ModelConfig struct {
@@ -73,32 +73,32 @@ type Settings struct {
 
 func DefaultSettings() Settings {
 	return Settings{
-		Model:            "gpt-4",
-		AgentID:          "default",
-		ContextWindow:    8192,
-		WorkingDirectory: "",
-		Language:         "zh-CN",
-		BaseURL:          "https://api.openai.com/v1",
-		ModelName:        "gpt-4",
-		ModelConfigs:     []ModelConfig{},
-		ActiveConfigID:   "",
-		SystemPrompt:     "你是一个乐于助人的 AI 助手。",
-		Temperature:      0.7,
-		CloseBehavior:    "ask",
-		CloseRemembered:  false,
-		WindowX:          100,
-		WindowY:          100,
-		WindowWidth:      1200,
-		WindowHeight:     800,
-		SidebarVisible:   true,
-		SidebarView:      "conversation",
-		TrashDir:         "",
-		ProtocolV2:       true,
-		SnapshotEnabled:        false,
-		SnapshotDebounceSecs:   60,
-		SnapshotTickerMins:     15,
-		SnapshotRetentionDays:  30,
-		SnapshotMaxStorageMB:   5120,
+		Model:                 "gpt-4",
+		AgentID:               "default",
+		ContextWindow:         8192,
+		WorkingDirectory:      "",
+		Language:              "zh-CN",
+		BaseURL:               "https://api.openai.com/v1",
+		ModelName:             "gpt-4",
+		ModelConfigs:          []ModelConfig{},
+		ActiveConfigID:        "",
+		SystemPrompt:          "你是一个乐于助人的 AI 助手。",
+		Temperature:           0.7,
+		CloseBehavior:         "ask",
+		CloseRemembered:       false,
+		WindowX:               100,
+		WindowY:               100,
+		WindowWidth:           1200,
+		WindowHeight:          800,
+		SidebarVisible:        true,
+		SidebarView:           "conversation",
+		TrashDir:              "",
+		ProtocolV2:            true,
+		SnapshotEnabled:       false,
+		SnapshotDebounceSecs:  60,
+		SnapshotTickerMins:    15,
+		SnapshotRetentionDays: 30,
+		SnapshotMaxStorageMB:  5120,
 	}
 }
 

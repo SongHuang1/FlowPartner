@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 	"google.golang.org/grpc"
 )
 
@@ -123,12 +123,12 @@ func TestAgentHandler_SyncChannel_EOF(t *testing.T) {
 
 type fakeSyncServer struct {
 	grpc.ServerStream
-	ctx         context.Context
-	events      []*proto.AgentEvent
-	commands    []*proto.ServerCommand
-	mu          sync.Mutex
-	stop        chan struct{}
-	sendClosed  bool
+	ctx        context.Context
+	events     []*proto.AgentEvent
+	commands   []*proto.ServerCommand
+	mu         sync.Mutex
+	stop       chan struct{}
+	sendClosed bool
 }
 
 func (f *fakeSyncServer) Send(cmd *proto.ServerCommand) error {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 )
 
 func clearSettingsFile(t *testing.T) {

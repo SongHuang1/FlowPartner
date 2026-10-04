@@ -1,4 +1,4 @@
-module github.com/songhuang/flowpartner/backend
+module github.com/SongHuang1/FlowPartner/backend
 
 go 1.26.3
 

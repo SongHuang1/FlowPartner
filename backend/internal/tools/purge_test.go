@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 )
 
 // setupTrashFixture 创建带回收站的执行器，并放入若干条目。

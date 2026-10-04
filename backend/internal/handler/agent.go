@@ -10,25 +10,25 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/llm"
+	"github.com/SongHuang1/FlowPartner/backend/internal/sanitize"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
+	"github.com/SongHuang1/FlowPartner/backend/internal/tools"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 	"github.com/google/uuid"
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/llm"
-	"github.com/songhuang/flowpartner/backend/internal/sanitize"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/internal/tools"
-	"github.com/songhuang/flowpartner/backend/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type AgentHandler struct {
 	proto.UnimplementedFlowPartnerServiceServer
-	threadMgr    *thread.Manager
-	llmClient    *llm.LLMClient
-	eventCh      chan<- *proto.AgentEvent
-	approvalMgr  *tools.ApprovalManager
-	cmdCh        chan *proto.ServerCommand
+	threadMgr   *thread.Manager
+	llmClient   *llm.LLMClient
+	eventCh     chan<- *proto.AgentEvent
+	approvalMgr *tools.ApprovalManager
+	cmdCh       chan *proto.ServerCommand
 }
 
 func NewAgentHandler(threadMgr *thread.Manager, eventCh chan<- *proto.AgentEvent) *AgentHandler {

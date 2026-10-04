@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "github.com/songhuang/flowpartner/backend/proto;proto";
+option go_package = "github.com/SongHuang1/FlowPartner/backend/proto;proto";
 package flowpartner;
 
 // --- 1. Python 发给 Go 的事件 (实时汇报) ---

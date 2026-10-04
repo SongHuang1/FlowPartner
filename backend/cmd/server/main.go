@@ -14,14 +14,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/internal/config"
-	"github.com/songhuang/flowpartner/backend/internal/handler"
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/server"
-	"github.com/songhuang/flowpartner/backend/internal/snapshot"
-	"github.com/songhuang/flowpartner/backend/internal/static"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/internal/config"
+	"github.com/SongHuang1/FlowPartner/backend/internal/handler"
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/server"
+	"github.com/SongHuang1/FlowPartner/backend/internal/snapshot"
+	"github.com/SongHuang1/FlowPartner/backend/internal/static"
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 	"google.golang.org/grpc"
 )
 

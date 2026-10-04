@@ -9,11 +9,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 	"github.com/google/uuid"
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 const (
@@ -34,8 +34,8 @@ const (
 // sendCmd 用于向 Python 侧发送 agents_changed 指令。
 // notifyFrontend 用于向所有前端广播 agents_changed 事件。
 type AgentDefHandler struct {
-	threadMgr     *thread.Manager
-	sendCmd       func(cmd *proto.ServerCommand)
+	threadMgr      *thread.Manager
+	sendCmd        func(cmd *proto.ServerCommand)
 	notifyFrontend func(eventType, payload string)
 }
 

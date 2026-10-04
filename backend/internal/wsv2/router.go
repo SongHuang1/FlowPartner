@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
 	"github.com/gorilla/websocket"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
 )
 
 // ConnState represents the connection lifecycle state.

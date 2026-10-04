@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
 // HandlerError is a structured error from a thread/turn handler.
@@ -282,8 +282,8 @@ func (h *Handler) handleThreadDelete(params json.RawMessage) (interface{}, *Hand
 // --- turn/start ---
 
 type turnStartParams struct {
-	ThreadID  string      `json:"threadId"`
-	Input     []UserInput `json:"input"`
+	ThreadID  string                  `json:"threadId"`
+	Input     []UserInput             `json:"input"`
 	Overrides *map[string]interface{} `json:"overrides,omitempty"`
 }
 

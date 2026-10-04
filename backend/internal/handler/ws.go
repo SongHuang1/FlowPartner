@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/SongHuang1/FlowPartner/backend/internal/snapshot"
+	"github.com/SongHuang1/FlowPartner/backend/internal/thread"
+	"github.com/SongHuang1/FlowPartner/backend/internal/wsv2"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 	"github.com/gorilla/websocket"
-	"github.com/songhuang/flowpartner/backend/internal/snapshot"
-	"github.com/songhuang/flowpartner/backend/internal/thread"
-	"github.com/songhuang/flowpartner/backend/internal/wsv2"
-	"github.com/songhuang/flowpartner/backend/proto"
 )
 
 // GlobalEvent is a system-level event to broadcast to all frontends.

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
 func TestNormalizeChatCompletionsURL(t *testing.T) {
@@ -201,11 +201,11 @@ func TestStream_Success(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, err := client.Stream(t.Context(), req)
@@ -254,11 +254,11 @@ func TestStream_Unauthorized(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, err := client.Stream(t.Context(), req)
@@ -300,11 +300,11 @@ func TestStream_RetryNetworkError(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -339,11 +339,11 @@ func TestStream_NoRetryAfterChunks(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -374,11 +374,11 @@ func TestStream_Timeout(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     1 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   1 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -442,11 +442,11 @@ func TestStream_OverrideModel(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:       "gpt-4o",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:     "gpt-4o",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -479,11 +479,11 @@ func TestStream_ToolCallsPassthrough(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:    []byte(`{"messages":[{"role":"user","content":"weather?"}]}`),
-		Model:       "gpt-4",
-		APIKey:      []byte("sk-test-not-a-real-key"),
-		TargetURL:   server.URL + "/chat/completions",
-		Timeout:     5 * time.Second,
+		Messages:  []byte(`{"messages":[{"role":"user","content":"weather?"}]}`),
+		Model:     "gpt-4",
+		APIKey:    []byte("sk-test-not-a-real-key"),
+		TargetURL: server.URL + "/chat/completions",
+		Timeout:   5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)

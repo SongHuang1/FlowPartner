@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 )
 
 func setupTestStorage(t *testing.T) {
@@ -644,5 +644,3 @@ func TestSettings_PutMerge(t *testing.T) {
 		t.Fatalf("expected 2 configs after merge, got %d", len(configs))
 	}
 }
-
-

@@ -3,7 +3,7 @@ package thread
 import (
 	"testing"
 
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
 func TestEventConverter_TurnStarted(t *testing.T) {
@@ -108,10 +108,10 @@ func TestEventConverter_ItemDelta(t *testing.T) {
 		TurnId:   "u1",
 		Payload: &proto.AgentEvent_ItemDelta{
 			ItemDelta: &proto.ItemDelta{
-				ItemId:  "i1",
+				ItemId:   "i1",
 				ItemType: "agentMessage",
-				Delta:   "Hello",
-				Seq:     1,
+				Delta:    "Hello",
+				Seq:      1,
 			},
 		},
 	}

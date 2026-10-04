@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
+	flowcrypto "github.com/SongHuang1/FlowPartner/backend/internal/crypto"
 )
 
 const (
@@ -133,7 +133,7 @@ func (ks *KeyStore) SwitchKey(newKey []byte) {
 }
 
 var (
-	ErrRateLimited = fmt.Errorf("too many failed attempts")
+	ErrRateLimited   = fmt.Errorf("too many failed attempts")
 	ErrWrongPassword = fmt.Errorf("wrong password")
 )
 

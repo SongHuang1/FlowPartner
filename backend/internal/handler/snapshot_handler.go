@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/snapshot"
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/snapshot"
 )
 
 // SnapshotHandler 提供快照列表与详情查询（还原/手动快照走 WebSocket 指令）。

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
 const defaultChunkBufferSize = 64

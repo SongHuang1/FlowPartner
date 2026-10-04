@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/songhuang/flowpartner/backend/proto"
+	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
 // EventConverter converts gRPC AgentEvent to WS v2 notifications.

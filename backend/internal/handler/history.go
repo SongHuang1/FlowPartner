@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 )
 
 // HistoryHandler 处理历史记录相关请求

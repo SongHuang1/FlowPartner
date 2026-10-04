@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
+	flowcrypto "github.com/SongHuang1/FlowPartner/backend/internal/crypto"
 )
 
 // newTestKeyStore 返回一个全新的 KeyStore（等价于进程启动时的单例初始状态）。

@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	flowcrypto "github.com/SongHuang1/FlowPartner/backend/internal/crypto"
+	"github.com/SongHuang1/FlowPartner/backend/internal/keystore"
+	"github.com/SongHuang1/FlowPartner/backend/internal/response"
+	"github.com/SongHuang1/FlowPartner/backend/internal/storage"
 	"github.com/google/uuid"
-	flowcrypto "github.com/songhuang/flowpartner/backend/internal/crypto"
-	"github.com/songhuang/flowpartner/backend/internal/keystore"
-	"github.com/songhuang/flowpartner/backend/internal/response"
-	"github.com/songhuang/flowpartner/backend/internal/storage"
 )
 
 const maxUniqueNameAttempts = 1000
