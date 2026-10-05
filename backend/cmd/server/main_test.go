@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +24,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TestMain redirects the storage layer at one temp dir for the whole package.
+// Per-test isolation would mean a temp dir each, but the settings file is
+// process-global state that subtests mutate.
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "flowpartner-cmd-test-*")
 	if err != nil {
@@ -35,6 +38,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// testWiring holds the object graph registerRoutes builds, so tests can reach
+// into a specific handler instead of going through the mux.
 type testWiring struct {
 	mux           *http.ServeMux
 	threadMgr     *thread.Manager
@@ -45,7 +50,14 @@ type testWiring struct {
 	agentEventCh  chan *proto.AgentEvent
 }
 
-func newTestWiring(t *testing.T) *testWiring {
+// makeTestWiring builds the same graph main() builds and registers it on a mux
+// that never listens. Tests drive it through ServeHTTP.
+//
+// The keystore singleton and settings.json are reset first because both are
+// process-global and would otherwise leak between tests: the unlock flow
+// depends on the persisted key, and a rate-limited keystore rejects the next
+// test's attempts outright.
+func makeTestWiring(t *testing.T) *testWiring {
 	t.Helper()
 	keystore.Reset()
 	dataDir, err := storage.DataDir()
@@ -68,13 +80,21 @@ func newTestWiring(t *testing.T) *testWiring {
 	w.mux = http.NewServeMux()
 	registerRoutes(w.mux, w.wsHandler, w.snapshotMgr, w.threadMgr, w.agentHandler)
 
+	// Snapshot and thread managers own watchers and goroutines. The other three
+	// fields need no teardown: agentHandler and wsHandler only touch the
+	// channels on this struct, and no event pump or broadcast loop was started.
 	t.Cleanup(func() {
 		w.snapshotMgr.Close()
 		w.threadMgr.Close()
 	})
+
 	return w
 }
 
+// TestReadySignal pins the wire format the Electron parent parses. The exact
+// string is asserted rather than re-parsed, because the contract is the literal
+// line: a re-parse would keep passing under most of the renames that would break
+// main.cjs.
 func TestReadySignal(t *testing.T) {
 	got := readySignal(8080, 50051)
 	want := "__FP_BACKEND_READY__ HTTP=:8080 gRPC=:50051"
@@ -83,44 +103,58 @@ func TestReadySignal(t *testing.T) {
 	}
 }
 
-func TestReadySignal_ParsedByElectron(t *testing.T) {
-	signal := readySignal(8080, 50051)
+// TestJSONPayload_Status checks the status event shape the frontend decodes.
+// Field presence is what matters here, not key order, so the assertions target
+// individual keys.
+func TestJSONPayload_Status(t *testing.T) {
+	got := jsonPayload(snapshot.Status{Phase: "idle", Count: 3, SizeBytes: 1024})
 
-	httpMatch := regexp.MustCompile(`HTTP=:(\d+)`).FindStringSubmatch(signal)
-	if httpMatch == nil {
-		t.Fatalf("HTTP port not parseable from ready signal %q", signal)
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatalf("payload is not valid JSON: %v (payload: %s)", err, got)
 	}
-	if httpMatch[1] != "8080" {
-		t.Errorf("HTTP port = %s, want 8080", httpMatch[1])
+	if decoded["phase"] != "idle" {
+		t.Errorf("phase = %v, want idle", decoded["phase"])
 	}
-
-	grpcMatch := regexp.MustCompile(`gRPC=:(\d+)`).FindStringSubmatch(signal)
-	if grpcMatch == nil {
-		t.Fatalf("gRPC port not parseable from ready signal %q", signal)
+	if decoded["count"] != float64(3) {
+		t.Errorf("count = %v, want 3", decoded["count"])
 	}
-	if grpcMatch[1] != "50051" {
-		t.Errorf("gRPC port = %s, want 50051", grpcMatch[1])
+	// last_at is omitempty, so a zero time must not reach the frontend as a
+	// bogus timestamp.
+	if _, ok := decoded["last_at"]; ok {
+		t.Errorf("last_at present for a zero time, want omitted (payload: %s)", got)
 	}
 }
 
-func TestJSONPayload_Success(t *testing.T) {
-	got := jsonPayload(map[string]int{"a": 1})
-	if got != `{"a":1}` {
-		t.Errorf("jsonPayload = %q, want {\"a\":1}", got)
+// TestJSONPayload_Message pins the user-facing snapshot message shape.
+func TestJSONPayload_Message(t *testing.T) {
+	got := jsonPayload(snapshot.Message{Type: "warning", Text: "snapshot skipped"})
+
+	var decoded snapshot.Message
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatalf("payload does not decode into snapshot.Message: %v (payload: %s)", err, got)
+	}
+	if decoded.Type != "warning" || decoded.Text != "snapshot skipped" {
+		t.Errorf("decoded = %+v, want {warning snapshot skipped}", decoded)
 	}
 }
 
-func TestJSONPayload_MarshalFailureFallsBackToEmptyObject(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("jsonPayload panicked on unmarshalable value: %v", r)
-		}
-	}()
-	if got := jsonPayload(make(chan int)); got != "{}" {
-		t.Errorf("jsonPayload = %q, want {}", got)
+// TestMarshalPayload_Failure exercises the error branch. It goes through
+// marshalPayload rather than jsonPayload because the generic constraint now
+// admits only types that marshal cleanly, making jsonPayload's fallback
+// unreachable from a test.
+func TestMarshalPayload_Failure(t *testing.T) {
+	got, err := marshalPayload(make(chan int))
+	if err == nil {
+		t.Fatal("marshalPayload succeeded on a channel, want error")
+	}
+	if got != "" {
+		t.Errorf("marshalPayload returned %q alongside an error, want empty", got)
 	}
 }
 
+// TestInitializeKeystore covers every code path that sets or clears the
+// "API key configured" flag on the keystore singleton.
 func TestInitializeKeystore(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -168,6 +202,10 @@ func TestInitializeKeystore(t *testing.T) {
 	}
 }
 
+// TestApplySnapshotConfig checks that main refuses to leave the snapshot
+// manager half-configured. Every rejection case asserts the manager stayed
+// disabled: the bug this guards against is a watcher running on a workspace
+// that does not exist.
 func TestApplySnapshotConfig(t *testing.T) {
 	t.Run("enabled configures manager", func(t *testing.T) {
 		workspace := t.TempDir()
@@ -238,82 +276,91 @@ func TestApplySnapshotConfig(t *testing.T) {
 	})
 }
 
-func TestRegisterRoutes(t *testing.T) {
-	w := newTestWiring(t)
+// TestRegisterRoutes_Patterns asserts path-to-pattern resolution only. What
+// each handler does with the request belongs to internal/handler's own tests;
+// duplicating those assertions here would report a handler bug against this
+// package and fail for the wrong reason.
+//
+// mux.Handler returns the matched pattern without invoking it, which is exactly
+// the question this package owns: which rule claims which path.
+func TestRegisterRoutes_Patterns(t *testing.T) {
+	w := makeTestWiring(t)
 
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		body       string
-		wantStatus int
+		name        string
+		path        string
+		wantPattern string
 	}{
-		{"settings GET", http.MethodGet, "/api/settings", "", http.StatusOK},
-		{"settings PUT", http.MethodPut, "/api/settings",
-			`{"model":"gpt-4","context_window":4096,"language":"zh-CN"}`, http.StatusOK},
-		{"clear_api_key POST", http.MethodPost, "/api/settings/clear_api_key", "", http.StatusOK},
-		{"history GET", http.MethodGet, "/api/history", "", http.StatusOK},
-		{"history session GET", http.MethodGet, "/api/history/sess_test_1", "", http.StatusNotFound},
-		{"unlock POST", http.MethodPost, "/api/unlock", `{"password":"WrongPass123"}`, http.StatusBadRequest},
-		{"lock POST", http.MethodPost, "/api/lock", "", http.StatusOK},
-		{"lock_status GET", http.MethodGet, "/api/lock_status", "", http.StatusOK},
-		{"settings POST 405", http.MethodPost, "/api/settings", "", http.StatusMethodNotAllowed},
-		{"history POST 405", http.MethodPost, "/api/history", "", http.StatusMethodNotAllowed},
-		{"lock GET 405", http.MethodGet, "/api/lock", "", http.StatusMethodNotAllowed},
-		{"unknown 404", http.MethodGet, "/api/unknown", "", http.StatusNotFound},
+		{"settings collection", "/api/settings", "/api/settings"},
+		{"clear api key", "/api/settings/clear_api_key", "/api/settings/clear_api_key"},
+		{"history collection", "/api/history", "/api/history"},
+		{"history session", "/api/history/sess_test_1", "/api/history/"},
+		{"unlock", "/api/unlock", "/api/unlock"},
+		{"lock", "/api/lock", "/api/lock"},
+		{"lock status", "/api/lock_status", "/api/lock_status"},
+		{"snapshots collection", "/api/snapshots", "/api/snapshots"},
+		{"snapshot item", "/api/snapshots/snap_1", "/api/snapshots/"},
+		{"agents collection", "/api/agents", "/api/agents"},
+		{"agent item", "/api/agents/code-reviewer", "/api/agents/"},
+		{"model configs collection", "/api/model_configs", "/api/model_configs"},
+		// activate is dispatched inside the subtree handler, so it matches the
+		// prefix rule rather than a pattern of its own.
+		{"model config item", "/api/model_configs/cfg_a", "/api/model_configs/"},
+		{"model config activate", "/api/model_configs/cfg_a/activate", "/api/model_configs/"},
+		{"websocket", "/ws", "/ws"},
+		{"unregistered path", "/api/unknown", ""},
+		{"api prefix typo is not a subtree", "/api/setting", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
-			rec := httptest.NewRecorder()
-			w.mux.ServeHTTP(rec, req)
-			if rec.Code != tt.wantStatus {
-				t.Errorf("%s %s = %d, want %d (body: %s)", tt.method, tt.path, rec.Code, tt.wantStatus, rec.Body.String())
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			_, pattern := w.mux.Handler(req)
+			if pattern != tt.wantPattern {
+				t.Errorf("%s resolved to pattern %q, want %q", tt.path, pattern, tt.wantPattern)
 			}
 		})
 	}
 }
 
-func TestRegisterRoutes_ModelConfigsDispatch(t *testing.T) {
-	w := newTestWiring(t)
-
+// TestDispatchModelConfig verifies the activate branch wins over the ID branch.
+// ServeMux routes both to the same rule, so getting this backwards would send
+// every activate request to HandleByID with "cfg_a/activate" as the ID.
+func TestDispatchModelConfig(t *testing.T) {
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		body       string
-		wantStatus int
+		name     string
+		path     string
+		wantCall string
 	}{
-		{"collection GET", http.MethodGet, "/api/model_configs", "", http.StatusOK},
-		{"collection POST invalid body", http.MethodPost, "/api/model_configs", "not-json", http.StatusBadRequest},
-		{"collection POST missing model name", http.MethodPost, "/api/model_configs",
-			`{"name":"cfg-one","base_url":"https://api.example.com"}`, http.StatusBadRequest},
-		{"collection PUT 405", http.MethodPut, "/api/model_configs", "", http.StatusMethodNotAllowed},
-		{"subtree root DELETE 400", http.MethodDelete, "/api/model_configs/", "", http.StatusBadRequest},
-		{"item GET 405", http.MethodGet, "/api/model_configs/cfg_missing", "", http.StatusMethodNotAllowed},
-		{"item DELETE missing 404", http.MethodDelete, "/api/model_configs/cfg_missing", "", http.StatusNotFound},
-		{"activate GET 405", http.MethodGet, "/api/model_configs/cfg_missing/activate", "", http.StatusMethodNotAllowed},
-		{"activate unknown id 404", http.MethodPost, "/api/model_configs/cfg_missing/activate",
-			`{"password":"TestPass123"}`, http.StatusNotFound},
-		{"activate invalid body 400", http.MethodPost, "/api/model_configs/cfg_missing/activate",
-			"not-json", http.StatusBadRequest},
+		{"activate suffix goes to activate", "/api/model_configs/cfg_a/activate", "activate"},
+		{"plain id goes to by id", "/api/model_configs/cfg_a", "byID"},
+		{"subtree root goes to by id", "/api/model_configs/", "byID"},
+		{"id merely containing activate does not match", "/api/model_configs/activate-now", "byID"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			var got string
 			rec := httptest.NewRecorder()
-			w.mux.ServeHTTP(rec, req)
-			if rec.Code != tt.wantStatus {
-				t.Errorf("%s %s = %d, want %d (body: %s)", tt.method, tt.path, rec.Code, tt.wantStatus, rec.Body.String())
+			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
+			dispatchModelConfig(rec, req,
+				func(http.ResponseWriter, *http.Request) { got = "activate" },
+				func(http.ResponseWriter, *http.Request) { got = "byID" },
+			)
+			if got != tt.wantCall {
+				t.Errorf("dispatchModelConfig(%q) called %q, want %q", tt.path, got, tt.wantCall)
 			}
 		})
 	}
 }
 
-func TestRegisterRoutes_CollectionListReturnsConfigs(t *testing.T) {
-	w := newTestWiring(t)
+// TestRegisterRoutes_Wiring persists a setting and reads it back through the
+// mux, proving the mounted handler talks to the shared storage layer. The fields
+// asserted are the ones the flat format still owns; "model" is deliberately not
+// among them because LoadSettings overwrites it from the active model config,
+// which is internal/handler's business and is covered there.
+func TestRegisterRoutes_Wiring(t *testing.T) {
+	w := makeTestWiring(t)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/settings",
 		strings.NewReader(`{"model":"gpt-4","context_window":4096,"language":"zh-CN"}`))
@@ -323,34 +370,30 @@ func TestRegisterRoutes_CollectionListReturnsConfigs(t *testing.T) {
 		t.Fatalf("PUT settings = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/model_configs",
-		strings.NewReader(`{"name":"cfg-one","base_url":"https://api.example.com","model_name":"gpt-4"}`))
-	createRec := httptest.NewRecorder()
-	w.mux.ServeHTTP(createRec, createReq)
-	if createRec.Code != http.StatusCreated {
-		t.Fatalf("POST model_configs = %d, want 201: %s", createRec.Code, createRec.Body.String())
-	}
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/model_configs", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	listRec := httptest.NewRecorder()
 	w.mux.ServeHTTP(listRec, listReq)
 
 	var resp struct {
-		Data []handler.ModelConfig `json:"data"`
+		Data handler.Settings `json:"data"`
 	}
 	if err := json.Unmarshal(listRec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("parse list response: %v (body: %s)", err, listRec.Body.String())
+		t.Fatalf("parse settings response: %v (body: %s)", err, listRec.Body.String())
 	}
-	if len(resp.Data) != 1 {
-		t.Fatalf("list returned %d configs, want 1", len(resp.Data))
+	if resp.Data.ContextWindow != 4096 {
+		t.Errorf("round-tripped context_window = %d, want 4096", resp.Data.ContextWindow)
 	}
-	if resp.Data[0].Name != "cfg-one" {
-		t.Errorf("listed config name = %q, want cfg-one", resp.Data[0].Name)
+	if resp.Data.Language != "zh-CN" {
+		t.Errorf("round-tripped language = %q, want zh-CN", resp.Data.Language)
 	}
 }
 
+// TestRegisterRoutes_UnlockFlow walks lock → unlock → status through the mux.
+// Covered in internal/handler at the handler level; the reason to repeat it is
+// that the three paths must all resolve to the one UnlockHandler instance.
+// Divergent state (locked but reported unlocked) would mean two keystores.
 func TestRegisterRoutes_UnlockFlow(t *testing.T) {
-	w := newTestWiring(t)
+	w := makeTestWiring(t)
 
 	putReq := httptest.NewRequest(http.MethodPut, "/api/settings",
 		strings.NewReader(`{"model":"gpt-4","context_window":4096,"language":"zh-CN","api_key":"sk-test-key-abc","password":"TestPass123"}`))
@@ -392,27 +435,73 @@ func TestRegisterRoutes_UnlockFlow(t *testing.T) {
 	}
 }
 
+// TestDialOK checks both outcomes of the readiness probe.
+//
+// The closed-port half is inherently racy: the kernel can hand the freed port to
+// an unrelated process before the probe runs. A failure there would be a false
+// alarm, so that case asserts only the permissive direction.
 func TestDialOK(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	openPort := listener.Addr().(*net.TCPAddr).Port
-	if !dialOK(openPort) {
+	listener := listenT(t)
+	port := portOf(listener)
+	if !dialOK(port) {
 		t.Error("dialOK = false for a listening port, want true")
 	}
 	if err := listener.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
-	if dialOK(openPort) {
-		t.Error("dialOK = true for a closed port, want false")
+	if dialOK(port) {
+		t.Error("dialOK = true for a port whose listener is closed, want false")
 	}
 }
 
+// TestDialOK_ClosesConnection confirms the probe does not leak sockets.
+// waitForServersReady calls dialOK on a 50ms poll, so a probe that kept its
+// connection would exhaust the process file descriptors during startup. The
+// server side is drained here: it must observe EOF without sending anything.
+func TestDialOK_ClosesConnection(t *testing.T) {
+	listener := listenT(t)
+	port := portOf(listener)
+
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			accepted <- err
+			return
+		}
+		defer conn.Close()
+		// Read returns EOF only when dialOK closed its half.
+		if _, err := conn.Read(make([]byte, 1)); err == nil {
+			accepted <- fmt.Errorf("read returned data, want EOF")
+			return
+		}
+		accepted <- nil
+	}()
+
+	if !dialOK(port) {
+		t.Fatal("dialOK = false for a listening port, want true")
+	}
+
+	select {
+	case err := <-accepted:
+		if err != nil {
+			t.Fatalf("probe connection was not closed by the client: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("accepted connection never saw EOF; dialOK leaks its socket")
+	}
+}
+
+// TestWaitForServersReady covers the three outcomes main depends on: both ports
+// up, HTTP failed, gRPC failed. The error cases use a real listening port so the
+// only reason to return early is the channel, not a failed dial.
+//
+// The timeout path is intentionally untested: it needs a 5s wait, and the
+// message it produces is fixed.
 func TestWaitForServersReady(t *testing.T) {
 	t.Run("both ports listening", func(t *testing.T) {
-		httpLis := mustListen(t)
-		grpcLis := mustListen(t)
+		httpLis := listenT(t)
+		grpcLis := listenT(t)
 
 		if err := waitForServersReady(
 			portOf(httpLis), portOf(grpcLis),
@@ -426,7 +515,7 @@ func TestWaitForServersReady(t *testing.T) {
 		httpErrChan := make(chan error, 1)
 		httpErrChan <- context.Canceled
 
-		err := waitForServersReady(portOf(mustListen(t)), portOf(mustListen(t)),
+		err := waitForServersReady(portOf(listenT(t)), portOf(listenT(t)),
 			httpErrChan, make(chan error, 1))
 		if err == nil {
 			t.Fatal("waitForServersReady = nil, want error")
@@ -440,7 +529,7 @@ func TestWaitForServersReady(t *testing.T) {
 		grpcErrChan := make(chan error, 1)
 		grpcErrChan <- context.Canceled
 
-		err := waitForServersReady(portOf(mustListen(t)), portOf(mustListen(t)),
+		err := waitForServersReady(portOf(listenT(t)), portOf(listenT(t)),
 			make(chan error, 1), grpcErrChan)
 		if err == nil {
 			t.Fatal("waitForServersReady = nil, want error")
@@ -451,7 +540,12 @@ func TestWaitForServersReady(t *testing.T) {
 	})
 }
 
-func mustListen(t *testing.T) net.Listener {
+// listenT binds an ephemeral loopback port. Cleanup closes the listener, so a
+// test that closes it early is fine: the second Close just errors into a
+// discarded return.
+//
+// Named for its t.Fail-fast behaviour, not for panicking.
+func listenT(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -465,18 +559,24 @@ func portOf(listener net.Listener) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
+// TestShutdown_ClosesAllServers checks the clean path: nothing is mid-request,
+// so shutdown must return inside the timeout and leave nothing reachable. An
+// open WebSocket is the interesting part, since HTTP Shutdown alone does not
+// close hijacked connections.
 func TestShutdown_ClosesAllServers(t *testing.T) {
-	w := newTestWiring(t)
+	w := makeTestWiring(t)
 
 	httpServer := &http.Server{Handler: w.mux}
-	httpLis := mustListen(t)
+	httpLis := listenT(t)
 	go httpServer.Serve(httpLis)
 
-	grpcLis := mustListen(t)
+	grpcLis := listenT(t)
 	grpcServer := grpc.NewServer()
 	proto.RegisterFlowPartnerServiceServer(grpcServer, w.agentHandler)
 	go grpcServer.Serve(grpcLis)
 
+	// The listeners are bound but Serve may not be scheduled yet, so dial with
+	// retry rather than assuming the first connect wins.
 	wsURL := "ws://" + httpLis.Addr().String() + "/ws"
 	var conn *websocket.Conn
 	var err error
@@ -510,12 +610,16 @@ func TestShutdown_ClosesAllServers(t *testing.T) {
 	}
 }
 
+// TestShutdown_ForceStopsStuckGRPC is the reason shutdown force-stops rather
+// than only asking politely. GracefulStop waits for in-flight RPCs forever, so
+// a live SyncChannel stream would hang the process on quit. The 4s bound is the
+// two 2s timeouts back to back.
 func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
-	w := newTestWiring(t)
+	w := makeTestWiring(t)
 
 	httpServer := &http.Server{Handler: http.NewServeMux()}
 
-	grpcLis := mustListen(t)
+	grpcLis := listenT(t)
 	grpcServer := grpc.NewServer()
 	proto.RegisterFlowPartnerServiceServer(grpcServer, w.agentHandler)
 	go grpcServer.Serve(grpcLis)
@@ -554,6 +658,9 @@ func TestShutdown_ForceStopsStuckGRPC(t *testing.T) {
 	}
 }
 
+// TestShutdown_ToleratesNilOptionalComponents pins the nil guards. A nil
+// deref here would turn a partial startup failure into a panic that masks the
+// original error, since this is the last code to run before the process exits.
 func TestShutdown_ToleratesNilOptionalComponents(t *testing.T) {
 	grpcServer := grpc.NewServer()
 	httpServer := &http.Server{Handler: http.NewServeMux()}
