@@ -96,16 +96,17 @@ func main() {
 	mux := http.NewServeMux()
 	registerRoutes(mux, wsHandler, snapshotMgr, threadMgr, agentHandler)
 	staticHandler := static.NewHandler(cfg.FrontendDir)
-	// Registered after the API routes so an API path can never be swallowed by
-	// the SPA fallback.
+
+	// Registered after the API routes
+	// so an API path can never be swallowed by the SPA fallback.
 	staticHandler.Handle(mux)
 
 	httpServer := &http.Server{
-		Handler: mux,
-		// Guards against a client that opens a socket and sends nothing.
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+
 	// Buffered by one so the Serve goroutines can report a failure and exit
 	// instead of blocking forever if startup gets this far before the select.
 	httpErrChan := make(chan error, 1)
@@ -127,8 +128,8 @@ func main() {
 	if err := waitForServersReady(httpPort, grpcPort, httpErrChan, grpcErrChan); err != nil {
 		log.Fatalf("backend startup failed: %v", err)
 	}
-	// Printed only after both listeners accept connections: the Electron parent
-	// connects the moment it sees this line.
+	// Printed only after both listeners accept connections
+	// the Electron parent connects the moment it sees this line.
 	fmt.Fprintln(os.Stdout, readySignal(httpPort, grpcPort))
 
 	quit := make(chan os.Signal, 1)
@@ -147,12 +148,12 @@ func main() {
 	log.Println("Server exited")
 }
 
-// registerRoutes mounts the whole HTTP surface. Handlers are constructed here
-// rather than injected so this package owns the wiring graph outright.
+// registerRoutes mounts the whole HTTP surface. Handlers are constructed here rather than injected
+// so this package owns the wiring graph outright.
 //
-// Every subtree appears twice: an exact path for the collection and a trailing
-// slash for its children. Both delegate to the same handler, which is what
-// splits method and ID on its own.
+// Every subtree appears twice:
+// an exact path for the collection and a trailing slash for its children.
+// Both delegate to the same handler, which is what splits method and ID on its own.
 func registerRoutes(mux *http.ServeMux, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager, agentHandler *handler.AgentHandler) {
 	settingsHandler := handler.NewSettingsHandler(snapshotMgr)
 	historyHandler := handler.NewHistoryHandler()
