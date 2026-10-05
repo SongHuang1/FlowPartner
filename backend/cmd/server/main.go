@@ -67,17 +67,13 @@ func main() {
 
 	applySnapshotConfig(snapshotMgr, settings)
 
-	// Bind rather than merely probe: a listener held open from here on is what
-	// keeps another backend instance from claiming the same port.
+	// a listener held open from here on is what keeps another backend instance from claiming the same port.
 	httpListener, httpPort, err := server.FindAvailablePort(cfg.HTTPPort, nil)
 	if err != nil {
 		log.Fatalf("HTTP port discovery failed: %v", err)
 	}
 	defer httpListener.Close()
 
-	// The frontend already learns the gRPC port from the ready signal, but a
-	// collision with the HTTP port would make the two indistinguishable in logs
-	// and in the exclusion check below.
 	exclude := map[string]bool{net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)): true}
 	grpcListener, grpcPort, err := server.FindAvailablePort("50051", exclude)
 	if err != nil {
@@ -90,11 +86,11 @@ func main() {
 	proto.RegisterFlowPartnerServiceServer(grpcServer, agentHandler)
 
 	wsHandler := handler.NewWebSocketHandler(threadMgr, snapshotMgr, globalEventCh, agentHandler)
+
 	// Both pumps run until the process exits; neither has a stop channel because
 	// the channels they drain are process-scoped and shutdown only needs to stop
 	// new work from arriving, not to join these goroutines.
 	go wsHandler.StartBroadcastLoop(globalEventCh)
-
 	go agentHandler.StartEventPump(agentEventCh)
 
 	mux := http.NewServeMux()
