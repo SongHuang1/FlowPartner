@@ -218,10 +218,6 @@ func applySnapshotConfig(snapshotMgr *snapshot.Manager, settings handler.Setting
 	}
 }
 
-// snapshotPayload is the closed set of values the snapshot manager reports
-// through the event channel. Constraining the parameter to this set means a new
-// event payload has to be declared here on purpose, rather than silently
-// starting to send a shape the frontend does not parse.
 type snapshotPayload interface {
 	snapshot.Status | snapshot.Message
 }
@@ -266,9 +262,6 @@ func initializeKeystore(settings handler.Settings) {
 	}
 }
 
-// readySignal is the line the Electron parent greps for to learn the ports
-// that port discovery settled on. Changing the format breaks startup, so the
-// format is pinned by test.
 func readySignal(httpPort, grpcPort int) string {
 	return fmt.Sprintf("__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d", httpPort, grpcPort)
 }
@@ -276,8 +269,7 @@ func readySignal(httpPort, grpcPort int) string {
 // shutdown drains in-flight requests before closing listeners. Order matters:
 // HTTP stops accepting first so no new WebSocket upgrades arrive, then gRPC
 // gets GracefulStop with a force fallback because an agent mid-CallLLM will
-// otherwise hold the process open past the timeout. Components are nil-checked
-// because a partially constructed process still has to be able to exit.
+// otherwise hold the process open past the timeout.
 func shutdown(grpcServer *grpc.Server, httpServer *http.Server, wsHandler *handler.WebSocketHandler, snapshotMgr *snapshot.Manager, threadMgr *thread.Manager) {
 	const gracefulShutdownTimeout = 2 * time.Second
 
@@ -346,9 +338,7 @@ func waitForServersReady(httpPort, grpcPort int, httpErrChan, grpcErrChan <-chan
 	}
 }
 
-// dialOK reports whether a TCP connection to 127.0.0.1:port succeeds. It
-// closes the connection immediately: these probes run in a polling loop, and
-// an unclosed socket would accumulate until the process exits.
+// dialOK reports whether a TCP connection to 127.0.0.1:port succeeds. Then closes the connection immediately.
 func dialOK(port int) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
 	if err != nil {
