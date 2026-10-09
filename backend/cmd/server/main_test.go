@@ -24,9 +24,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// TestMain redirects the storage layer at one temp dir for the whole package.
-// Per-test isolation would mean a temp dir each, but the settings file is
-// process-global state that subtests mutate.
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "flowpartner-cmd-test-*")
 	if err != nil {
@@ -52,14 +49,16 @@ type testWiring struct {
 
 // makeTestWiring builds the same graph main() builds and registers it on a mux
 // that never listens. Tests drive it through ServeHTTP.
-//
-// The keystore singleton and settings.json are reset first because both are
-// process-global and would otherwise leak between tests: the unlock flow
-// depends on the persisted key, and a rate-limited keystore rejects the next
-// test's attempts outright.
 func makeTestWiring(t *testing.T) *testWiring {
+
 	t.Helper()
 	keystore.Reset()
+
+	// The keystore singleton and settings.json are reset first because both are
+	// process-global and would otherwise leak between tests: the unlock flow
+	// depends on the persisted key, and a rate-limited keystore rejects the next
+	// test's attempts outright.
+
 	dataDir, err := storage.DataDir()
 	if err != nil {
 		t.Fatalf("resolve data dir: %v", err)
@@ -80,9 +79,6 @@ func makeTestWiring(t *testing.T) *testWiring {
 	w.mux = http.NewServeMux()
 	registerRoutes(w.mux, w.wsHandler, w.snapshotMgr, w.threadMgr, w.agentHandler)
 
-	// Snapshot and thread managers own watchers and goroutines. The other three
-	// fields need no teardown: agentHandler and wsHandler only touch the
-	// channels on this struct, and no event pump or broadcast loop was started.
 	t.Cleanup(func() {
 		w.snapshotMgr.Close()
 		w.threadMgr.Close()
@@ -91,10 +87,7 @@ func makeTestWiring(t *testing.T) *testWiring {
 	return w
 }
 
-// TestReadySignal pins the wire format the Electron parent parses. The exact
-// string is asserted rather than re-parsed, because the contract is the literal
-// line: a re-parse would keep passing under most of the renames that would break
-// main.cjs.
+// TestReadySignal pins the wire format the Electron parent parses.
 func TestReadySignal(t *testing.T) {
 	got := readySignal(8080, 50051)
 	want := "__FP_BACKEND_READY__ HTTP=:8080 gRPC=:50051"
@@ -104,8 +97,6 @@ func TestReadySignal(t *testing.T) {
 }
 
 // TestJSONPayload_Status checks the status event shape the frontend decodes.
-// Field presence is what matters here, not key order, so the assertions target
-// individual keys.
 func TestJSONPayload_Status(t *testing.T) {
 	got := jsonPayload(snapshot.Status{Phase: "idle", Count: 3, SizeBytes: 1024})
 
@@ -303,8 +294,6 @@ func TestRegisterRoutes_Patterns(t *testing.T) {
 		{"agents collection", "/api/agents", "/api/agents"},
 		{"agent item", "/api/agents/code-reviewer", "/api/agents/"},
 		{"model configs collection", "/api/model_configs", "/api/model_configs"},
-		// activate is dispatched inside the subtree handler, so it matches the
-		// prefix rule rather than a pattern of its own.
 		{"model config item", "/api/model_configs/cfg_a", "/api/model_configs/"},
 		{"model config activate", "/api/model_configs/cfg_a/activate", "/api/model_configs/"},
 		{"websocket", "/ws", "/ws"},
@@ -324,8 +313,6 @@ func TestRegisterRoutes_Patterns(t *testing.T) {
 }
 
 // TestDispatchModelConfig verifies the activate branch wins over the ID branch.
-// ServeMux routes both to the same rule, so getting this backwards would send
-// every activate request to HandleByID with "cfg_a/activate" as the ID.
 func TestDispatchModelConfig(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -356,9 +343,7 @@ func TestDispatchModelConfig(t *testing.T) {
 
 // TestRegisterRoutes_Wiring persists a setting and reads it back through the
 // mux, proving the mounted handler talks to the shared storage layer. The fields
-// asserted are the ones the flat format still owns; "model" is deliberately not
-// among them because LoadSettings overwrites it from the active model config,
-// which is internal/handler's business and is covered there.
+// asserted are the ones the flat format still owns.
 func TestRegisterRoutes_Wiring(t *testing.T) {
 	w := makeTestWiring(t)
 
@@ -389,8 +374,8 @@ func TestRegisterRoutes_Wiring(t *testing.T) {
 }
 
 // TestRegisterRoutes_UnlockFlow walks lock → unlock → status through the mux.
-// Covered in internal/handler at the handler level; the reason to repeat it is
-// that the three paths must all resolve to the one UnlockHandler instance.
+// Covered in internal/handler at the handler level;
+// the reason to repeat it is that the three paths must all resolve to the one UnlockHandler instance.
 // Divergent state (locked but reported unlocked) would mean two keystores.
 func TestRegisterRoutes_UnlockFlow(t *testing.T) {
 	w := makeTestWiring(t)
@@ -455,9 +440,6 @@ func TestDialOK(t *testing.T) {
 }
 
 // TestDialOK_ClosesConnection confirms the probe does not leak sockets.
-// waitForServersReady calls dialOK on a 50ms poll, so a probe that kept its
-// connection would exhaust the process file descriptors during startup. The
-// server side is drained here: it must observe EOF without sending anything.
 func TestDialOK_ClosesConnection(t *testing.T) {
 	listener := listenT(t)
 	port := portOf(listener)
@@ -496,8 +478,7 @@ func TestDialOK_ClosesConnection(t *testing.T) {
 // up, HTTP failed, gRPC failed. The error cases use a real listening port so the
 // only reason to return early is the channel, not a failed dial.
 //
-// The timeout path is intentionally untested: it needs a 5s wait, and the
-// message it produces is fixed.
+// The timeout path is intentionally untested.
 func TestWaitForServersReady(t *testing.T) {
 	t.Run("both ports listening", func(t *testing.T) {
 		httpLis := listenT(t)
@@ -540,11 +521,6 @@ func TestWaitForServersReady(t *testing.T) {
 	})
 }
 
-// listenT binds an ephemeral loopback port. Cleanup closes the listener, so a
-// test that closes it early is fine: the second Close just errors into a
-// discarded return.
-//
-// Named for its t.Fail-fast behaviour, not for panicking.
 func listenT(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
