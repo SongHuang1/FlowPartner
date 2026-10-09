@@ -2,11 +2,16 @@ syntax = "proto3";
 option go_package = "github.com/SongHuang1/FlowPartner/backend/proto;proto";
 package flowpartner;
 
-// --- 1. Python 发给 Go 的事件 (实时汇报) ---
+// --- 1. Python to Go 
 message AgentEvent {
     string session_id = 1;
     string thread_id = 11;
     string turn_id = 12;
+
+    // timestamp? sequence? But is it ok to add here?
+    // error needs a specific name, agent error? turn error?
+    // need 'fail' to refer to turn or item error
+
     oneof payload {
         turn_started turn_started = 4;
         turn_completed turn_completed = 5;
@@ -76,6 +81,7 @@ message usage_update {
 message permission_request {
     string request_id = 1;
     string tool = 2;
+    // string may fail in silence. use oneof?
     string path = 3;
     string operation = 4;
     string detail = 5;
@@ -84,6 +90,7 @@ message permission_request {
 
 message subagent_event {
     string event_type = 1; // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
+    // string may fail in silence. use oneof?
     string payload = 2;    // JSON
 }
 
@@ -92,14 +99,16 @@ message error {
     string guess = 2;
 }
 
-// --- 2. Go 发给 Python 的指令 (下发任务) ---
+// --- 2. Go to Python
 message ServerCommand {
     string session_id = 1;
     string command_type = 2; // "start_chat", "cancel_task", "steer_input", "abort_turn", "permission_response", "agents_changed"
-    string payload = 3;      // JSON 格式
+    // string may fail in silence. use oneof?
+    string payload = 3;
+    // why use json when using protobuf? If it is needed do not change.
 }
 
-// --- 3. Agent 请求 Go 代为调用大模型（服务端流式，方便 Go 控制 API Key 和计费） ---
+// --- 3. Agent ask Go to use LLM
 message LLMRequest {
     string session_id = 1;
     string json_payload = 2; // Python 组装好的完整请求体
@@ -108,6 +117,7 @@ message LLMRequest {
 message LLMResponse {
     bool is_error = 1;         // 是否为错误终止信号。true 表示此次推送为错误终止
     string json_response = 2;  // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
+    // why not oneof?
     string message_id = 3;     // 消息唯一标识，用于前端追踪
     UsagePayload usage = 4;
 }
@@ -124,6 +134,7 @@ message UsagePayload {
 message ToolRequest {
     string session_id = 1;
     string tool_name = 2;    // 工具名称：read, write, bash, edit, trash, purge
+    // oneof?
     string arguments = 3;    // JSON 格式的工具参数
     string approval_id = 4;  // 越权审批通过后携带的审批 ID（一次性）
 }
@@ -132,12 +143,17 @@ message ToolResponse {
     bool success = 1;        // 是否执行成功
     string result = 2;       // 成功时的结果文本 / 失败时的中文错误文案
     string error_code = 3;   // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
+
+    // error code need enum
     bool needs_permission = 4; // true = 需用户审批（路径越权，或 purge 这类按策略强制审批的操作）
     string request_id = 5;   // 越权申请的唯一 ID（needs_permission=true 时返回）
+
+    // success, error, or need permission? use oneof.
 }
 
 // --- 5. 智能体定义（多 Agent） ---
 message Empty {}
+// what is this?
 
 message AgentDef {
     string id = 1;             // UUID v4；内置主智能体固定为 "main"
