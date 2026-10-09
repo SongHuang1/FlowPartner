@@ -1,191 +1,336 @@
 syntax = "proto3";
-option go_package = "github.com/SongHuang1/FlowPartner/backend/proto;proto";
+
 package flowpartner;
 
-// --- 1. Python to Go 
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/SongHuang1/FlowPartner/backend/proto;proto";
+
+// =============================================================================
+// 1. Python -> Go event stream
+// =============================================================================
+
+// AgentEvent is the envelope for every event the Python agent pushes to Go.
+//
+// Envelope fields (session_id, turn_id, timestamp) carry routing and ordering
+// information and are always populated. The concrete event is set in the
+// payload oneof.
+//
+// Note: a session and a thread are the same entity in this system, so only
+// session_id is carried; the former thread_id field was removed.
 message AgentEvent {
-    string session_id = 1;
-    string thread_id = 11;
-    string turn_id = 12;
+  string session_id = 1;
+  string turn_id = 2;
 
-    // timestamp? sequence? But is it ok to add here?
-    // error needs a specific name, agent error? turn error?
-    // need 'fail' to refer to turn or item error
+  // Unix timestamp in milliseconds when the event was produced, used for
+  // ordering and latency diagnostics.
+  int64 timestamp = 3;
 
-    oneof payload {
-        turn_started turn_started = 4;
-        turn_completed turn_completed = 5;
-        turn_aborted turn_aborted = 6;
-        item_started item_started = 7;
-        item_completed item_completed = 8;
-        item_delta item_delta = 9;
-        usage_update usage_update = 13;
-        permission_request permission_request = 14;
-        subagent_event subagent = 15;
-        error error = 16;
-    }
+  oneof payload {
+    turn_started turn_started = 4;
+    turn_completed turn_completed = 5;
+    turn_aborted turn_aborted = 6;
+    item_started item_started = 7;
+    item_completed item_completed = 8;
+    item_delta item_delta = 9;
+    usage_update usage_update = 10;
+    permission_request permission_request = 11;
+    subagent_event subagent = 12;
+    agent_error error = 13;
+  }
 }
 
+// Emitted once when a turn begins; the first event of a turn.
 message turn_started {
-    string thread_id = 1;
-    string turn_id = 2;
+  string turn_id = 1;
 }
 
+// Emitted when a turn finishes normally.
 message turn_completed {
-    string thread_id = 1;
-    string turn_id = 2;
-    string last_agent_message = 3;
-    int64 duration_ms = 4;
+  string turn_id = 1;
+  string last_agent_message = 2;
+  int64 duration_ms = 3;
 }
 
+// Emitted when a turn is interrupted (user cancel, system lock, steer, etc.).
 message turn_aborted {
-    string thread_id = 1;
-    string turn_id = 2;
-    string reason = 3;
+  string turn_id = 1;
+  string reason = 2;
 }
 
+// Emitted when a tool call starts.
 message item_started {
-    string item_id = 1;
-    string item_type = 2;
-    string thread_id = 3;
-    string turn_id = 4;
+  string item_id = 1;
+  string item_type = 2;
+  string turn_id = 3;
 }
 
+// Emitted when a tool call completes.
 message item_completed {
-    string item_id = 1;
-    string item_type = 2;
-    string thread_id = 3;
-    string turn_id = 4;
-    string payload = 5;
+  string item_id = 1;
+  string item_type = 2;
+  string turn_id = 3;
+  // JSON object: {success, result, error_code, tool_name, arguments}.
+  string payload = 4;
 }
 
+// A chunk of streamed text.
 message item_delta {
-    string item_id = 1;
-    string item_type = 2;
-    string delta = 3;
-    int32 seq = 4;
-    string thread_id = 5;
-    string turn_id = 6;
+  string item_id = 1;
+  string item_type = 2;
+  string delta = 3;
+  int32 seq = 4;
+  string turn_id = 5;
 }
 
+// Token usage update for the current turn.
 message usage_update {
-    int32 input_tokens = 1;
-    int32 cached_input_tokens = 2;
-    int32 output_tokens = 3;
-    int32 reasoning_output_tokens = 4;
-    int32 total_tokens = 5;
-    int32 model_context_window = 6;
-    bool estimated = 7;
+  int32 input_tokens = 1;
+  int32 cached_input_tokens = 2;
+  int32 output_tokens = 3;
+  int32 reasoning_output_tokens = 4;
+  int32 total_tokens = 5;
+  int32 model_context_window = 6;
+  bool estimated = 7;
 }
 
+// Asks the user to approve a tool call that falls outside the workspace.
 message permission_request {
-    string request_id = 1;
-    string tool = 2;
-    // string may fail in silence. use oneof?
-    string path = 3;
-    string operation = 4;
-    string detail = 5;
-    repeated string scope_options = 6;
+  string request_id = 1;
+  string tool = 2;
+  // Target path. Populated for read/write/edit; may be empty for bash/purge.
+  string path = 3;
+  string operation = 4;
+  string detail = 5;
+  repeated string scope_options = 6;
 }
 
+// A sub-agent lifecycle event. Fields shared by all sub-agent events live at
+// the proto level; event-specific fields are packed into the payload JSON.
 message subagent_event {
-    string event_type = 1; // "subagent_start", "subagent_step", "subagent_end", "subagent_error"
-    // string may fail in silence. use oneof?
-    string payload = 2;    // JSON
+  // One of: subagent_start, subagent_step, subagent_end, subagent_error.
+  string event_type = 1;
+  string span_id = 2;
+  string agent_id = 3;
+  string agent_name = 4;
+  int32 depth = 5;
+  string trace_id = 6;
+  string parent_span_id = 7;
+  // JSON object with fields specific to event_type.
+  string payload = 8;
 }
 
-message error {
-    string message = 1;
-    string guess = 2;
+// An agent-level error. The level field states how far the error propagates.
+message agent_error {
+  string message = 1;
+  string guess = 2;
+
+  // Scope of the error: a single item, a whole turn, or the session.
+  ErrorLevel level = 3;
+
+  enum ErrorLevel {
+    ERROR_LEVEL_UNSPECIFIED = 0;
+    ERROR_LEVEL_ITEM = 1;
+    ERROR_LEVEL_TURN = 2;
+    ERROR_LEVEL_SESSION = 3;
+  }
 }
 
-// --- 2. Go to Python
+// =============================================================================
+// 2. Go -> Python commands
+// =============================================================================
+
+// ServerCommand is the envelope for every command Go pushes to Python.
+//
+// The command oneof replaces the former command_type string plus JSON payload,
+// giving compile-time type safety and guaranteeing exactly one command is set.
 message ServerCommand {
-    string session_id = 1;
-    string command_type = 2; // "start_chat", "cancel_task", "steer_input", "abort_turn", "permission_response", "agents_changed"
-    // string may fail in silence. use oneof?
-    string payload = 3;
-    // why use json when using protobuf? If it is needed do not change.
+  string session_id = 1;
+
+  oneof command {
+    StartChat start_chat = 2;
+    CancelTask cancel_task = 3;
+    SteerInput steer_input = 4;
+    AbortTurn abort_turn = 5;
+    PermissionResponse permission_response = 6;
+    AgentsChanged agents_changed = 7;
+  }
 }
 
-// --- 3. Agent ask Go to use LLM
+// Starts a chat turn.
+message StartChat {
+  string user_message = 1;
+  // JSON array of prior messages, including subagent_refs/subagents extensions.
+  string history = 2;
+  string executor_agent_id = 3;
+  string inject_agent_id = 4;
+}
+
+// Cancels the running task for the session.
+message CancelTask {}
+
+// Injects user input into the active turn.
+message SteerInput {
+  string content = 1;
+  string turn_id = 2;
+}
+
+// Interrupts the active turn.
+message AbortTurn {}
+
+// Replies to a permission_request.
+message PermissionResponse {
+  string request_id = 1;
+  // Either "allow" or "deny".
+  string decision = 2;
+}
+
+// Notifies Python that the agent definitions changed, invalidating its cache.
+message AgentsChanged {}
+
+// =============================================================================
+// 3. Agent asks Go to call the LLM
+// =============================================================================
+
+// LLMRequest carries the fully assembled chat/completions request body.
 message LLMRequest {
-    string session_id = 1;
-    string json_payload = 2; // Python 组装好的完整请求体
+  string session_id = 1;
+  // Complete OpenAI-compatible chat/completions request JSON.
+  string json_payload = 2;
 }
 
+// LLMResponse is one item of the streamed reply from Go to Python.
+// The result oneof distinguishes a normal chunk from a terminating error.
 message LLMResponse {
-    bool is_error = 1;         // 是否为错误终止信号。true 表示此次推送为错误终止
-    string json_response = 2;  // 正常 chunk: 单个 SSE chunk 原始 JSON；错误时: 错误详情 JSON
-    // why not oneof?
-    string message_id = 3;     // 消息唯一标识，用于前端追踪
-    UsagePayload usage = 4;
+  string message_id = 1;
+
+  oneof result {
+    LLMChunk chunk = 2;
+    LLMStreamError error = 3;
+  }
+
+  // Token usage. Optional; sent once at the end of the stream.
+  UsagePayload usage = 4;
 }
 
+// A normal SSE chunk.
+message LLMChunk {
+  // Raw JSON of a single SSE chunk.
+  string json_response = 1;
+}
+
+// A terminating LLM error.
+message LLMStreamError {
+  // Error detail JSON (contains message/guess and related fields).
+  string json_response = 1;
+}
+
+// Token usage. Field names match AgentEvent.usage_update.
 message UsagePayload {
-    int32 prompt_tokens = 1;
-    int32 cached_tokens = 2;
-    int32 completion_tokens = 3;
-    int32 reasoning_tokens = 4;
-    int32 total_tokens = 5;
+  int32 input_tokens = 1;
+  int32 cached_input_tokens = 2;
+  int32 output_tokens = 3;
+  int32 reasoning_output_tokens = 4;
+  int32 total_tokens = 5;
 }
 
-// --- 4. 工具执行代理 ---
+// =============================================================================
+// 4. Tool execution proxy
+// =============================================================================
+
+// ToolRequest asks Go to execute a tool on the agent's behalf.
 message ToolRequest {
-    string session_id = 1;
-    string tool_name = 2;    // 工具名称：read, write, bash, edit, trash, purge
-    // oneof?
-    string arguments = 3;    // JSON 格式的工具参数
-    string approval_id = 4;  // 越权审批通过后携带的审批 ID（一次性）
+  string session_id = 1;
+  string tool_name = 2;
+  // Tool arguments as JSON. The tool schema is defined dynamically by the
+  // Python-side ToolRegistry.
+  string arguments = 3;
+  // One-time approval ID, present only when retrying an approved tool call.
+  string approval_id = 4;
 }
 
+// ToolResponse is the result of a tool execution.
+// The outcome oneof makes success, error, and permission mutually exclusive.
 message ToolResponse {
-    bool success = 1;        // 是否执行成功
-    string result = 2;       // 成功时的结果文本 / 失败时的中文错误文案
-    string error_code = 3;   // 失败时的稳定错误码（如 TOOL_NOT_FOUND, PATH_OUTSIDE_WORKSPACE）
-
-    // error code need enum
-    bool needs_permission = 4; // true = 需用户审批（路径越权，或 purge 这类按策略强制审批的操作）
-    string request_id = 5;   // 越权申请的唯一 ID（needs_permission=true 时返回）
-
-    // success, error, or need permission? use oneof.
+  oneof outcome {
+    ToolSuccess success = 1;
+    ToolError error = 2;
+    PermissionRequired permission = 3;
+  }
 }
 
-// --- 5. 智能体定义（多 Agent） ---
-message Empty {}
-// what is this?
+// The tool ran successfully.
+message ToolSuccess {
+  string result = 1;
+}
 
+// The tool failed.
+message ToolError {
+  ToolErrorCode error_code = 1;
+  // Human-readable error description.
+  string result = 2;
+}
+
+// The tool needs user approval before it can run.
+message PermissionRequired {
+  string request_id = 1;
+}
+
+// Tool error codes. Mirrors the constants in internal/tools/errors.go.
+enum ToolErrorCode {
+  TOOL_ERROR_CODE_UNSPECIFIED = 0;
+  TOOL_ERROR_CODE_TOOL_NOT_FOUND = 1;
+  TOOL_ERROR_CODE_PATH_OUTSIDE_WORKSPACE = 2;
+  TOOL_ERROR_CODE_FILE_TOO_LARGE = 3;
+  TOOL_ERROR_CODE_TOOL_ERROR = 4;
+  TOOL_ERROR_CODE_EDIT_MATCH_COUNT_ERROR = 5;
+  TOOL_ERROR_CODE_TOOL_DELETION_BLOCKED = 6;
+  TOOL_ERROR_CODE_TOOL_TRASH_NOT_CONFIGURED = 7;
+}
+
+// =============================================================================
+// 5. Agent definitions (multi-agent)
+// =============================================================================
+
+// AgentDef is the full definition of an agent.
 message AgentDef {
-    string id = 1;             // UUID v4；内置主智能体固定为 "main"
-    string name = 2;
-    string description = 3;    // 对外描述，暴露给其他 agent 判断是否调用
-    string system_prompt = 4;  // 私有，仅 Python（可信后端）与编辑界面可见
-    int64 created_at = 5;
-    int64 updated_at = 6;
+  // UUID v4. The built-in main agent always uses the fixed id "main".
+  string id = 1;
+  string name = 2;
+  // Public description, exposed to other agents to decide whether to invoke it.
+  string description = 3;
+  // Private. Visible only to Python (trusted backend) and the editor UI.
+  string system_prompt = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
 }
 
 message AgentId {
-    string id = 1;
+  string id = 1;
 }
 
 message AgentDefList {
-    repeated AgentDef agents = 1;
+  repeated AgentDef agents = 1;
 }
 
-// --- 6. 核心服务定义 ---
+// =============================================================================
+// 6. Service definition
+// =============================================================================
+
 service FlowPartnerService {
-    // 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
-    rpc SyncChannel (stream AgentEvent) returns (stream ServerCommand);
+  // Core bidirectional stream. Python and Go hold a persistent connection and
+  // push messages to each other in real time.
+  rpc SyncChannel(stream AgentEvent) returns (stream ServerCommand);
 
-    // 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
-    rpc CallLLM (LLMRequest) returns (stream LLMResponse);
+  // Proxies an LLM call. Python sends the request; Go streams chunks back.
+  rpc CallLLM(LLMRequest) returns (stream LLMResponse);
 
-    // 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
-    rpc ExecuteTool (ToolRequest) returns (ToolResponse);
+  // Proxies tool execution. Python sends a request; Go runs it and returns.
+  rpc ExecuteTool(ToolRequest) returns (ToolResponse);
 
-    // 拉取全部智能体定义（含 system_prompt，Python 为可信后端）
-    rpc ListAgents (Empty) returns (AgentDefList);
+  // Returns every agent definition, including system_prompt (Python is trusted).
+  rpc ListAgents(google.protobuf.Empty) returns (AgentDefList);
 
-    // 按 ID 获取单个智能体定义
-    rpc GetAgent (AgentId) returns (AgentDef);
+  // Returns a single agent definition by id.
+  rpc GetAgent(AgentId) returns (AgentDef);
 }
