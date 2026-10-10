@@ -137,10 +137,9 @@ message ServerCommand {
   oneof command {
     StartChat start_chat = 2;
     CancelTask cancel_task = 3;
-    SteerInput steer_input = 4;
-    AbortTurn abort_turn = 5;
-    PermissionResponse permission_response = 6;
-    AgentsChanged agents_changed = 7;
+    AbortTurn abort_turn = 4;
+    PermissionResponse permission_response = 5;
+    AgentsChanged agents_changed = 6;
   }
 }
 
@@ -155,12 +154,6 @@ message StartChat {
 
 // Cancels the running task for the session.
 message CancelTask {}
-
-// Injects user input into the active turn.
-message SteerInput {
-  string content = 1;
-  string turn_id = 2;
-}
 
 // Interrupts the active turn.
 message AbortTurn {}
