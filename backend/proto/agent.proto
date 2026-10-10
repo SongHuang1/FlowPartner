@@ -32,8 +32,8 @@ message AgentEvent {
     item_delta item_delta = 9;
     usage_update usage_update = 10;
     permission_request permission_request = 11;
-    subagent_event subagent = 12;
-    agent_error error = 13;
+    subagent_event subagent_event = 12;
+    agent_error agent_error = 13;
   }
 }
 
