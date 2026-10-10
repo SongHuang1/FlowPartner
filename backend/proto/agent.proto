@@ -15,9 +15,6 @@ option go_package = "github.com/SongHuang1/FlowPartner/backend/proto;proto";
 // Envelope fields (session_id, turn_id, timestamp) carry routing and ordering
 // information and are always populated. The concrete event is set in the
 // payload oneof.
-//
-// Note: a session and a thread are the same entity in this system, so only
-// session_id is carried; the former thread_id field was removed.
 message AgentEvent {
   string session_id = 1;
   string turn_id = 2;
