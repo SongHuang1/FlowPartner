@@ -136,8 +136,8 @@ message ServerCommand {
 
   oneof command {
     StartChat start_chat = 2;
-    CancelTask cancel_task = 3;
-    AbortTurn abort_turn = 4;
+    GracefulStop graceful_stop = 3;
+    ForceStop force_stop = 4;
     PermissionResponse permission_response = 5;
     AgentsChanged agents_changed = 6;
   }
@@ -152,11 +152,9 @@ message StartChat {
   string inject_agent_id = 4;
 }
 
-// Cancels the running task for the session.
-message CancelTask {}
+message GracefulStop {}
 
-// Interrupts the active turn.
-message AbortTurn {}
+message ForceStop {}
 
 // Replies to a permission_request.
 message PermissionResponse {
