@@ -131,9 +131,6 @@ message agent_error {
 // =============================================================================
 
 // ServerCommand is the envelope for every command Go pushes to Python.
-//
-// The command oneof replaces the former command_type string plus JSON payload,
-// giving compile-time type safety and guaranteeing exactly one command is set.
 message ServerCommand {
   string session_id = 1;
 
