@@ -65,6 +65,7 @@ message item_started {
 // Emitted when a tool call completes.
 message item_completed {
   string item_id = 1;
+  // string is ok at this time
   string item_type = 2;
   string turn_id = 3;
   // JSON object: {success, result, error_code, tool_name, arguments}.
