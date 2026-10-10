@@ -93,7 +93,6 @@ message permission_request {
   string path = 3;
   string operation = 4;
   string detail = 5;
-  repeated string scope_options = 6;
 }
 
 // A sub-agent lifecycle event. Fields shared by all sub-agent events live at
