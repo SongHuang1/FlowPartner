@@ -169,22 +169,18 @@ enum PermissionDecision {
   PERMISSION_DECISION_DENY = 3;
 }
 
-// Notifies Python that the agent definitions changed, invalidating its cache.
 message AgentsChanged {}
 
 // =============================================================================
 // 3. Agent asks Go to call the LLM
 // =============================================================================
 
-// LLMRequest carries the fully assembled chat/completions request body.
 message LLMRequest {
   string session_id = 1;
   // Complete OpenAI-compatible chat/completions request JSON.
   string json_payload = 2;
 }
 
-// LLMResponse is one item of the streamed reply from Go to Python.
-// The result oneof distinguishes a normal chunk from a terminating error.
 message LLMResponse {
   string message_id = 1;
 
@@ -197,13 +193,10 @@ message LLMResponse {
   UsagePayload usage = 4;
 }
 
-// A normal SSE chunk.
 message LLMChunk {
-  // Raw JSON of a single SSE chunk.
   string json_response = 1;
 }
 
-// A terminating LLM error.
 message LLMStreamError {
   // Error detail JSON (contains message/guess and related fields).
   string json_response = 1;
@@ -234,7 +227,6 @@ message ToolRequest {
 }
 
 // ToolResponse is the result of a tool execution.
-// The outcome oneof makes success, error, and permission mutually exclusive.
 message ToolResponse {
   oneof outcome {
     ToolSuccess success = 1;
