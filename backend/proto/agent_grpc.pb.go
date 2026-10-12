@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -29,18 +30,17 @@ const (
 // FlowPartnerServiceClient is the client API for FlowPartnerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// --- 6. 核心服务定义 ---
 type FlowPartnerServiceClient interface {
-	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+	// Core bidirectional stream. Python and Go hold a persistent connection and
+	// push messages to each other in real time.
 	SyncChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentEvent, ServerCommand], error)
-	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+	// Proxies an LLM call. Python sends the request; Go streams chunks back.
 	CallLLM(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LLMResponse], error)
-	// 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+	// Proxies tool execution. Python sends a request; Go runs it and returns.
 	ExecuteTool(ctx context.Context, in *ToolRequest, opts ...grpc.CallOption) (*ToolResponse, error)
-	// 拉取全部智能体定义（含 system_prompt，Python 为可信后端）
-	ListAgents(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*AgentDefList, error)
-	// 按 ID 获取单个智能体定义
+	// Returns every agent definition, including system_prompt (Python is trusted).
+	ListAgents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AgentDefList, error)
+	// Returns a single agent definition by id.
 	GetAgent(ctx context.Context, in *AgentId, opts ...grpc.CallOption) (*AgentDef, error)
 }
 
@@ -94,7 +94,7 @@ func (c *flowPartnerServiceClient) ExecuteTool(ctx context.Context, in *ToolRequ
 	return out, nil
 }
 
-func (c *flowPartnerServiceClient) ListAgents(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*AgentDefList, error) {
+func (c *flowPartnerServiceClient) ListAgents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AgentDefList, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AgentDefList)
 	err := c.cc.Invoke(ctx, FlowPartnerService_ListAgents_FullMethodName, in, out, cOpts...)
@@ -117,18 +117,17 @@ func (c *flowPartnerServiceClient) GetAgent(ctx context.Context, in *AgentId, op
 // FlowPartnerServiceServer is the server API for FlowPartnerService service.
 // All implementations must embed UnimplementedFlowPartnerServiceServer
 // for forward compatibility.
-//
-// --- 6. 核心服务定义 ---
 type FlowPartnerServiceServer interface {
-	// 核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+	// Core bidirectional stream. Python and Go hold a persistent connection and
+	// push messages to each other in real time.
 	SyncChannel(grpc.BidiStreamingServer[AgentEvent, ServerCommand]) error
-	// 代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+	// Proxies an LLM call. Python sends the request; Go streams chunks back.
 	CallLLM(*LLMRequest, grpc.ServerStreamingServer[LLMResponse]) error
-	// 代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+	// Proxies tool execution. Python sends a request; Go runs it and returns.
 	ExecuteTool(context.Context, *ToolRequest) (*ToolResponse, error)
-	// 拉取全部智能体定义（含 system_prompt，Python 为可信后端）
-	ListAgents(context.Context, *Empty) (*AgentDefList, error)
-	// 按 ID 获取单个智能体定义
+	// Returns every agent definition, including system_prompt (Python is trusted).
+	ListAgents(context.Context, *emptypb.Empty) (*AgentDefList, error)
+	// Returns a single agent definition by id.
 	GetAgent(context.Context, *AgentId) (*AgentDef, error)
 	mustEmbedUnimplementedFlowPartnerServiceServer()
 }
@@ -149,7 +148,7 @@ func (UnimplementedFlowPartnerServiceServer) CallLLM(*LLMRequest, grpc.ServerStr
 func (UnimplementedFlowPartnerServiceServer) ExecuteTool(context.Context, *ToolRequest) (*ToolResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExecuteTool not implemented")
 }
-func (UnimplementedFlowPartnerServiceServer) ListAgents(context.Context, *Empty) (*AgentDefList, error) {
+func (UnimplementedFlowPartnerServiceServer) ListAgents(context.Context, *emptypb.Empty) (*AgentDefList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
 }
 func (UnimplementedFlowPartnerServiceServer) GetAgent(context.Context, *AgentId) (*AgentDef, error) {
@@ -213,7 +212,7 @@ func _FlowPartnerService_ExecuteTool_Handler(srv interface{}, ctx context.Contex
 }
 
 func _FlowPartnerService_ListAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Empty)
+	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -225,7 +224,7 @@ func _FlowPartnerService_ListAgents_Handler(srv interface{}, ctx context.Context
 		FullMethod: FlowPartnerService_ListAgents_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FlowPartnerServiceServer).ListAgents(ctx, req.(*Empty))
+		return srv.(FlowPartnerServiceServer).ListAgents(ctx, req.(*emptypb.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }

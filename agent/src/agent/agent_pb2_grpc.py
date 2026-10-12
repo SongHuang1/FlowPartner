@@ -4,6 +4,7 @@ import grpc
 import warnings
 
 import agent_pb2 as agent__pb2
+from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 GRPC_GENERATED_VERSION = '1.83.0'
 GRPC_VERSION = grpc.__version__
@@ -26,7 +27,10 @@ if _version_not_supported:
 
 
 class FlowPartnerServiceStub:
-    """--- 6. 核心服务定义 ---
+    """=============================================================================
+    6. Service definition
+    =============================================================================
+
     """
 
     def __init__(self, channel):
@@ -52,7 +56,7 @@ class FlowPartnerServiceStub:
                 _registered_method=True)
         self.ListAgents = channel.unary_unary(
                 '/flowpartner.FlowPartnerService/ListAgents',
-                request_serializer=agent__pb2.Empty.SerializeToString,
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=agent__pb2.AgentDefList.FromString,
                 _registered_method=True)
         self.GetAgent = channel.unary_unary(
@@ -63,39 +67,43 @@ class FlowPartnerServiceStub:
 
 
 class FlowPartnerServiceServicer:
-    """--- 6. 核心服务定义 ---
+    """=============================================================================
+    6. Service definition
+    =============================================================================
+
     """
 
     def SyncChannel(self, request_iterator, context):
-        """核心双向流：Python 和 Go 建立持久连接，互相实时推送消息
+        """Core bidirectional stream. Python and Go hold a persistent connection and
+        push messages to each other in real time.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def CallLLM(self, request, context):
-        """代理调用大模型（服务端流式）：Python 发送请求，Go 逐 chunk 返回流式响应
+        """Proxies an LLM call. Python sends the request; Go streams chunks back.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ExecuteTool(self, request, context):
-        """代理执行工具（一元调用）：Python 发送工具请求，Go 执行并返回结果
+        """Proxies tool execution. Python sends a request; Go runs it and returns.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ListAgents(self, request, context):
-        """拉取全部智能体定义（含 system_prompt，Python 为可信后端）
+        """Returns every agent definition, including system_prompt (Python is trusted).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetAgent(self, request, context):
-        """按 ID 获取单个智能体定义
+        """Returns a single agent definition by id.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -121,7 +129,7 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
             ),
             'ListAgents': grpc.unary_unary_rpc_method_handler(
                     servicer.ListAgents,
-                    request_deserializer=agent__pb2.Empty.FromString,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=agent__pb2.AgentDefList.SerializeToString,
             ),
             'GetAgent': grpc.unary_unary_rpc_method_handler(
@@ -138,7 +146,10 @@ def add_FlowPartnerServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class FlowPartnerService:
-    """--- 6. 核心服务定义 ---
+    """=============================================================================
+    6. Service definition
+    =============================================================================
+
     """
 
     @staticmethod
@@ -237,7 +248,7 @@ class FlowPartnerService:
             request,
             target,
             '/flowpartner.FlowPartnerService/ListAgents',
-            agent__pb2.Empty.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             agent__pb2.AgentDefList.FromString,
             options,
             channel_credentials,
