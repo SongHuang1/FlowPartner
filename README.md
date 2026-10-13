@@ -30,10 +30,10 @@ This leads to a few non-negotiables:
 
 ### High-Reliability Communication Pipeline
 
-- **WebSocket + gRPC bidirectional streaming**: Frontend WebSocket ↔ Go bridge ↔ gRPC bidirectional stream ↔ Python Agent, fully async and non-blocking
+- **WebSocket v2 + gRPC bidirectional streaming**: Frontend (JSON-RPC envelope, `initialize`/`initialized` handshake) ↔ `wsv2` router ↔ thread/turn manager ↔ gRPC bidirectional stream ↔ Python agent, fully async and non-blocking
 - **Server-streaming LLM calls**: SSE stream parsing + idle timeout + auto-retry before first chunk, OpenAI-compatible API support (`llm/`)
-- **Backpressure control**: WebSocket inbound queue returns overload errors when full, preventing memory exhaustion (`wsv2/router.go`)
-- **Graceful shutdown**: gRPC GracefulStop → disconnect WebSocket → close HTTP, with 2s timeout fallback (`main.go`)
+- **Backpressure control**: bounded inbound queue (128) returns overload errors when full, plus an 8MB single-message cap, preventing memory exhaustion (`wsv2/router.go`)
+- **Graceful shutdown**: HTTP shutdown → disconnect WebSocket → gRPC GracefulStop (2s timeout fallback) → snapshot close (`main.go`)
 
 ### Automatic Snapshots & Recoverability
 
@@ -61,10 +61,10 @@ This leads to a few non-negotiables:
 Early development. The project has three layers in place:
 
 - `frontend/` — Electron + React + TypeScript + Tailwind
-- `backend/` — Go: gRPC, WebSocket, bridge manager, API Key encryption, LLM HTTP streaming client
-- `agent/` — Python: gRPC client, ReAct loop, tool registry
+- `backend/` — Go: gRPC, WebSocket v2, thread/turn manager, API Key encryption, LLM HTTP streaming client
+- `agent/` — Python: gRPC client, turn engine (ReAct), tool registry
 
-**Communication flow:** Electron (port discovery) → Frontend (bootstrap) → WebSocket → Go bridge → gRPC bidirectional stream → Python agent → gRPC CallLLM (server-streaming) → Go LLM client → OpenAI-compatible API → SSE chunks → stream back to Frontend
+**Communication flow:** Electron (port discovery) → Frontend (bootstrap) → WebSocket (v2 envelope: `initialize`/`initialized` handshake, then `thread/*`, `turn/*`) → `wsv2` router → thread/turn manager → gRPC bidirectional stream → Python agent (TurnEngine) → gRPC CallLLM (server-streaming) → Go LLM client → OpenAI-compatible API → SSE chunks → stream back to Frontend
 
 ## Project structure
 
@@ -73,7 +73,7 @@ FlowPartner/
 ├── .github/workflows/    # CI: ci.yml, release.yml
 ├── agent/                # Python Agent layer
 │   ├── proto/            # proto file (byte-identical with backend/proto/)
-│   ├── src/agent/        # main.py, grpc_client.py, core/ (react_agent, subagent_runner, agent_registry), tools/
+│   ├── src/agent/        # main.py, grpc_client.py, core/ (turn_engine, steer, tool_runtime, react_agent, subagent_runner, agent_registry), tools/
 │   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go backend

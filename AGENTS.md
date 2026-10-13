@@ -18,35 +18,42 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。这些没�
 
 ---
 
-## 架构概览（当前实际状态）
+## 架构概览
 
-### 总体架构：WebSocket + gRPC 双向通信 + LLM 流式调用 + 多 Agent + 快照
+### 总体架构：WebSocket v2（JSON-RPC 信封）+ gRPC 双向流 + LLM 流式调用 + 多 Agent + 快照
 
 ```
 Frontend (Electron + React + TypeScript)
     │
-    │  WebSocket (JSON: {action: "start_chat", content: "..."} 等六种 action)
+    │  WebSocket（JSON-RPC v2 信封）
+    │  握手：initialize（请求）→ initialized（通知）
+    │  之后：thread/*、turn/*、snapshot/*、system/lock、response/<requestId>
     ▼
 Backend (Go)
-    ├── WebSocketHandler (internal/handler/ws.go)
-    │       ↓ 注册 session，生成 sessionId
-    │       ├── start_chat / permission_response / cancel_task（聊天与审批）
-    │       └── manual_snapshot / system_lock / restore（快照控制）
-    ├── bridge.Manager (internal/bridge/manager.go)
-    │       ├── sessions map: sessionId → WebSocket conn
-    │       └── CmdChan: 发往 Python 的指令通道
-    │       ↓ gRPC bidirectional stream（端口从 50051 起动态发现）
-    ├── AgentHandler (internal/handler/agent.go)
-    │       ├── SyncChannel: 接收 Python 事件 → 转发到 WebSocket
+    ├── WebSocketHandler (internal/handler/ws.go)  ← /ws 唯一入口
+    │       └── 升级连接 → wsv2.Router（注册 thread/turn + snapshot/system 方法）
+    ├── wsv2.Router (internal/wsv2/)
+    │       ├── Envelope: {id, method, params, result, error}
+    │       ├── 四类消息：request（id+method）/ notification（仅 method）/ response（id+result）/ error（id+error）
+    │       ├── 连接状态机：Connected → Initialized → Active（未握手的方法调用被拒）
+    │       ├── 有界入站队列（容量 128）背压：队满回 -32001
+    │       └── 单条消息上限 8MB；错误码 -326xx / -320xx
+    ├── thread.Manager / thread.Handler (internal/thread/)
+    │       ├── Thread 注册表（id/agentId/cwd/createdAt/archived）+ 多连接 fanout
+    │       ├── Turn 生命周期：idle / active / aborting
+    │       ├── 方法：thread/{start,list,read,archive,delete}、turn/{start,interrupt,steer}
+    │       ├── Scheduler：按作用域序列化（global / global-shared-read / thread）
+    │       ├── ServerRequest：反向请求表（审批），120s 超时、非法决定 fail-closed
+    │       └── EventConverter：gRPC AgentEvent → WS 通知
+    ├── AgentHandler (internal/handler/agent.go)：gRPC 服务
+    │       ├── SyncChannel：stream AgentEvent ↔ stream ServerCommand
     │       ├── CallLLM: 服务端流式 RPC → 调用 LLM Client
     │       ├── ExecuteTool: 工具执行代理
     │       └── ListAgents / GetAgent: 向 Python 提供智能体定义
     │
-    ├── LLM Client (internal/llm/client.go)
-    │       ├── HTTP POST → OpenAI 兼容 API
-    │       ├── SSE 流式解析 (internal/llm/sse.go)
-    │       ├── 错误分类 (internal/llm/error.go)
-    │       └── URL 规范化 (internal/llm/url.go)
+    ├── LLM Client (internal/llm/)
+    │       ├── HTTP POST → OpenAI 兼容 API；SSE 流式解析 (sse.go)
+    │       ├── 错误分类 (error.go)；URL 规范化 (url.go)
     │
     ├── ModelConfig Handler (internal/handler/model_config.go)
     │       ├── CRUD: /api/model_configs
@@ -62,7 +69,7 @@ Backend (Go)
     │       ├── 触发：工作区文件变更防抖 60s / 15min 周期兜底 / 锁屏 flush / 手动 / 还原前预快照
     │       ├── capture + exclude（敏感文件默认排除、单文件 100MB 上限）+ manifest
     │       ├── restore（先自动预快照保证可逆）+ retain（保留 30 天 / 5GB）
-    │       ├── 状态经 WebSocket broadcast（snapshot_status / snapshot_message）
+    │       ├── 状态经全局 WebSocket 广播（snapshot_status / snapshot_message）
     │       └── REST: /api/snapshots
     │
     ├── Keystore (internal/keystore/keystore.go)
@@ -77,23 +84,25 @@ Backend (Go)
     │       ├── delete_guard.go: 拦截 shell 删除类命令（rm/del/Remove-Item 等）
     │       ├── trash.go / purge.go: 可恢复删除（回收站）/ 强制审批的永久删除
     │       └── 执行结果通过 gRPC ExecuteTool 返回
-    ▼
+    ▼ gRPC 双向流（端口从 50051 起动态发现）
 Python Agent (agent/src/agent/)
-    ├── FlowPartnerClient (grpc_client.py): gRPC 客户端
-    │       ├── call_llm_via_go: 处理服务端流式响应
-    │       │       ├── 逐 chunk 接收 SSE JSON
-    │       │       ├── 重建 tool_calls delta（丢弃参数非法的调用）
-    │       │       └── 发送 llm_chunk 事件到前端
+    ├── FlowPartnerClient (grpc_client.py): gRPC 客户端 + 命令分发
+    │       ├── call_llm_via_go: 消费 LLMResponse 流（LLMChunk / LLMStreamError / UsagePayload）
+    │       │       └── 重建 tool_calls delta（丢弃参数非法的调用）
     │       ├── execute_tool: 通过 gRPC 代理执行工具（含越权审批等待）
-    │       ├── ListAgents/GetAgent: 拉取智能体定义（TTL 缓存 + agents_changed 失效）
-    │       ├── connect_and_listen: 双向流事件循环
-    │       └── _cancel_task: 取消指定会话任务（cancel_task 命令分发的实现）
-    ├── core/react_agent.py: ReAct 循环（思考→行动→观察，带护栏）
-    ├── core/subagent_runner.py: 子 agent 派发与事件转发（subagent_* 事件）
-    ├── core/agent_registry.py: 智能体定义缓存
-    └── tools/: registry.py + file_ops.py + agent_tool.py
+    │       ├── list_agents/get_agent: 拉取智能体定义
+    │       └── connect_and_listen: 双向流事件循环
+    │               （分发 start_chat / permission_response / agents_changed / graceful_stop / force_stop）
+    ├── core/turn_engine.py: TurnEngine — 回合生命周期（prepare → 采样循环 → finalize / abort）
+    │       └── 采样循环：drain steering → 组装 prompt → call_llm → ParallelToolRuntime → 续轮判定
+    ├── core/steer.py: TurnContext / SteerQueue（中断事件 + 插话队列）
+    ├── core/tool_runtime.py: ParallelToolRuntime（并发上限、写工具串行化、可中断）
+    ├── core/react_agent.py: ReactAgent（兼容入口，内部构建 TurnEngine）+ 默认系统提示词
+    ├── core/subagent_runner.py: SubAgentRunner — 子智能体派发与 subagent_* 事件转发
+    ├── core/agent_registry.py: AgentRegistry — 智能体定义缓存（TTL 兜底 + agents_changed 失效）
+    └── tools/: registry.py + file_ops.py + agent_tool.py + context.py
             （工具 read/write/bash/edit/trash/purge 全部通过 Go 代理执行；
-              agent__<name> 为子智能体调度入口）
+              agent__<name> 为子智能体调度入口；session_id_var 传递会话上下文）
 ```
 
 ### 前端启动流程
@@ -114,82 +123,163 @@ main.tsx bootstrap
     │ initApi(port) → 设置 BASE = http://localhost:{port}/api
     │ 渲染 React 应用
     ↓
-useWebSocket hook
+useWsV2 hook (frontend/src/hooks/useWebSocket.ts)
     │ 连接 ws://localhost:{port}/ws
-    │ 支持自动重连（最多 5 次，间隔 3s）、处理超时（300s）、安全端口校验（1024-65535）
+    │ 握手：sendRequest('initialize', {clientInfo}) → sendNotification('initialized')
+    │ 自动重连（最多 5 次，间隔 3s）、请求超时 30s、安全端口校验（1024-65535）
+    │ 方法封装：startThread / startChat(turn/start) / steer / interrupt /
+    │           respondToApproval(response/<id>) / triggerSnapshot / restoreSnapshot / systemLock
+    │ 回调：onRequestApproval / onServerRequestResolved / onThreadEvent / onGlobalEvent
 ```
 
-### 当前代码状态
+### WebSocket v2 协议（internal/wsv2/）
 
-**main.go 已正常工作**：
-- `backend/cmd/server/main.go` 注入 `bridge.Manager` + `ApprovalManager` + 快照管理器，同时启动 HTTP server 和 gRPC server
-- HTTP server 注册了 REST 路由（settings、settings/clear_api_key、history、unlock/lock/lock_status、model_configs、snapshots、agents）和 WebSocket 端点（`/ws`）
-- gRPC server 注册了 `AgentHandler`，与 Python Agent 通过双向流通信
-- 端口通过 `server.FindAvailablePort` 动态发现（绑定 127.0.0.1，HTTP 默认端口来自 FP_HTTP_PORT，gRPC 从 :50051 起探索并排除 HTTP 端口），就绪信号格式：`__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
+信封（`envelope.go`）：
+
+```json
+{ "id": "req-1", "method": "turn/start", "params": {...}, "result": {...},
+  "error": { "code": -32001, "message": "服务器繁忙，请稍后重试", "data": null } }
+```
+
+- 四类消息：request（有 `id` + `method`）、notification（仅 `method`）、response（有 `id` + `result`）、error（有 `id` + `error`）。
+- 握手：客户端发 `initialize`（request，`params.clientInfo`）→ 服务端回 `{protocolVersion:"2", platformOs, userAgent, fpHome}`；客户端再发 `initialized`（notification）→ 连接进入 Active。
+- 状态机：Connected（仅接受 `initialize`）→ Initialized（仅接受 `initialized`）→ Active。未握手即调用其他方法返回 `-32600`。
+- 背压：入站请求进有界队列（容量 128），队满立即回 `-32001`，防止内存被灌爆。
+- 单条消息上限 8MB（`MaxPayloadSize`）。
+
+错误码（`router.go`）：
+
+| 码 | 含义 |
+|----|------|
+| -32600 | 未完成握手 |
+| -32601 | 未知方法 |
+| -32602 | 参数错误 |
+| -32001 | 服务器繁忙（入站队列满） |
+| -32002 | 回合冲突（同一 thread 并发 turn/start） |
+| -32003 | 待处理审批被中断/锁定释放 |
+| -32004 | 引擎未就绪 |
+| -32005 | 无活跃回合 |
+| -32006 | 单条消息超限 |
+| -32007 | 内部错误 |
+
+客户端 → 服务端方法：
+
+| 方法 | 说明 |
+|------|------|
+| `initialize` / `initialized` | 握手 |
+| `thread/start` | 创建 thread，返回 `threadId`/`agentId`/`cwd`/`createdAtMs` |
+| `thread/list` | 游标分页列出 thread |
+| `thread/read` | 读取 thread 详情与当前 turn |
+| `thread/archive` / `thread/delete` | 归档 / 删除（仅元数据） |
+| `turn/start` | 启动新回合（`threadId`、`input[]`、`overrides`），返回 `turnId` |
+| `turn/interrupt` | 中断活跃回合（标记 aborting、释放待处理审批，超时兜底） |
+| `turn/steer` | 对活跃回合插话（校验 turnId 后入队） |
+| `response/<requestId>` | 应答服务端反向请求（审批决定） |
+| `snapshot/trigger` / `snapshot/restore` | 手动快照 / 还原 |
+| `system/lock` | 系统锁屏 flush |
+
+服务端 → 客户端通知（`thread.EventConverter` 把 gRPC `AgentEvent` 转换为通知后 fanout 到该 thread 的所有连接）：
+
+| 通知 | 来源事件 |
+|------|---------|
+| `turn/started` / `turn/completed` / `turn/interrupted` | turn_started / turn_completed / turn_aborted |
+| `item/started` / `item/<type>/delta` / `item/completed` | item_started / item_delta / item_completed |
+| `thread/tokenUsage/updated` | usage_update |
+| `subagent/<eventType>` | subagent_event |
+| `error` | agent_error |
+| `item/commandExecution/requestApproval` | permission_request（反向请求，需客户端应答） |
+| `serverRequest/resolved` | 反向请求被解析 / 超时 / 中断 |
+
+另有全局广播（非信封，形如 `{event_type, payload}`）：`snapshot_status`、`snapshot_message`。
+
+### thread / turn 模型（internal/thread/）
+
+- **Thread**：会话容器，字段 `id`/`agentId`/`cwd`/`createdAt`/`archived`；维护活跃 turn、待处理反向请求、以及已连接的多个 WebSocket 连接（fanout 目标）。
+- **Turn**：`idle` → `active` → `aborting`。`turn/completed` 或 `turn/aborted` 到达时清除活跃 turn；中断确认超时（10s）强制释放，避免线程永久卡死。
+- **Scheduler**：按方法作用域序列化（`ScopeGlobal` / `ScopeGlobalSharedRead` / `ScopeThread`），保证同 thread 方法串行。
+- **ServerRequest（反向请求）**：审批以服务端发起的 request 下发，客户端用 `response/<id>` 应答；决定必须命中 `availableDecisions`，否则按超时处理（fail-closed）；默认 120s 超时；中断 / 锁定会释放待处理请求。
+
+### gRPC 接口（proto/agent.proto）
+
+- **Python → Go（`AgentEvent`）**：信封 `session_id` + `turn_id` + `timestamp`，payload oneof 为 `turn_started`/`turn_completed`/`turn_aborted`/`item_started`/`item_completed`/`item_delta`/`usage_update`/`permission_request`/`subagent_event`/`agent_error`。
+- **Go → Python（`ServerCommand`）**：信封 `session_id`，command oneof 为 `start_chat`/`graceful_stop`/`force_stop`/`permission_response`/`agents_changed`。
+- **CallLLM**：`LLMRequest` → `stream LLMResponse`；`LLMResponse` 含 `message_id` + oneof(`chunk`, `error`) + `usage`。
+- **ExecuteTool**：`ToolRequest`（`session_id` + `tool_name` + `arguments` + `approval_id`）→ `ToolResponse`（oneof(`success`, `error`, `permission`)）。
+- **多 Agent**：`AgentDef`（`id`/`name`/`description`/`system_prompt`/`created_at`/`updated_at`）+ `AgentId`/`AgentDefList` + `ListAgents`/`GetAgent`。
+
+### 子系统构成
+
+**main.go（组合根）**：
+- `backend/cmd/server/main.go` 构造 `thread.Manager` + `snapshot.Manager` + `AgentHandler` + `WebSocketHandler`，同时启动 HTTP server 与 gRPC server
+- HTTP 路由：settings、settings/clear_api_key、history、unlock/lock/lock_status、model_configs、snapshots、agents、WebSocket（`/ws`）
+- gRPC 注册 `AgentHandler`，与 Python 通过双向流通信
+- 端口经 `server.FindAvailablePort` 动态发现（绑定 127.0.0.1，HTTP 默认端口来自 FP_HTTP_PORT，gRPC 从 :50051 起探索并排除 HTTP 端口），就绪信号 `__FP_BACKEND_READY__ HTTP=:%d gRPC=:%d`
 - 启动时按已保存设置应用快照配置（含过期清理，后台执行）
-- 优雅关闭：先 gRPC GracefulStop（2s 超时强制 Stop），再断开 WebSocket，最后关闭 HTTP（2s 超时）
+- 优雅关闭：HTTP Shutdown → 断开 WebSocket → `threadMgr.Close` → gRPC GracefulStop（2s 超时强制 Stop）→ `snapshotMgr.Close`
 
-**HTTP handlers 已接入**：
-- `internal/handler/settings.go` — settings CRUD（`/api/settings`），支持 ModelConfigs 迁移 + SSRF 防护 + 回收站/快照目录校验
-- `internal/handler/history.go` — 历史 API（`/api/history`、`/api/history/{session_id}`）
-- `internal/handler/unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`），带速率限制
-- `internal/handler/model_config.go` — 模型配置 CRUD（`/api/model_configs`），加密存储 + 唯一名称生成
-- `internal/handler/agent_def.go` — 智能体定义 CRUD（`/api/agents`），内置主智能体 id 为 "main"；变更后经 bridge 广播 `agents_changed`
-- `internal/handler/snapshot_handler.go` — 快照 REST API（`/api/snapshots`：列表/详情/手动触发/还原）
-- `internal/handler/ws.go` — WebSocket handler（`/ws`），处理 `start_chat`、`permission_response`、`cancel_task`、`manual_snapshot`、`system_lock`、`restore`
+**HTTP handlers**：
+- `settings.go` — settings CRUD（`/api/settings`），支持 ModelConfigs 迁移 + SSRF 防护 + 回收站/快照目录校验
+- `history.go` — 历史 API（`/api/history`、`/api/history/{session_id}`）
+- `unlock.go` — API Key 解锁/锁定（`/api/unlock`、`/api/lock`、`/api/lock_status`），带速率限制
+- `model_config.go` — 模型配置 CRUD（`/api/model_configs`），加密存储 + 唯一名称生成
+- `agent_def.go` — 智能体定义 CRUD（`/api/agents`），内置主智能体 id 为 "main"；变更后广播 `agents_changed`
+- `snapshot_handler.go` — 快照 REST API（`/api/snapshots`：列表/详情/手动触发/还原）
+- `ws.go` — WebSocket 入口（`/ws`），升级连接后构造 `wsv2.Router`，注册 thread/turn + snapshot/system 方法
 
-**LLM 集成已完成**：
-- `internal/llm/client.go` — HTTP 流式客户端，支持 SSE 解析、自动重试（仅首 chunk 前）、空闲超时
-- `internal/llm/error.go` — 错误分类（401/403/404/429/500/502/503 + 网络/超时），中文错误信息 + 猜测原因
-- `internal/llm/sse.go` — SSE 事件解析器（1MB 最大 token）
-- `internal/llm/url.go` — BaseURL 规范化（拼接 `/chat/completions`）
-- `internal/handler/agent.go` — `CallLLM` 是服务端流式 RPC，从 keystore 获取 API Key，调用 LLM Client
+**LLM 集成**：
+- `llm/client.go` — HTTP 流式客户端，SSE 解析、自动重试（仅首 chunk 前）、空闲超时
+- `llm/error.go` — 错误分类（401/403/404/429/500/502/503 + 网络/超时），中文错误信息 + 猜测原因
+- `llm/sse.go` — SSE 事件解析器（1MB 最大 token）
+- `llm/url.go` — BaseURL 规范化（拼接 `/chat/completions`）
+- `handler/agent.go` — `CallLLM` 服务端流式 RPC：从 keystore 取 API Key，调用 LLM Client，逐 chunk 下发
 
-**工具执行层已完成**：
-- `internal/tools/executor.go` — 工具调度（read/write/bash/edit/trash/purge），审批上下文传播
-- `internal/tools/approval.go` — 内存中审批管理（Create/Resolve/Consume/CancelSession），一次性令牌 + 会话级信任
-- `internal/tools/path_guard.go` — 双层路径验证（词法 + 符号链接解析），Windows 大小写不敏感
-- `internal/tools/read.go` — 文件读取（10MB 限制，10K 字节截断，UTF-8 验证）
-- `internal/tools/write.go` — 文件写入（自动创建父目录）
-- `internal/tools/bash.go` — Shell 执行（30s 超时，路径逃逸验证，Windows `cmd /c` 支持，删除类命令经 delete_guard 拦截）
-- `internal/tools/edit.go` — 搜索替换（要求恰好 1 个匹配）
-- `internal/tools/delete_guard.go` — 识别并拦截 shell 删除命令（rm/rmdir/del/rd/deltree/Remove-Item 等），引导改用 trash
-- `internal/tools/trash.go` — 移入回收站（可恢复）；单路径越权可走审批，paths 数组模式要求全部源路径在工作区内
-- `internal/tools/purge.go` — 永久删除回收站条目（不可逆，无论路径一律强制审批；写 trash_audit.log 审计）
-- `internal/tools/errors.go` — 工具错误码定义
+**工具执行层**：
+- `tools/executor.go` — 工具调度（read/write/bash/edit/trash/purge），审批上下文传播
+- `tools/approval.go` — 内存中审批管理（Create/Resolve/Consume/CancelSession），一次性令牌 + 会话级信任
+- `tools/path_guard.go` — 双层路径验证（词法 + 符号链接解析），Windows 大小写不敏感
+- `tools/read.go` — 文件读取（10MB 限制，10K 字节截断，UTF-8 验证）
+- `tools/write.go` — 文件写入（自动创建父目录）
+- `tools/bash.go` — Shell 执行（30s 超时，路径逃逸验证，Windows `cmd /c` 支持，删除类命令经 delete_guard 拦截）
+- `tools/edit.go` — 搜索替换（要求恰好 1 个匹配）
+- `tools/delete_guard.go` — 识别并拦截 shell 删除命令（rm/rmdir/del/rd/deltree/Remove-Item 等），引导改用 trash
+- `tools/trash.go` — 移入回收站（可恢复）；单路径越权可走审批，paths 数组模式要求全部源路径在工作区内
+- `tools/purge.go` — 永久删除回收站条目（不可逆，无论路径一律强制审批；写 trash_audit.log 审计）
+- `tools/errors.go` — 工具错误码定义
 
-**快照子系统已完成**：
-- `internal/snapshot/manager.go` — 触发编排：fsnotify 变更防抖 60s / 15min 周期兜底 / 锁屏 flush / 手动 / 还原前预快照
+**快照子系统**：
+- `snapshot/manager.go` — 触发编排：fsnotify 变更防抖 60s / 15min 周期兜底 / 锁屏 flush / 手动 / 还原前预快照
 - `capture.go` + `exclude.go` + `manifest.go` — 捕获工作区文件（敏感文件默认排除，单文件 100MB 上限），manifest 最后原子写入
 - `restore.go` — 还原前自动预快照保证可逆；不同项目路径的快照禁止还原
 - `retain.go` — 保留策略：30 天 / 5GB
-- 状态经 WebSocket broadcast（`snapshot_status` / `snapshot_message`）；REST 见 snapshot_handler.go
+- 状态经全局 WebSocket 广播（`snapshot_status` / `snapshot_message`）；REST 见 snapshot_handler.go
 
-**多 Agent 已完成**：
-- `internal/handler/agent_def.go` + `internal/storage/agents.go` — 智能体定义 CRUD 与 agents.json 持久化（单一真相源）
-- `agent/src/agent/core/agent_registry.py` — Python 侧定义缓存（TTL 兜底 + agents_changed 失效）
-- `agent/src/agent/core/subagent_runner.py` — 子 agent 派发（深度限制、事件转换为 subagent_* 转发到根会话）
-- `agent/src/agent/tools/agent_tool.py` — `agent__<name>` 工具注册，供主智能体调度子智能体
+**多 Agent**：
+- `handler/agent_def.go` + `storage/agents.go` — 智能体定义 CRUD 与 agents.json 持久化（单一真相源）
+- `agent_registry.py` — Python 侧定义缓存（TTL 兜底 + agents_changed 失效）
+- `subagent_runner.py` — 子智能体派发（深度限制、事件转换为 subagent_* 转发到根会话）
+- `tools/agent_tool.py` — `agent__<name>` 工具注册，供主智能体调度子智能体
 
-**Keystore 已增强**：
-- `internal/keystore/keystore.go` — `TryActivate`（原子操作：速率限制检查 + 解密 + 切换密钥）、`SwitchKey`、`Unlock`、`Lock`、`GetKey`、`VerifyPassword`、`GetLockStatus`
+**Keystore**：
+- `keystore/keystore.go` — `TryActivate`（原子：速率限制检查 + 解密 + 切换密钥）、`SwitchKey`、`Unlock`、`Lock`、`GetKey`、`VerifyPassword`、`GetLockStatus`
 - 速率限制：5 次失败 → 30s 锁定
 - API Key 在锁/切换时清零
 
-**Proto 已更新**：
-- `LLMResponse` 改为 `is_error` + `json_response` + `message_id`
-- `CallLLM` 改为 `returns (stream LLMResponse)`（服务端流式）
-- `ToolRequest` 改为 `session_id` + `tool_name` + `arguments` + `approval_id`
-- `ToolResponse` 改为 `success` + `result` + `error_code` + `needs_permission` + `request_id`
-- 新增多 Agent 定义：`AgentDef`/`AgentId`/`AgentDefList` + `ListAgents`/`GetAgent` RPC
-
-**前端启动流程已完成**：
-- Electron main.cjs 启动 Go 后端 + Python Agent 子进程（dev 模式自动设置 PYTHONPATH=src;src/agent）
-- 解析就绪信号提取端口，保存到内存
+**前端组成**：
+- Electron main.cjs 启动 Go 后端 + Python Agent 子进程（dev 模式自动设置 PYTHONPATH=src;src/agent），系统托盘，窗口状态持久化
 - preload.cjs 暴露 `window.flowPartner` API（fetchBackendPort、系统锁屏/焦点监听、关闭行为、openExternal、selectFolder、getVersion 等）
-- React 应用通过 `useWebSocket` hook 连接 WebSocket，支持自动重连（5 次，3s 间隔）
-- App 挂载 `useWindowState`：Electron 主进程锁屏通知 → system-lock DOM 事件 → useSnapshot/useLock 触发快照 flush 与锁定
-- 前端已有多 Agent 支持（AgentSelector、SubAgentCard/SubAgentDrilldown）、快照设置（SnapshotSettings/useSnapshot）、Agent 管理（AgentsManager）
+- `useWsV2`（useWebSocket.ts）实现 v2 协议客户端与握手；`useConversation` 管理消息与流式内容
+- `useWindowState`：Electron 锁屏通知 → system-lock DOM 事件 → `useSnapshot`/`useLock` 触发快照 flush 与锁定
+- 多 Agent UI：AgentSelector、SubAgentCard/SubAgentDrilldown、AgentsManager
+- 权限审批：PermissionDialog（对应 `item/commandExecution/requestApproval`）
+
+### 迁移状态（临时，迁移完成后删除）
+
+proto 与两侧生成桩代码已更新为新协议，前端 `useWsV2` 已按新协议实现。以下代码仍在从旧协议迁移，尚未对齐新 proto，**当前后端无法编译**：
+
+- `internal/thread/handlers.go` 仍构造旧 `ServerCommand{CommandType, Payload}` 字段
+- `internal/thread/events.go` 仍读旧 `AgentEvent.ThreadId` / `AgentEvent_Subagent` / `AgentEvent_Error` / `PermissionRequest.ScopeOptions`
+- `internal/handler/agent.go`、`internal/llm/client.go` 仍用旧 `LLMResponse.IsError`、`ToolResponse.NeedsPermission`、`UsagePayload.PromptTokens` 等字段
+- `agent/src/agent/grpc_client.py` 仍按旧 `command_type` 分发、仍读旧 `LLMResponse` 字段
 
 
 
@@ -202,16 +292,18 @@ FlowPartner/
 ├── .github/workflows/    # CI: ci.yml (Go + TS + Python), release.yml (Electron 构建)
 ├── agent/                # Python Agent 层 (uv 管理)
 │   ├── proto/            # proto 文件副本（与 backend/proto/ 逐字节相同，见下方说明）
-│   ├── src/agent/        # 源码 (main.py, grpc_client.py, core/, tools/)
+│   ├── src/agent/        # 源码（main.py, grpc_client.py；core/: turn_engine、steer、
+│   │                     #   tool_runtime、react_agent、subagent_runner、agent_registry；tools/）
 │   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go 后端
 │   ├── cmd/server/main.go    # 入口
 │   ├── internal/
-│   │   ├── bridge/manager.go # WebSocket ↔ gRPC 桥接（核心）
+│   │   ├── wsv2/             # WebSocket v2 协议（信封、连接状态机、方法分发、背压）
+│   │   ├── thread/           # thread/turn 管理（Manager、Handler、Scheduler、EventConverter、反向请求）
 │   │   ├── handler/          # HTTP handlers + WebSocket/gRPC handlers
 │   │   │   ├── agent.go      #   gRPC handler (SyncChannel, CallLLM, ExecuteTool, ListAgents, GetAgent)
-│   │   │   ├── ws.go         #   WebSocket handler (/ws)
+│   │   │   ├── ws.go         #   WebSocket 入口 (/ws)，构造 wsv2.Router
 │   │   │   ├── settings.go   #   Settings CRUD (/api/settings)
 │   │   │   ├── history.go    #   History API (/api/history)
 │   │   │   ├── unlock.go     #   API Key 解锁/锁定 (/api/unlock, /api/lock, /api/lock_status)
@@ -251,14 +343,14 @@ FlowPartner/
 │   │   ├── static/           # 前端静态文件服务（SPA 回退）
 │   │   └── storage/          # JSON 文件原子写入 + 历史 JSONL 格式 + agents.go（智能体定义持久化）
 │   └── proto/                # proto 定义 + 生成的 .pb.go 文件
-├── docs/                   # 设计资料：specifications/（31 个特性规格目录 + 00-总纲全局约束）、
+├── docs/                   # 本地设计资料（未纳入版本控制）：specifications/（特性规格 + 00-总纲）、
 │                           # abu/codex/office/opencode/openwork/openworker/pdf（竞品调研与移植决策）
 ├── frontend/               # Electron + React + TypeScript + Tailwind
 │   ├── electron/
 │   │   ├── main.cjs          # Electron 主进程（启动 Go + Python，系统托盘，窗口状态持久化）
 │   │   └── preload.cjs       # preload（暴露 fetchBackendPort、系统锁屏监听、关闭行为等）
 │   ├── src/
-│   │   ├── components/       # chat（含 SubAgentCard/SubAgentDrilldown/AgentSelector）、
+│   │   ├── components/       # chat（含 SubAgentCard/SubAgentDrilldown/AgentSelector/PermissionDialog）、
 │   │   │                     # layout、settings（APISettings/AgentsManager/SnapshotSettings/
 │   │   │                     # SettingsModal/CloseBehaviorSettings）、ui
 │   │   ├── hooks/            # useConversation, useLock, useSettings, useSnapshot,
@@ -282,6 +374,8 @@ proto 定义在两个位置存在**逐字节相同**的副本（均含 `go_packa
 **修改 proto 时必须同步两处并重新生成桩代码（推荐直接 `make gen-proto`）**。生成文件：
 - Go: `backend/proto/agent.pb.go`, `agent_grpc.pb.go`（不要手动编辑）
 - Python: `agent/src/agent/agent_pb2.py`, `agent_pb2_grpc.py`（不要手动编辑）
+
+WebSocket v2 协议（信封结构、方法名、通知名）**不在 proto 中定义**，由 `internal/wsv2/`（服务端）与前端 `useWsV2`（客户端）共同约定，改动时两侧需同步。
 
 ---
 
@@ -423,7 +517,7 @@ make test-all                                # 构建+测试所有层
 
 ### Golang（后端执行层）
 
-- **DO**：文件系统操作、危险操作拦截、gRPC 服务、WebSocket 服务、API Key 加密存储与内存管理、bridge 桥接、LLM HTTP 流式调用
+- **DO**：文件系统操作、危险操作拦截、gRPC 服务、WebSocket v2 协议与 thread/turn 状态管理、API Key 加密存储与内存管理、LLM HTTP 流式调用
 - **DON'T**：包含 AI 推理逻辑、操作前端状态
 
 ---
@@ -459,6 +553,13 @@ make test-all                                # 构建+测试所有层
 - 使用 ES Module (import/export)，禁止 CommonJS (require)
 - 异步操作必须用 try-catch 包裹
 - 组件用函数式 + Hooks，禁止 class 组件
+
+### WebSocket v2 协议
+
+- 新增方法 / 通知必须在服务端（`internal/wsv2/` + `internal/thread/`）与前端 `useWsV2` 两侧同步
+- 方法名与通知名用 `<domain>/<action>`（如 `thread/start`、`turn/completed`、`item/<type>/delta`）
+- 服务端反向请求由客户端用 `response/<requestId>` 应答；决定必须命中 `availableDecisions`，否则按超时处理
+- 错误统一走信封 `error.code`（-326xx 协议层 / -320xx 业务层），不要在 `result` 里夹带错误
 
 ### 工具执行层规范
 
@@ -538,7 +639,7 @@ make test-all                                # 构建+测试所有层
 - 在等待用户确认前先破坏性操作 — 删除/覆盖后再问来不及
 - 修改 proto 后手动编辑生成的 `.pb.go` / `_pb2.py` 文件 — 用 `protoc` 重新生成
 - 基于旧 HTTP chat 端点开发聊天功能 — 新架构用 WebSocket（ws.go）
-- 使用旧 `sendMessage` HTTP 函数 — 该函数已从 api.ts 移除，聊天通信全部走 WebSocket（useWebSocket hook）
+- 使用旧 `sendMessage` HTTP 函数 — 该函数已从 api.ts 移除，聊天通信全部走 WebSocket v2（useWsV2 hook）
 - 测试里手抄生产逻辑而非调用它 — 把逻辑提取为可单测方法，让测试覆盖真实代码路径
 
 

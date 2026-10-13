@@ -30,10 +30,10 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 
 ### 高可靠通信链路
 
-- **WebSocket + gRPC 双向流**：前端 WebSocket ↔ Go bridge ↔ gRPC 双向流 ↔ Python Agent，全链路异步非阻塞
+- **WebSocket v2 + gRPC 双向流**：前端（JSON-RPC 信封，`initialize`/`initialized` 握手）↔ wsv2 路由器 ↔ thread/turn 管理器 ↔ gRPC 双向流 ↔ Python Agent，全链路异步非阻塞
 - **服务端流式 LLM 调用**：SSE 流式解析 + 空闲超时 + 首 chunk 前自动重试，支持 OpenAI 兼容 API（`llm/`）
-- **背压控制**：WebSocket 入站队列满时返回过载错误，防止内存溢出（`wsv2/router.go`）
-- **优雅关闭**：gRPC GracefulStop → 断开 WebSocket → 关闭 HTTP，2 秒超时兜底（`main.go`）
+- **背压控制**：入站队列（容量 128）满时返回过载错误，另有 8MB 单条消息上限，防止内存溢出（`wsv2/router.go`）
+- **优雅关闭**：HTTP 关闭 → 断开 WebSocket → gRPC GracefulStop（2 秒超时兜底）→ 关闭快照（`main.go`）
 
 ### 自动快照与可恢复性
 
@@ -61,10 +61,10 @@ FlowPartner 是一款面向非专业用户的 AI Agent 桌面应用。没有计�
 早期开发阶段。项目三层架构已就位：
 
 - `frontend/` — Electron + React + TypeScript + Tailwind
-- `backend/` — Go：gRPC、WebSocket、bridge 管理器、API Key 加密、LLM HTTP 流式客户端
-- `agent/` — Python：gRPC 客户端、ReAct 循环、工具注册表
+- `backend/` — Go：gRPC、WebSocket v2、thread/turn 管理器、API Key 加密、LLM HTTP 流式客户端
+- `agent/` — Python：gRPC 客户端、回合引擎（ReAct）、工具注册表
 
-**通信流程：** Electron（端口发现）→ 前端（bootstrap）→ WebSocket → Go bridge → gRPC 双向流 → Python Agent → gRPC CallLLM（服务端流式）→ Go LLM 客户端 → OpenAI 兼容 API → SSE 分块 → 流式回传前端
+**通信流程：** Electron（端口发现）→ 前端（bootstrap）→ WebSocket（v2 信封：`initialize`/`initialized` 握手，之后 `thread/*`、`turn/*`）→ wsv2 路由器 → thread/turn 管理器 → gRPC 双向流 → Python Agent（TurnEngine）→ gRPC CallLLM（服务端流式）→ Go LLM 客户端 → OpenAI 兼容 API → SSE 分块 → 流式回传前端
 
 ## 项目结构
 
@@ -73,7 +73,7 @@ FlowPartner/
 ├── .github/workflows/    # CI: ci.yml, release.yml
 ├── agent/                # Python Agent 层
 │   ├── proto/            # proto 文件（与 backend/proto/ 逐字节相同）
-│   ├── src/agent/        # main.py, grpc_client.py, core/（react_agent、subagent_runner、agent_registry）, tools/
+│   ├── src/agent/        # main.py, grpc_client.py, core/（turn_engine、steer、tool_runtime、react_agent、subagent_runner、agent_registry）, tools/
 │   ├── tests/
 │   └── pyproject.toml
 ├── backend/              # Go 后端

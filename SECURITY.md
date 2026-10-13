@@ -23,6 +23,9 @@ Early development. Some security mechanisms are already implemented; others are 
 - Shell deletion-command blacklist (`rm`, `del`, `Remove-Item`, etc. are intercepted and routed to the recoverable `trash` tool)
 - Recoverable deletion: files are moved to a recycle-bin directory via `trash`; permanent `purge` always requires explicit user approval and writes an audit log
 - Automatic workspace snapshots: change-triggered (60s debounce) plus periodic fallback (15min), sensitive files excluded by default, restore always takes a pre-snapshot first
+- WebSocket v2 handshake gate: method calls before the `initialize` / `initialized` handshake are rejected
+- Bounded WebSocket inbound queue (128) plus an 8MB per-message cap, preventing memory exhaustion
+- Out-of-workspace approval is delivered as a server-initiated request with a 120s timeout; an invalid decision is treated as a timeout (fail-closed), and pending approvals are released on turn interrupt / lock
 
 **Planned:**
 - Append-only operation logs (currently only purge/agent-definition changes are audited; no global append-only log API yet)

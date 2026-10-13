@@ -99,6 +99,10 @@ Proto definitions are duplicated in two locations and must stay **byte-identical
 
 Never manually edit generated files.
 
+### WebSocket protocol
+
+The frontend ↔ backend WebSocket protocol is **not** defined in proto. It uses a JSON-RPC-style envelope (`{id, method, params, result, error}`) with an `initialize` / `initialized` handshake, then `thread/*`, `turn/*`, `snapshot/*`, `system/lock`, and `response/<requestId>` methods. The server side lives in `internal/wsv2/` + `internal/thread/`; the client side is `frontend/src/hooks/useWebSocket.ts` (`useWsV2`). Any protocol change must be applied to both sides.
+
 ## Commit Messages
 
 We use the following format:
