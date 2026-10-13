@@ -1,26 +1,24 @@
 ﻿package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 )
 
-// Config 从环境变量读取运行时配置
 type Config struct {
-	HTTPPort    string // HTTP 监听端口，默认 ":8080"
-	FrontendDir string // 前端构建产物目录，默认 "../frontend/dist"
-	DevMode     bool   // 开发模式，默认 false
+	HTTPPort    string
+	FrontendDir string
+	DevMode     bool
 }
 
-// Load 从环境变量读取配置，缺失时使用默认值
 func Load() *Config {
 	cfg := &Config{
-		HTTPPort: getEnv("FP_HTTP_PORT", ":8080"),
+		HTTPPort: getEnv("FP_HTTP_PORT", "8080"),
 		DevMode:  getEnvAsBool("FP_DEV_MODE", false),
 	}
 
-	// FrontendDir: 优先使用环境变量，否则基于 CWD 计算
 	if dir := os.Getenv("FP_FRONTEND_DIR"); dir != "" {
 		cfg.FrontendDir = resolvePath(dir)
 	} else {
@@ -30,17 +28,18 @@ func Load() *Config {
 	return cfg
 }
 
-// resolvePath 将相对路径解析为绝对路径（基于 CWD），绝对路径直接返回
 func resolvePath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
 	wd, err := os.Getwd()
 	if err != nil {
+		log.Printf("[config] os.Getwd() failed: %v, returning original path %q", err, p)
 		return p
 	}
 	abs, err := filepath.Abs(filepath.Join(wd, p))
 	if err != nil {
+		log.Printf("[config] filepath.Abs(%q) failed: %v, returning original path %q", p, err, p)
 		return p
 	}
 	return abs
