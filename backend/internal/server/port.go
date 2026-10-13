@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"syscall"
 )
 
@@ -71,9 +70,8 @@ func FindAvailablePort(startPort string, exclude map[string]bool) (net.Listener,
 	return nil, 0, fmt.Errorf("%w: start port %d", ErrMaxAttemptsReached, port)
 }
 
-// parsePort 解析端口字符串（如 ":8080"）为整数
+// parsePort 解析端口字符串为整数，调用方传入纯数字（如 "8080"）
 func parsePort(s string) (int, error) {
-	s = strings.TrimPrefix(s, ":")
 	return strconv.Atoi(s)
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestFindAvailablePort_Success(t *testing.T) {
-	listener, port, err := FindAvailablePort(":1024", nil)
+	listener, port, err := FindAvailablePort("1024", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -24,14 +24,14 @@ func TestFindAvailablePort_Success(t *testing.T) {
 
 // TestFindAvailablePort_HTTPAndGRPCDistinct 验证 HTTP 与 gRPC 端口探索结果不同
 func TestFindAvailablePort_HTTPAndGRPCDistinct(t *testing.T) {
-	httpListener, httpPort, err := FindAvailablePort(":8080", nil)
+	httpListener, httpPort, err := FindAvailablePort("8080", nil)
 	if err != nil {
 		t.Fatalf("HTTP port discovery failed: %v", err)
 	}
 	defer httpListener.Close()
 
 	exclude := map[string]bool{fmt.Sprintf("127.0.0.1:%d", httpPort): true}
-	grpcListener, grpcPort, err := FindAvailablePort(":50051", exclude)
+	grpcListener, grpcPort, err := FindAvailablePort("50051", exclude)
 	if err != nil {
 		t.Fatalf("gRPC port discovery failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestFindAvailablePort_ExcludeHTTPPort(t *testing.T) {
 
 	// 从被占用端口开始探索，同时排除该端口，应跳到下一个可用端口
 	exclude := map[string]bool{"127.0.0.1:" + portStr: true}
-	_, port2, err := FindAvailablePort(":"+portStr, exclude)
+	_, port2, err := FindAvailablePort(portStr, exclude)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestFindAvailablePort_SkipsExcludedDuringIncrement(t *testing.T) {
 	// 排除 p1+1（即使它没有被占用）
 	exclude := map[string]bool{fmt.Sprintf("127.0.0.1:%d", p1+1): true}
 
-	listener, foundPort, err := FindAvailablePort(":"+portStr1, exclude)
+	listener, foundPort, err := FindAvailablePort(portStr1, exclude)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,14 +92,14 @@ func TestFindAvailablePort_SkipsExcludedDuringIncrement(t *testing.T) {
 }
 
 func TestFindAvailablePort_InvalidPort(t *testing.T) {
-	_, _, err := FindAvailablePort(":abc", nil)
+	_, _, err := FindAvailablePort("abc", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid port string")
 	}
 }
 
 func TestFindAvailablePort_OutOfRange(t *testing.T) {
-	_, _, err := FindAvailablePort(":80", nil)
+	_, _, err := FindAvailablePort("80", nil)
 	if err == nil {
 		t.Fatal("expected error for port < 1024")
 	}
@@ -110,7 +110,7 @@ func TestFindAvailablePort_OutOfRange(t *testing.T) {
 
 // TestFindAvailablePort_AboveMax 验证起始端口超过 65535 时直接返回 ErrPortOutOfRange
 func TestFindAvailablePort_AboveMax(t *testing.T) {
-	_, _, err := FindAvailablePort(":65536", nil)
+	_, _, err := FindAvailablePort("65536", nil)
 	if err == nil {
 		t.Fatal("expected error for port > 65535")
 	}
@@ -130,7 +130,7 @@ func TestFindAvailablePort_PortOccupied(t *testing.T) {
 	_, portStr, _ := net.SplitHostPort(lis.Addr().String())
 
 	// 从被占用端口开始探索，应跳过并找到下一个可用端口
-	_, foundPort, err := FindAvailablePort(":"+portStr, nil)
+	_, foundPort, err := FindAvailablePort(portStr, nil)
 	if err != nil {
 		t.Fatalf("should find next available port, got error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestFindAvailablePort_MaxPortOccupied(t *testing.T) {
 	}
 	defer lis.Close()
 
-	_, _, err = FindAvailablePort(":65535", nil)
+	_, _, err = FindAvailablePort("65535", nil)
 	if !errors.Is(err, ErrMaxAttemptsReached) {
 		t.Fatalf("expected ErrMaxAttemptsReached, got: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestFindAvailablePort_NonPortInUseError(t *testing.T) {
 		return nil, errors.New("permission denied")
 	}
 
-	_, _, err := FindAvailablePort(":1024", nil)
+	_, _, err := FindAvailablePort("1024", nil)
 	if err == nil {
 		t.Fatal("expected error for non-port-in-use bind failure")
 	}
@@ -176,9 +176,8 @@ func TestParsePort(t *testing.T) {
 		expected int
 		wantErr  bool
 	}{
-		{":8080", 8080, false},
 		{"8080", 8080, false},
-		{":50051", 50051, false},
+		{"50051", 50051, false},
 		{"invalid", 0, true},
 		{"", 0, true},
 	}

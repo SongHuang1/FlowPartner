@@ -13,8 +13,8 @@ func TestLoad_DefaultValues(t *testing.T) {
 
 	cfg := Load()
 
-	if cfg.HTTPPort != ":8080" {
-		t.Errorf("expected default port :8080, got %s", cfg.HTTPPort)
+	if cfg.HTTPPort != "8080" {
+		t.Errorf("expected default port 8080, got %s", cfg.HTTPPort)
 	}
 	if cfg.DevMode != false {
 		t.Errorf("expected DevMode false, got %v", cfg.DevMode)
@@ -22,13 +22,13 @@ func TestLoad_DefaultValues(t *testing.T) {
 }
 
 func TestLoad_CustomPort(t *testing.T) {
-	t.Setenv("FP_HTTP_PORT", ":9090")
+	t.Setenv("FP_HTTP_PORT", "9090")
 	defer os.Unsetenv("FP_HTTP_PORT")
 
 	cfg := Load()
 
-	if cfg.HTTPPort != ":9090" {
-		t.Errorf("expected custom port :9090, got %s", cfg.HTTPPort)
+	if cfg.HTTPPort != "9090" {
+		t.Errorf("expected custom port 9090, got %s", cfg.HTTPPort)
 	}
 }
 
