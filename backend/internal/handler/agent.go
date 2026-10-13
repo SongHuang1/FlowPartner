@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type AgentHandler struct {
@@ -219,7 +220,7 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 	return nil
 }
 
-func (h *AgentHandler) ListAgents(ctx context.Context, _ *proto.Empty) (*proto.AgentDefList, error) {
+func (h *AgentHandler) ListAgents(ctx context.Context, _ *emptypb.Empty) (*proto.AgentDefList, error) {
 	defs, err := storage.LoadAgents()
 	if err != nil {
 		log.Printf("[ListAgents] 读取智能体定义失败: %s", sanitize.Error(err))
