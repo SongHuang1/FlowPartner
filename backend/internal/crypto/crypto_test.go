@@ -9,12 +9,11 @@ import (
 )
 
 const (
-		argonTime    = 3
-		argonMemory  = 64 * 1024
-		argonThreads = 4
-		keyLen   = 32
-	)
-// --- RoundTrip 基本行为 ---
+	keyLen    = 32
+	gcmTagLen = 16
+)
+
+// --- Round-trip behavior ---
 
 func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	password := []byte("TestPass123")
@@ -148,8 +147,9 @@ func TestEncryptDecrypt_SpecialCharsInPlaintext(t *testing.T) {
 	}
 }
 
-// --- 加密输出格式与随机性 ---
-// 另外，这个函数里面为什么使用不等号？这个长度不是应该严格等于一个确切的数字吗？
+// --- Ciphertext format and randomness ---
+
+// TestEncrypt_OutputFormat checks the wire layout of the encrypted blob. 
 func TestEncrypt_OutputFormat(t *testing.T) {
 	password := []byte("TestPass123")
 	plaintext := "test-data"
@@ -159,23 +159,21 @@ func TestEncrypt_OutputFormat(t *testing.T) {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(encrypted)
-	if err != nil {
-		t.Fatalf("encrypted output is not valid base64: %v", err)
-	}
+	decoded := mustDecode(t, encrypted)
 
-	// 最小长度: salt(saltLen) + iv(ivLen) + tag(16)
-	if len(decoded) < saltLen+ivLen+16 {
-		t.Errorf("encrypted data too short: got %d bytes, want at least %d", len(decoded), saltLen+ivLen+16)
+	// Layout: salt | IV | ciphertext, where ciphertext is the plaintext
+	// followed by the fixed-size GCM authentication tag.
+	wantLen := saltLen + ivLen + len(plaintext) + gcmTagLen
+	if len(decoded) != wantLen {
+		t.Errorf("encrypted data length: got %d bytes, want %d", len(decoded), wantLen)
 	}
 
 	assertNotAllZero(t, "salt", decoded[:saltLen])
 	assertNotAllZero(t, "IV", decoded[saltLen:saltLen+ivLen])
 }
 
-
-// 这里的随机是又问题的，你怎么知道不是因为盐值不同导致的不一样？
-// 你直接提取IV做比较嘛
+// TestEncrypt_UniqueIV verifies that two encryptions of the same plaintext use
+// different IVs. 
 func TestEncrypt_UniqueIV(t *testing.T) {
 	password := []byte("TestPass123")
 	plaintext := "sk-test-api-key-12345"
@@ -190,28 +188,30 @@ func TestEncrypt_UniqueIV(t *testing.T) {
 		t.Fatalf("Second encrypt failed: %v", err)
 	}
 
-	if encrypted1 == encrypted2 {
-		t.Fatal("two encryptions with same plaintext and password should produce different ciphertexts")
-	}
-
-	dec1, _ := Decrypt(encrypted1, password)
-	// 为什么这里都忽视错误呢？为什么不对于错误给出报错信息呢？
-	// 每一条都忽略了错误，我不能理解
-	dec2, _ := Decrypt(encrypted2, password)
-	if dec1 != plaintext || dec2 != plaintext {
-		t.Fatal("both ciphertexts should decrypt to original plaintext")
+	iv1 := extractIV(t, encrypted1)
+	iv2 := extractIV(t, encrypted2)
+	if bytes.Equal(iv1, iv2) {
+		t.Error("two encryptions of the same plaintext should use different IVs")
 	}
 }
 
+// TestEncrypt_UniqueSalt verifies that two encryptions of the same plaintext
+// use different salts, which is what keeps the derived key unique per call.
 func TestEncrypt_UniqueSalt(t *testing.T) {
 	password := []byte("TestPass123")
 	plaintext := "same-plaintext"
 
-	enc1, _ := Encrypt(plaintext, password)
-	enc2, _ := Encrypt(plaintext, password)
+	enc1, err := Encrypt(plaintext, password)
+	if err != nil {
+		t.Fatalf("First encrypt failed: %v", err)
+	}
+	enc2, err := Encrypt(plaintext, password)
+	if err != nil {
+		t.Fatalf("Second encrypt failed: %v", err)
+	}
 
-	dec1, _ := base64.StdEncoding.DecodeString(enc1)
-	dec2, _ := base64.StdEncoding.DecodeString(enc2)
+	dec1 := mustDecode(t, enc1)
+	dec2 := mustDecode(t, enc2)
 
 	salt1 := dec1[:saltLen]
 	salt2 := dec2[:saltLen]
@@ -221,26 +221,30 @@ func TestEncrypt_UniqueSalt(t *testing.T) {
 	}
 }
 
-// --- 解密失败路径 ---
+// --- Decryption failure paths ---
 
 func TestDecrypt_WrongPassword(t *testing.T) {
 	password := []byte("CorrectPass123")
 	plaintext := "sk-secret-key"
 
-	encrypted, _ := Encrypt(plaintext, password)
+	encrypted, err := Encrypt(plaintext, password)
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
 
-	_, err := Decrypt(encrypted, []byte("WrongPass123"))
+	_, err = Decrypt(encrypted, []byte("WrongPass123"))
 	if err == nil {
 		t.Fatal("Decrypt with wrong password should fail")
 	}
 
-	// 错误信息不应包含敏感细节
+	// The error must not leak sensitive details.
 	if strings.Contains(err.Error(), plaintext) {
 		t.Error("error message should not contain the plaintext")
 	}
 }
 
-// TestDecrypt_TamperedData 验证 Salt/IV/密文 任一位置被篡改后解密都失败。
+// TestDecrypt_TamperedData verifies that flipping any byte of the salt, IV, or
+// ciphertext makes decryption fail.
 func TestDecrypt_TamperedData(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -259,10 +263,7 @@ func TestDecrypt_TamperedData(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Encrypt failed: %v", err)
 			}
-			decoded, err := base64.StdEncoding.DecodeString(encrypted)
-			if err != nil {
-				t.Fatalf("decode failed: %v", err)
-			}
+			decoded := mustDecode(t, encrypted)
 
 			idx := tt.flipIndex(len(decoded))
 			decoded[idx] ^= 0x01
@@ -362,7 +363,28 @@ func TestDeriveKey_DifferentSalts(t *testing.T) {
 	}
 }
 
-// --- 辅助函数 ---
+// --- Helpers ---
+
+// mustDecode base64-decodes an encrypted blob and fails the test on error, so
+// callers can assert on the decoded bytes without repeating error handling.
+func mustDecode(t *testing.T, encrypted string) []byte {
+	t.Helper()
+	decoded, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		t.Fatalf("encrypted output is not valid base64: %v", err)
+	}
+	return decoded
+}
+
+// extractIV returns the IV segment of an encrypted blob.
+func extractIV(t *testing.T, encrypted string) []byte {
+	t.Helper()
+	decoded := mustDecode(t, encrypted)
+	if len(decoded) < saltLen+ivLen {
+		t.Fatalf("encrypted data too short to contain an IV: %d bytes", len(decoded))
+	}
+	return decoded[saltLen : saltLen+ivLen]
+}
 
 func assertNotAllZero(t *testing.T, name string, data []byte) {
 	t.Helper()
