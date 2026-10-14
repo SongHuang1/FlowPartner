@@ -15,14 +15,15 @@ import (
 const (
 	saltLen  = 16
 	ivLen    = 12
-	keyLen   = 32
-
-	argonTime    = 3
-	argonMemory  = 64 * 1024
-	argonThreads = 4
 )
 
 func deriveKey(password []byte, salt []byte) []byte {
+	const (
+		argonTime    = 3
+		argonMemory  = 64 * 1024
+		argonThreads = 4
+		keyLen   = 32
+	)
 	return argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
 }
 
