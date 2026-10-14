@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+const (
+		argonTime    = 3
+		argonMemory  = 64 * 1024
+		argonThreads = 4
+		keyLen   = 32
+	)
 // --- RoundTrip 基本行为 ---
 
 func TestEncryptDecrypt_RoundTrip(t *testing.T) {
@@ -143,7 +149,7 @@ func TestEncryptDecrypt_SpecialCharsInPlaintext(t *testing.T) {
 }
 
 // --- 加密输出格式与随机性 ---
-
+// 另外，这个函数里面为什么使用不等号？这个长度不是应该严格等于一个确切的数字吗？
 func TestEncrypt_OutputFormat(t *testing.T) {
 	password := []byte("TestPass123")
 	plaintext := "test-data"
@@ -167,7 +173,9 @@ func TestEncrypt_OutputFormat(t *testing.T) {
 	assertNotAllZero(t, "IV", decoded[saltLen:saltLen+ivLen])
 }
 
-// TestEncrypt_UniqueIV 验证相同明文和密码两次加密产生不同密文（随机 Salt/IV），且都能解密回原文。
+
+// 这里的随机是又问题的，你怎么知道不是因为盐值不同导致的不一样？
+// 你直接提取IV做比较嘛
 func TestEncrypt_UniqueIV(t *testing.T) {
 	password := []byte("TestPass123")
 	plaintext := "sk-test-api-key-12345"
@@ -187,6 +195,8 @@ func TestEncrypt_UniqueIV(t *testing.T) {
 	}
 
 	dec1, _ := Decrypt(encrypted1, password)
+	// 为什么这里都忽视错误呢？为什么不对于错误给出报错信息呢？
+	// 每一条都忽略了错误，我不能理解
 	dec2, _ := Decrypt(encrypted2, password)
 	if dec1 != plaintext || dec2 != plaintext {
 		t.Fatal("both ciphertexts should decrypt to original plaintext")
