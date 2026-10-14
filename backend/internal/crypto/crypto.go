@@ -92,6 +92,7 @@ func Decrypt(encoded string, password []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decryption failed: wrong password or corrupted data")
 	}
+	defer ZeroBytes(plaintext)
 
 	return string(plaintext), nil
 }
