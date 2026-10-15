@@ -13,6 +13,7 @@ const (
 	lockoutDuration   = 30 * time.Second
 )
 
+// time.Time是一个struct，没有默认的零值，所以omitempty没有意义
 type LockStatus struct {
 	Locked         bool      `json:"locked"`
 	LockedUntil    time.Time `json:"locked_until,omitempty"`
