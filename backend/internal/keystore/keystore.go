@@ -83,7 +83,8 @@ func (ks *KeyStore) Lock() {
 	ks.unlocked = false
 }
 
-// SwitchKey 原子切换：在单次写锁内零化旧 Key → 存入新 Key → 保持解锁，避免 TOCTOU 竞态
+// SwitchKey atomically switches to a new key in a single write lock:
+// zero old key → store new key → stay unlocked. Prevents TOCTOU races.
 func (ks *KeyStore) SwitchKey(newKey []byte) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
@@ -104,7 +105,8 @@ var (
 	ErrWrongPassword = fmt.Errorf("wrong password")
 )
 
-// TryActivate 原子操作：检查锁定状态 → 解密 → 切换 Key
+// TryActivate verifies the password and loads the API key atomically.
+// Supports both initial load and key switching under a single write lock.
 func (ks *KeyStore) TryActivate(encryptedKey string, password []byte) ([]byte, error) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
