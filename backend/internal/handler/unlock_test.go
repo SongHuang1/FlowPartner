@@ -337,7 +337,7 @@ func TestUnlock_RateLimit_BlocksCorrectPassword(t *testing.T) {
 
 	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 	for i := 0; i < 5; i++ {
-		ks.VerifyPassword([]byte("WrongPass123"), encrypted)
+		ks.TryActivate(encrypted, []byte("WrongPass123"))
 	}
 
 	if status := ks.GetLockStatus(); !status.Locked {
@@ -358,7 +358,7 @@ func TestUnlock_RateLimitResponseFormat(t *testing.T) {
 
 	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 	for i := 0; i < 5; i++ {
-		ks.VerifyPassword([]byte("WrongPass123"), encrypted)
+		ks.TryActivate(encrypted, []byte("WrongPass123"))
 	}
 
 	w := postUnlock(h, "AnyPass123")

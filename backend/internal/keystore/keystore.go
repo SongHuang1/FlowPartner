@@ -13,10 +13,9 @@ const (
 	lockoutDuration   = 30 * time.Second
 )
 
-// time.Time是一个struct，没有默认的零值，所以omitempty没有意义
 type LockStatus struct {
 	Locked         bool      `json:"locked"`
-	LockedUntil    time.Time `json:"locked_until,omitempty"`
+	LockedUntil    time.Time `json:"locked_until,omitzero"`
 	FailedAttempts int       `json:"failed_attempts"`
 	HasAPIKey      bool      `json:"has_api_key"`
 }
@@ -51,39 +50,6 @@ func (ks *KeyStore) SetAPIKeyConfigured(configured bool) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 	ks.hasAPIKey = configured
-}
-
-func (ks *KeyStore) VerifyPassword(password []byte, encryptedKey string) bool {
-	ks.mu.Lock()
-	defer ks.mu.Unlock()
-
-	if time.Now().Before(ks.lockedUntil) {
-		return false
-	}
-
-	_, err := flowcrypto.Decrypt(encryptedKey, password)
-	if err != nil {
-		ks.recordFailedAttempt()
-		return false
-	}
-
-	ks.failedAttempts = 0
-	return true
-}
-
-// RecordFailedAttempt 记录一次密码错误（不执行解密，用于已解密失败后的计数）
-func (ks *KeyStore) RecordFailedAttempt() {
-	ks.mu.Lock()
-	defer ks.mu.Unlock()
-	ks.recordFailedAttempt()
-}
-
-// recordFailedAttempt 内部方法（调用方需持有写锁）
-func (ks *KeyStore) recordFailedAttempt() {
-	ks.failedAttempts++
-	if ks.failedAttempts >= maxFailedAttempts {
-		ks.lockedUntil = time.Now().Add(lockoutDuration)
-	}
 }
 
 func (ks *KeyStore) Unlock(apiKey []byte) error {
@@ -139,7 +105,6 @@ var (
 )
 
 // TryActivate 原子操作：检查锁定状态 → 解密 → 切换 Key
-// 在单次写锁内完成检查和切换，避免 TOCTOU 竞态
 func (ks *KeyStore) TryActivate(encryptedKey string, password []byte) ([]byte, error) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
@@ -151,8 +116,8 @@ func (ks *KeyStore) TryActivate(encryptedKey string, password []byte) ([]byte, e
 	apiKey, err := flowcrypto.Decrypt(encryptedKey, password)
 	if err != nil {
 		ks.failedAttempts++
-		if ks.failedAttempts >= 5 {
-			ks.lockedUntil = time.Now().Add(30 * time.Second)
+		if ks.failedAttempts >= maxFailedAttempts {
+			ks.lockedUntil = time.Now().Add(lockoutDuration)
 		}
 		return nil, ErrWrongPassword
 	}

@@ -60,20 +60,6 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 	defer flowcrypto.ZeroBytes([]byte(req.Password))
 
 	ks := keystore.Instance()
-	status := ks.GetLockStatus()
-	if status.Locked && time.Now().Before(status.LockedUntil) {
-		remaining := int(time.Until(status.LockedUntil).Seconds() + 0.5)
-		response.WriteJSON(w, http.StatusTooManyRequests,
-			response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %d 秒后重试", remaining)))
-		return
-	}
-
-	if !status.HasAPIKey {
-		response.WriteJSON(w, http.StatusBadRequest,
-			response.Error(response.CodeAPIKeyNotConfigured, "请先配置 API Key"))
-		return
-	}
-
 	settings := LoadSettings()
 	encryptedKey := settings.EncryptedAPIKey
 	activatedID := ""
@@ -92,15 +78,25 @@ func (h *UnlockHandler) Post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey, err := flowcrypto.Decrypt(encryptedKey, []byte(req.Password))
+	_, err := ks.TryActivate(encryptedKey, []byte(req.Password))
 	if err != nil {
-		ks.RecordFailedAttempt()
-		response.WriteJSON(w, http.StatusUnauthorized,
-			response.Error(response.CodeWrongPassword, "密码错误"))
+		switch err {
+		case keystore.ErrRateLimited:
+			remaining := int(time.Until(ks.LockedUntil()).Seconds() + 0.5)
+			if remaining < 0 {
+				remaining = 0
+			}
+			response.WriteJSON(w, http.StatusTooManyRequests,
+				response.Error(response.CodeUnlockRateLimited, fmt.Sprintf("失败次数过多，请在 %d 秒后重试", remaining)))
+		case keystore.ErrWrongPassword:
+			response.WriteJSON(w, http.StatusUnauthorized,
+				response.Error(response.CodeWrongPassword, "密码错误"))
+		default:
+			response.WriteJSON(w, http.StatusInternalServerError,
+				response.Error(response.CodeInternalError, "未知错误"))
+		}
 		return
 	}
-
-	ks.Unlock([]byte(apiKey))
 
 	if settings.ActiveConfigID == "" && activatedID != "" {
 		settings.ActiveConfigID = activatedID

@@ -181,7 +181,7 @@ func TestKeyStore_RateLimit_Exactly5Attempts(t *testing.T) {
 
 	// 4 次失败不应触发速率限制
 	for i := 0; i < 4; i++ {
-		ks.VerifyPassword(password, encrypted)
+		ks.TryActivate(encrypted, password)
 	}
 	status := ks.GetLockStatus()
 	if !status.LockedUntil.IsZero() {
@@ -189,7 +189,7 @@ func TestKeyStore_RateLimit_Exactly5Attempts(t *testing.T) {
 	}
 
 	// 第 5 次失败触发速率限制
-	ks.VerifyPassword(password, encrypted)
+	ks.TryActivate(encrypted, password)
 	status = ks.GetLockStatus()
 	if !status.Locked {
 		t.Fatal("should be locked after 5 failed attempts")
@@ -212,7 +212,7 @@ func TestKeyStore_RateLimit_ResetOnCorrectPassword(t *testing.T) {
 	encrypted, _ := flowcrypto.Encrypt("test-key", correctPassword)
 
 	for i := 0; i < 4; i++ {
-		ks.VerifyPassword([]byte("WrongPass123"), encrypted)
+		ks.TryActivate(encrypted, []byte("WrongPass123"))
 	}
 
 	status := ks.GetLockStatus()
@@ -220,9 +220,8 @@ func TestKeyStore_RateLimit_ResetOnCorrectPassword(t *testing.T) {
 		t.Errorf("FailedAttempts should be 4, got %d", status.FailedAttempts)
 	}
 
-	ok := ks.VerifyPassword(correctPassword, encrypted)
-	if !ok {
-		t.Fatal("correct password should succeed")
+	if _, err := ks.TryActivate(encrypted, correctPassword); err != nil {
+		t.Fatalf("correct password should succeed, got: %v", err)
 	}
 
 	status = ks.GetLockStatus()
@@ -239,7 +238,7 @@ func TestKeyStore_RateLimit_LockedUntilDuration(t *testing.T) {
 	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 
 	for i := 0; i < 5; i++ {
-		ks.VerifyPassword(password, encrypted)
+		ks.TryActivate(encrypted, password)
 	}
 
 	status := ks.GetLockStatus()
@@ -259,9 +258,11 @@ func TestKeyStore_RateLimit_6Attempts(t *testing.T) {
 	password := []byte("WrongPass123")
 	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 
-	for i := 0; i < 6; i++ {
-		ks.VerifyPassword(password, encrypted)
+	for i := 0; i < 5; i++ {
+		ks.TryActivate(encrypted, password)
 	}
+	// 第 6 次被速率限制阻止
+	ks.TryActivate(encrypted, password)
 
 	status := ks.GetLockStatus()
 	if status.LockedUntil.IsZero() {
@@ -284,130 +285,6 @@ func TestKeyStore_RateLimit_ExpireAndRetry(t *testing.T) {
 	}
 	if !ks.IsUnlocked() {
 		t.Fatal("should be unlocked after rate limit expires")
-	}
-}
-
-func TestKeyStore_RecordFailedAttempt_Increment(t *testing.T) {
-	ks := newTestKeyStore()
-
-	status := ks.GetLockStatus()
-	if status.FailedAttempts != 0 {
-		t.Fatalf("initial FailedAttempts should be 0, got %d", status.FailedAttempts)
-	}
-
-	ks.RecordFailedAttempt()
-	status = ks.GetLockStatus()
-	if status.FailedAttempts != 1 {
-		t.Errorf("after 1 attempt: FailedAttempts should be 1, got %d", status.FailedAttempts)
-	}
-
-	ks.RecordFailedAttempt()
-	status = ks.GetLockStatus()
-	if status.FailedAttempts != 2 {
-		t.Errorf("after 2 attempts: FailedAttempts should be 2, got %d", status.FailedAttempts)
-	}
-}
-
-func TestKeyStore_RecordFailedAttempt_TriggersRateLimit(t *testing.T) {
-	ks := newTestKeyStore()
-
-	// 4 次不触发
-	for i := 0; i < 4; i++ {
-		ks.RecordFailedAttempt()
-	}
-	status := ks.GetLockStatus()
-	if !status.LockedUntil.IsZero() {
-		t.Fatal("rate limit should not be active after 4 attempts")
-	}
-
-	// 第 5 次触发
-	ks.RecordFailedAttempt()
-	status = ks.GetLockStatus()
-	if status.LockedUntil.IsZero() {
-		t.Fatal("rate limit should be active after 5 attempts")
-	}
-
-	expectedUnlock := time.Now().Add(30 * time.Second)
-	diff := status.LockedUntil.Sub(expectedUnlock)
-	if diff < -time.Second || diff > time.Second {
-		t.Errorf("LockedUntil should be ~30s from now, got %v (expected ~%v)", status.LockedUntil, expectedUnlock)
-	}
-}
-
-func TestKeyStore_RecordFailedAttempt_BlocksVerifyPassword(t *testing.T) {
-	ks := newTestKeyStore()
-
-	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
-
-	for i := 0; i < 5; i++ {
-		ks.RecordFailedAttempt()
-	}
-
-	ok := ks.VerifyPassword([]byte("CorrectPass123"), encrypted)
-	if ok {
-		t.Fatal("VerifyPassword should return false during rate limit period")
-	}
-}
-
-func TestKeyStore_RecordFailedAttempt_UnlockBlocked(t *testing.T) {
-	ks := newTestKeyStore()
-
-	for i := 0; i < 5; i++ {
-		ks.RecordFailedAttempt()
-	}
-
-	err := ks.Unlock([]byte("sk-test-key"))
-	if err == nil {
-		t.Fatal("Unlock should fail during rate limit period")
-	}
-}
-
-func TestKeyStore_VerifyPassword_BlockedDuringRateLimit_ExpiredRecovers(t *testing.T) {
-	ks := newTestKeyStore()
-
-	correctPassword := []byte("CorrectPass123")
-	encrypted, _ := flowcrypto.Encrypt("test-key", correctPassword)
-
-	ks.lockedUntil = time.Now().Add(-1 * time.Second)
-
-	ok := ks.VerifyPassword(correctPassword, encrypted)
-	if !ok {
-		t.Fatal("VerifyPassword should succeed once rate limit expired")
-	}
-}
-
-// --- VerifyPassword 基本行为 ---
-
-func TestKeyStore_VerifyPasswordCorrect(t *testing.T) {
-	ks := newTestKeyStore()
-
-	password := []byte("CorrectPass123")
-	encrypted, _ := flowcrypto.Encrypt("test-key", password)
-
-	ok := ks.VerifyPassword(password, encrypted)
-	if !ok {
-		t.Fatal("VerifyPassword with correct password should return true")
-	}
-
-	status := ks.GetLockStatus()
-	if status.FailedAttempts != 0 {
-		t.Errorf("FailedAttempts should be 0 after correct password, got %d", status.FailedAttempts)
-	}
-}
-
-func TestKeyStore_VerifyPasswordWrong(t *testing.T) {
-	ks := newTestKeyStore()
-
-	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
-
-	ok := ks.VerifyPassword([]byte("WrongPass123"), encrypted)
-	if ok {
-		t.Fatal("VerifyPassword with wrong password should return false")
-	}
-
-	status := ks.GetLockStatus()
-	if status.FailedAttempts != 1 {
-		t.Errorf("FailedAttempts should be 1, got %d", status.FailedAttempts)
 	}
 }
 
@@ -484,26 +361,6 @@ func TestKeyStore_ConcurrentUnlockLock(t *testing.T) {
 			defer wg.Done()
 			ks.Lock()
 		}()
-	}
-	wg.Wait()
-}
-
-func TestKeyStore_ConcurrentVerifyPassword(t *testing.T) {
-	ks := newTestKeyStore()
-
-	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
-
-	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			if idx%2 == 0 {
-				ks.VerifyPassword([]byte("WrongPass123"), encrypted)
-			} else {
-				ks.VerifyPassword([]byte("CorrectPass123"), encrypted)
-			}
-		}(i)
 	}
 	wg.Wait()
 }

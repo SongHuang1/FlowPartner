@@ -105,8 +105,9 @@ func TestModelConfig_ActivateRateLimited(t *testing.T) {
 	keystore.Reset()
 	ks := keystore.Instance()
 
+	encrypted, _ := flowcrypto.Encrypt("test-key", []byte("CorrectPass123"))
 	for i := 0; i < 5; i++ {
-		ks.RecordFailedAttempt()
+		ks.TryActivate(encrypted, []byte("WrongPass123"))
 	}
 
 	status := ks.GetLockStatus()
