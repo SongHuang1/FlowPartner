@@ -1101,6 +1101,8 @@ type ServerCommand struct {
 	//	*ServerCommand_ForceStop
 	//	*ServerCommand_PermissionResponse
 	//	*ServerCommand_AgentsChanged
+	//	*ServerCommand_AbortTurn
+	//	*ServerCommand_SteerInput
 	Command       isServerCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1195,6 +1197,24 @@ func (x *ServerCommand) GetAgentsChanged() *AgentsChanged {
 	return nil
 }
 
+func (x *ServerCommand) GetAbortTurn() *AbortTurn {
+	if x != nil {
+		if x, ok := x.Command.(*ServerCommand_AbortTurn); ok {
+			return x.AbortTurn
+		}
+	}
+	return nil
+}
+
+func (x *ServerCommand) GetSteerInput() *SteerInput {
+	if x != nil {
+		if x, ok := x.Command.(*ServerCommand_SteerInput); ok {
+			return x.SteerInput
+		}
+	}
+	return nil
+}
+
 type isServerCommand_Command interface {
 	isServerCommand_Command()
 }
@@ -1219,6 +1239,14 @@ type ServerCommand_AgentsChanged struct {
 	AgentsChanged *AgentsChanged `protobuf:"bytes,6,opt,name=agents_changed,json=agentsChanged,proto3,oneof"`
 }
 
+type ServerCommand_AbortTurn struct {
+	AbortTurn *AbortTurn `protobuf:"bytes,7,opt,name=abort_turn,json=abortTurn,proto3,oneof"`
+}
+
+type ServerCommand_SteerInput struct {
+	SteerInput *SteerInput `protobuf:"bytes,8,opt,name=steer_input,json=steerInput,proto3,oneof"`
+}
+
 func (*ServerCommand_StartChat) isServerCommand_Command() {}
 
 func (*ServerCommand_GracefulStop) isServerCommand_Command() {}
@@ -1228,6 +1256,10 @@ func (*ServerCommand_ForceStop) isServerCommand_Command() {}
 func (*ServerCommand_PermissionResponse) isServerCommand_Command() {}
 
 func (*ServerCommand_AgentsChanged) isServerCommand_Command() {}
+
+func (*ServerCommand_AbortTurn) isServerCommand_Command() {}
+
+func (*ServerCommand_SteerInput) isServerCommand_Command() {}
 
 type StartChat struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
@@ -1459,6 +1491,118 @@ func (*AgentsChanged) Descriptor() ([]byte, []int) {
 	return file_proto_agent_proto_rawDescGZIP(), []int{16}
 }
 
+// Aborts the in-flight turn identified by turn_id. Turn-scoped: other turns and
+// sessions keep running. ForceStop stays the process-wide shutdown command.
+type AbortTurn struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TurnId string                 `protobuf:"bytes,1,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	// Machine-readable cause, e.g. "user_interrupt" or "system_lock". Python
+	// forwards it as turn_aborted.reason so the client can tell them apart.
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AbortTurn) Reset() {
+	*x = AbortTurn{}
+	mi := &file_proto_agent_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AbortTurn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AbortTurn) ProtoMessage() {}
+
+func (x *AbortTurn) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AbortTurn.ProtoReflect.Descriptor instead.
+func (*AbortTurn) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *AbortTurn) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *AbortTurn) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// Appends a user message to the running turn without aborting it. Python
+// applies it at the next sampling boundary, so a tool call already in flight
+// finishes first; the model then sees the extra message and continues.
+type SteerInput struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TurnId string                 `protobuf:"bytes,1,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	// Text of the additional user message.
+	Content       string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SteerInput) Reset() {
+	*x = SteerInput{}
+	mi := &file_proto_agent_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SteerInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SteerInput) ProtoMessage() {}
+
+func (x *SteerInput) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_agent_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SteerInput.ProtoReflect.Descriptor instead.
+func (*SteerInput) Descriptor() ([]byte, []int) {
+	return file_proto_agent_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SteerInput) GetTurnId() string {
+	if x != nil {
+		return x.TurnId
+	}
+	return ""
+}
+
+func (x *SteerInput) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
 type LLMRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -1470,7 +1614,7 @@ type LLMRequest struct {
 
 func (x *LLMRequest) Reset() {
 	*x = LLMRequest{}
-	mi := &file_proto_agent_proto_msgTypes[17]
+	mi := &file_proto_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1482,7 +1626,7 @@ func (x *LLMRequest) String() string {
 func (*LLMRequest) ProtoMessage() {}
 
 func (x *LLMRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[17]
+	mi := &file_proto_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1495,7 +1639,7 @@ func (x *LLMRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMRequest.ProtoReflect.Descriptor instead.
 func (*LLMRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{17}
+	return file_proto_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *LLMRequest) GetSessionId() string {
@@ -1528,7 +1672,7 @@ type LLMResponse struct {
 
 func (x *LLMResponse) Reset() {
 	*x = LLMResponse{}
-	mi := &file_proto_agent_proto_msgTypes[18]
+	mi := &file_proto_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1540,7 +1684,7 @@ func (x *LLMResponse) String() string {
 func (*LLMResponse) ProtoMessage() {}
 
 func (x *LLMResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[18]
+	mi := &file_proto_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1553,7 +1697,7 @@ func (x *LLMResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMResponse.ProtoReflect.Descriptor instead.
 func (*LLMResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{18}
+	return file_proto_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *LLMResponse) GetMessageId() string {
@@ -1620,7 +1764,7 @@ type LLMChunk struct {
 
 func (x *LLMChunk) Reset() {
 	*x = LLMChunk{}
-	mi := &file_proto_agent_proto_msgTypes[19]
+	mi := &file_proto_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1632,7 +1776,7 @@ func (x *LLMChunk) String() string {
 func (*LLMChunk) ProtoMessage() {}
 
 func (x *LLMChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[19]
+	mi := &file_proto_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1645,7 +1789,7 @@ func (x *LLMChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMChunk.ProtoReflect.Descriptor instead.
 func (*LLMChunk) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{19}
+	return file_proto_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *LLMChunk) GetJsonResponse() string {
@@ -1665,7 +1809,7 @@ type LLMStreamError struct {
 
 func (x *LLMStreamError) Reset() {
 	*x = LLMStreamError{}
-	mi := &file_proto_agent_proto_msgTypes[20]
+	mi := &file_proto_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1677,7 +1821,7 @@ func (x *LLMStreamError) String() string {
 func (*LLMStreamError) ProtoMessage() {}
 
 func (x *LLMStreamError) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[20]
+	mi := &file_proto_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1690,7 +1834,7 @@ func (x *LLMStreamError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMStreamError.ProtoReflect.Descriptor instead.
 func (*LLMStreamError) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{20}
+	return file_proto_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *LLMStreamError) GetJsonResponse() string {
@@ -1714,7 +1858,7 @@ type UsagePayload struct {
 
 func (x *UsagePayload) Reset() {
 	*x = UsagePayload{}
-	mi := &file_proto_agent_proto_msgTypes[21]
+	mi := &file_proto_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1726,7 +1870,7 @@ func (x *UsagePayload) String() string {
 func (*UsagePayload) ProtoMessage() {}
 
 func (x *UsagePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[21]
+	mi := &file_proto_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1739,7 +1883,7 @@ func (x *UsagePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsagePayload.ProtoReflect.Descriptor instead.
 func (*UsagePayload) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{21}
+	return file_proto_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UsagePayload) GetInputTokens() int32 {
@@ -1793,7 +1937,7 @@ type ToolRequest struct {
 
 func (x *ToolRequest) Reset() {
 	*x = ToolRequest{}
-	mi := &file_proto_agent_proto_msgTypes[22]
+	mi := &file_proto_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1805,7 +1949,7 @@ func (x *ToolRequest) String() string {
 func (*ToolRequest) ProtoMessage() {}
 
 func (x *ToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[22]
+	mi := &file_proto_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1818,7 +1962,7 @@ func (x *ToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolRequest.ProtoReflect.Descriptor instead.
 func (*ToolRequest) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{22}
+	return file_proto_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ToolRequest) GetSessionId() string {
@@ -1864,7 +2008,7 @@ type ToolResponse struct {
 
 func (x *ToolResponse) Reset() {
 	*x = ToolResponse{}
-	mi := &file_proto_agent_proto_msgTypes[23]
+	mi := &file_proto_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +2020,7 @@ func (x *ToolResponse) String() string {
 func (*ToolResponse) ProtoMessage() {}
 
 func (x *ToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[23]
+	mi := &file_proto_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +2033,7 @@ func (x *ToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolResponse.ProtoReflect.Descriptor instead.
 func (*ToolResponse) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{23}
+	return file_proto_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ToolResponse) GetOutcome() isToolResponse_Outcome {
@@ -1958,7 +2102,7 @@ type ToolSuccess struct {
 
 func (x *ToolSuccess) Reset() {
 	*x = ToolSuccess{}
-	mi := &file_proto_agent_proto_msgTypes[24]
+	mi := &file_proto_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1970,7 +2114,7 @@ func (x *ToolSuccess) String() string {
 func (*ToolSuccess) ProtoMessage() {}
 
 func (x *ToolSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[24]
+	mi := &file_proto_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1983,7 +2127,7 @@ func (x *ToolSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolSuccess.ProtoReflect.Descriptor instead.
 func (*ToolSuccess) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{24}
+	return file_proto_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ToolSuccess) GetResult() string {
@@ -2005,7 +2149,7 @@ type ToolError struct {
 
 func (x *ToolError) Reset() {
 	*x = ToolError{}
-	mi := &file_proto_agent_proto_msgTypes[25]
+	mi := &file_proto_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2017,7 +2161,7 @@ func (x *ToolError) String() string {
 func (*ToolError) ProtoMessage() {}
 
 func (x *ToolError) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[25]
+	mi := &file_proto_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2030,7 +2174,7 @@ func (x *ToolError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolError.ProtoReflect.Descriptor instead.
 func (*ToolError) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{25}
+	return file_proto_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ToolError) GetErrorCode() ToolErrorCode {
@@ -2057,7 +2201,7 @@ type PermissionRequired struct {
 
 func (x *PermissionRequired) Reset() {
 	*x = PermissionRequired{}
-	mi := &file_proto_agent_proto_msgTypes[26]
+	mi := &file_proto_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2213,7 @@ func (x *PermissionRequired) String() string {
 func (*PermissionRequired) ProtoMessage() {}
 
 func (x *PermissionRequired) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[26]
+	mi := &file_proto_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,7 +2226,7 @@ func (x *PermissionRequired) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionRequired.ProtoReflect.Descriptor instead.
 func (*PermissionRequired) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{26}
+	return file_proto_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PermissionRequired) GetRequestId() string {
@@ -2110,7 +2254,7 @@ type AgentDef struct {
 
 func (x *AgentDef) Reset() {
 	*x = AgentDef{}
-	mi := &file_proto_agent_proto_msgTypes[27]
+	mi := &file_proto_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2122,7 +2266,7 @@ func (x *AgentDef) String() string {
 func (*AgentDef) ProtoMessage() {}
 
 func (x *AgentDef) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[27]
+	mi := &file_proto_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2135,7 +2279,7 @@ func (x *AgentDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDef.ProtoReflect.Descriptor instead.
 func (*AgentDef) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{27}
+	return file_proto_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AgentDef) GetId() string {
@@ -2189,7 +2333,7 @@ type AgentId struct {
 
 func (x *AgentId) Reset() {
 	*x = AgentId{}
-	mi := &file_proto_agent_proto_msgTypes[28]
+	mi := &file_proto_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2201,7 +2345,7 @@ func (x *AgentId) String() string {
 func (*AgentId) ProtoMessage() {}
 
 func (x *AgentId) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[28]
+	mi := &file_proto_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2214,7 +2358,7 @@ func (x *AgentId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentId.ProtoReflect.Descriptor instead.
 func (*AgentId) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{28}
+	return file_proto_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AgentId) GetId() string {
@@ -2233,7 +2377,7 @@ type AgentDefList struct {
 
 func (x *AgentDefList) Reset() {
 	*x = AgentDefList{}
-	mi := &file_proto_agent_proto_msgTypes[29]
+	mi := &file_proto_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2245,7 +2389,7 @@ func (x *AgentDefList) String() string {
 func (*AgentDefList) ProtoMessage() {}
 
 func (x *AgentDefList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_agent_proto_msgTypes[29]
+	mi := &file_proto_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2258,7 +2402,7 @@ func (x *AgentDefList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDefList.ProtoReflect.Descriptor instead.
 func (*AgentDefList) Descriptor() ([]byte, []int) {
-	return file_proto_agent_proto_rawDescGZIP(), []int{29}
+	return file_proto_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentDefList) GetAgents() []*AgentDef {
@@ -2348,7 +2492,7 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\x17ERROR_LEVEL_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10ERROR_LEVEL_ITEM\x10\x01\x12\x14\n" +
 	"\x10ERROR_LEVEL_TURN\x10\x02\x12\x17\n" +
-	"\x13ERROR_LEVEL_SESSION\x10\x03\"\x86\x03\n" +
+	"\x13ERROR_LEVEL_SESSION\x10\x03\"\xfb\x03\n" +
 	"\rServerCommand\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x127\n" +
@@ -2358,7 +2502,11 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\n" +
 	"force_stop\x18\x04 \x01(\v2\x16.flowpartner.ForceStopH\x00R\tforceStop\x12R\n" +
 	"\x13permission_response\x18\x05 \x01(\v2\x1f.flowpartner.PermissionResponseH\x00R\x12permissionResponse\x12C\n" +
-	"\x0eagents_changed\x18\x06 \x01(\v2\x1a.flowpartner.AgentsChangedH\x00R\ragentsChangedB\t\n" +
+	"\x0eagents_changed\x18\x06 \x01(\v2\x1a.flowpartner.AgentsChangedH\x00R\ragentsChanged\x127\n" +
+	"\n" +
+	"abort_turn\x18\a \x01(\v2\x16.flowpartner.AbortTurnH\x00R\tabortTurn\x12:\n" +
+	"\vsteer_input\x18\b \x01(\v2\x17.flowpartner.SteerInputH\x00R\n" +
+	"steerInputB\t\n" +
 	"\acommand\"\x9c\x01\n" +
 	"\tStartChat\x12!\n" +
 	"\fuser_message\x18\x01 \x01(\tR\vuserMessage\x12\x18\n" +
@@ -2371,7 +2519,14 @@ const file_proto_agent_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12;\n" +
 	"\bdecision\x18\x02 \x01(\x0e2\x1f.flowpartner.PermissionDecisionR\bdecision\"\x0f\n" +
-	"\rAgentsChanged\"N\n" +
+	"\rAgentsChanged\"<\n" +
+	"\tAbortTurn\x12\x17\n" +
+	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"?\n" +
+	"\n" +
+	"SteerInput\x12\x17\n" +
+	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"N\n" +
 	"\n" +
 	"LLMRequest\x12\x1d\n" +
 	"\n" +
@@ -2465,7 +2620,7 @@ func file_proto_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_proto_agent_proto_goTypes = []any{
 	(PermissionDecision)(0),    // 0: flowpartner.PermissionDecision
 	(ToolErrorCode)(0),         // 1: flowpartner.ToolErrorCode
@@ -2487,20 +2642,22 @@ var file_proto_agent_proto_goTypes = []any{
 	(*ForceStop)(nil),          // 17: flowpartner.ForceStop
 	(*PermissionResponse)(nil), // 18: flowpartner.PermissionResponse
 	(*AgentsChanged)(nil),      // 19: flowpartner.AgentsChanged
-	(*LLMRequest)(nil),         // 20: flowpartner.LLMRequest
-	(*LLMResponse)(nil),        // 21: flowpartner.LLMResponse
-	(*LLMChunk)(nil),           // 22: flowpartner.LLMChunk
-	(*LLMStreamError)(nil),     // 23: flowpartner.LLMStreamError
-	(*UsagePayload)(nil),       // 24: flowpartner.UsagePayload
-	(*ToolRequest)(nil),        // 25: flowpartner.ToolRequest
-	(*ToolResponse)(nil),       // 26: flowpartner.ToolResponse
-	(*ToolSuccess)(nil),        // 27: flowpartner.ToolSuccess
-	(*ToolError)(nil),          // 28: flowpartner.ToolError
-	(*PermissionRequired)(nil), // 29: flowpartner.PermissionRequired
-	(*AgentDef)(nil),           // 30: flowpartner.AgentDef
-	(*AgentId)(nil),            // 31: flowpartner.AgentId
-	(*AgentDefList)(nil),       // 32: flowpartner.AgentDefList
-	(*emptypb.Empty)(nil),      // 33: google.protobuf.Empty
+	(*AbortTurn)(nil),          // 20: flowpartner.AbortTurn
+	(*SteerInput)(nil),         // 21: flowpartner.SteerInput
+	(*LLMRequest)(nil),         // 22: flowpartner.LLMRequest
+	(*LLMResponse)(nil),        // 23: flowpartner.LLMResponse
+	(*LLMChunk)(nil),           // 24: flowpartner.LLMChunk
+	(*LLMStreamError)(nil),     // 25: flowpartner.LLMStreamError
+	(*UsagePayload)(nil),       // 26: flowpartner.UsagePayload
+	(*ToolRequest)(nil),        // 27: flowpartner.ToolRequest
+	(*ToolResponse)(nil),       // 28: flowpartner.ToolResponse
+	(*ToolSuccess)(nil),        // 29: flowpartner.ToolSuccess
+	(*ToolError)(nil),          // 30: flowpartner.ToolError
+	(*PermissionRequired)(nil), // 31: flowpartner.PermissionRequired
+	(*AgentDef)(nil),           // 32: flowpartner.AgentDef
+	(*AgentId)(nil),            // 33: flowpartner.AgentId
+	(*AgentDefList)(nil),       // 34: flowpartner.AgentDefList
+	(*emptypb.Empty)(nil),      // 35: google.protobuf.Empty
 }
 var file_proto_agent_proto_depIdxs = []int32{
 	4,  // 0: flowpartner.AgentEvent.turn_started:type_name -> flowpartner.turn_started
@@ -2519,30 +2676,32 @@ var file_proto_agent_proto_depIdxs = []int32{
 	17, // 13: flowpartner.ServerCommand.force_stop:type_name -> flowpartner.ForceStop
 	18, // 14: flowpartner.ServerCommand.permission_response:type_name -> flowpartner.PermissionResponse
 	19, // 15: flowpartner.ServerCommand.agents_changed:type_name -> flowpartner.AgentsChanged
-	0,  // 16: flowpartner.PermissionResponse.decision:type_name -> flowpartner.PermissionDecision
-	22, // 17: flowpartner.LLMResponse.chunk:type_name -> flowpartner.LLMChunk
-	23, // 18: flowpartner.LLMResponse.error:type_name -> flowpartner.LLMStreamError
-	24, // 19: flowpartner.LLMResponse.usage:type_name -> flowpartner.UsagePayload
-	27, // 20: flowpartner.ToolResponse.success:type_name -> flowpartner.ToolSuccess
-	28, // 21: flowpartner.ToolResponse.error:type_name -> flowpartner.ToolError
-	29, // 22: flowpartner.ToolResponse.permission:type_name -> flowpartner.PermissionRequired
-	1,  // 23: flowpartner.ToolError.error_code:type_name -> flowpartner.ToolErrorCode
-	30, // 24: flowpartner.AgentDefList.agents:type_name -> flowpartner.AgentDef
-	3,  // 25: flowpartner.FlowPartnerService.SyncChannel:input_type -> flowpartner.AgentEvent
-	20, // 26: flowpartner.FlowPartnerService.CallLLM:input_type -> flowpartner.LLMRequest
-	25, // 27: flowpartner.FlowPartnerService.ExecuteTool:input_type -> flowpartner.ToolRequest
-	33, // 28: flowpartner.FlowPartnerService.ListAgents:input_type -> google.protobuf.Empty
-	31, // 29: flowpartner.FlowPartnerService.GetAgent:input_type -> flowpartner.AgentId
-	14, // 30: flowpartner.FlowPartnerService.SyncChannel:output_type -> flowpartner.ServerCommand
-	21, // 31: flowpartner.FlowPartnerService.CallLLM:output_type -> flowpartner.LLMResponse
-	26, // 32: flowpartner.FlowPartnerService.ExecuteTool:output_type -> flowpartner.ToolResponse
-	32, // 33: flowpartner.FlowPartnerService.ListAgents:output_type -> flowpartner.AgentDefList
-	30, // 34: flowpartner.FlowPartnerService.GetAgent:output_type -> flowpartner.AgentDef
-	30, // [30:35] is the sub-list for method output_type
-	25, // [25:30] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	20, // 16: flowpartner.ServerCommand.abort_turn:type_name -> flowpartner.AbortTurn
+	21, // 17: flowpartner.ServerCommand.steer_input:type_name -> flowpartner.SteerInput
+	0,  // 18: flowpartner.PermissionResponse.decision:type_name -> flowpartner.PermissionDecision
+	24, // 19: flowpartner.LLMResponse.chunk:type_name -> flowpartner.LLMChunk
+	25, // 20: flowpartner.LLMResponse.error:type_name -> flowpartner.LLMStreamError
+	26, // 21: flowpartner.LLMResponse.usage:type_name -> flowpartner.UsagePayload
+	29, // 22: flowpartner.ToolResponse.success:type_name -> flowpartner.ToolSuccess
+	30, // 23: flowpartner.ToolResponse.error:type_name -> flowpartner.ToolError
+	31, // 24: flowpartner.ToolResponse.permission:type_name -> flowpartner.PermissionRequired
+	1,  // 25: flowpartner.ToolError.error_code:type_name -> flowpartner.ToolErrorCode
+	32, // 26: flowpartner.AgentDefList.agents:type_name -> flowpartner.AgentDef
+	3,  // 27: flowpartner.FlowPartnerService.SyncChannel:input_type -> flowpartner.AgentEvent
+	22, // 28: flowpartner.FlowPartnerService.CallLLM:input_type -> flowpartner.LLMRequest
+	27, // 29: flowpartner.FlowPartnerService.ExecuteTool:input_type -> flowpartner.ToolRequest
+	35, // 30: flowpartner.FlowPartnerService.ListAgents:input_type -> google.protobuf.Empty
+	33, // 31: flowpartner.FlowPartnerService.GetAgent:input_type -> flowpartner.AgentId
+	14, // 32: flowpartner.FlowPartnerService.SyncChannel:output_type -> flowpartner.ServerCommand
+	23, // 33: flowpartner.FlowPartnerService.CallLLM:output_type -> flowpartner.LLMResponse
+	28, // 34: flowpartner.FlowPartnerService.ExecuteTool:output_type -> flowpartner.ToolResponse
+	34, // 35: flowpartner.FlowPartnerService.ListAgents:output_type -> flowpartner.AgentDefList
+	32, // 36: flowpartner.FlowPartnerService.GetAgent:output_type -> flowpartner.AgentDef
+	32, // [32:37] is the sub-list for method output_type
+	27, // [27:32] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_proto_agent_proto_init() }
@@ -2568,12 +2727,14 @@ func file_proto_agent_proto_init() {
 		(*ServerCommand_ForceStop)(nil),
 		(*ServerCommand_PermissionResponse)(nil),
 		(*ServerCommand_AgentsChanged)(nil),
+		(*ServerCommand_AbortTurn)(nil),
+		(*ServerCommand_SteerInput)(nil),
 	}
-	file_proto_agent_proto_msgTypes[18].OneofWrappers = []any{
+	file_proto_agent_proto_msgTypes[20].OneofWrappers = []any{
 		(*LLMResponse_Chunk)(nil),
 		(*LLMResponse_Error)(nil),
 	}
-	file_proto_agent_proto_msgTypes[23].OneofWrappers = []any{
+	file_proto_agent_proto_msgTypes[25].OneofWrappers = []any{
 		(*ToolResponse_Success)(nil),
 		(*ToolResponse_Error)(nil),
 		(*ToolResponse_Permission)(nil),
@@ -2584,7 +2745,7 @@ func file_proto_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_agent_proto_rawDesc), len(file_proto_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -140,6 +140,8 @@ message ServerCommand {
     ForceStop force_stop = 4;
     PermissionResponse permission_response = 5;
     AgentsChanged agents_changed = 6;
+    AbortTurn abort_turn = 7;
+    SteerInput steer_input = 8;
   }
 }
 
@@ -170,6 +172,24 @@ enum PermissionDecision {
 }
 
 message AgentsChanged {}
+
+// Aborts the in-flight turn identified by turn_id. Turn-scoped: other turns and
+// sessions keep running. ForceStop stays the process-wide shutdown command.
+message AbortTurn {
+  string turn_id = 1;
+  // Machine-readable cause, e.g. "user_interrupt" or "system_lock". Python
+  // forwards it as turn_aborted.reason so the client can tell them apart.
+  string reason = 2;
+}
+
+// Appends a user message to the running turn without aborting it. Python
+// applies it at the next sampling boundary, so a tool call already in flight
+// finishes first; the model then sees the extra message and continues.
+message SteerInput {
+  string turn_id = 1;
+  // Text of the additional user message.
+  string content = 2;
+}
 
 // =============================================================================
 // 3. Agent asks Go to call the LLM

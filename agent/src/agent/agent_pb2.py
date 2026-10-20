@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\x1a\x1bgoogle/protobuf/empty.proto\"\xdf\x04\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x0f\n\x07turn_id\x18\x02 \x01(\t\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\x12\x31\n\x0cturn_started\x18\x04 \x01(\x0b\x32\x19.flowpartner.turn_startedH\x00\x12\x35\n\x0eturn_completed\x18\x05 \x01(\x0b\x32\x1b.flowpartner.turn_completedH\x00\x12\x31\n\x0cturn_aborted\x18\x06 \x01(\x0b\x32\x19.flowpartner.turn_abortedH\x00\x12\x31\n\x0citem_started\x18\x07 \x01(\x0b\x32\x19.flowpartner.item_startedH\x00\x12\x35\n\x0eitem_completed\x18\x08 \x01(\x0b\x32\x1b.flowpartner.item_completedH\x00\x12-\n\nitem_delta\x18\t \x01(\x0b\x32\x17.flowpartner.item_deltaH\x00\x12\x31\n\x0cusage_update\x18\n \x01(\x0b\x32\x19.flowpartner.usage_updateH\x00\x12=\n\x12permission_request\x18\x0b \x01(\x0b\x32\x1f.flowpartner.permission_requestH\x00\x12\x35\n\x0esubagent_event\x18\x0c \x01(\x0b\x32\x1b.flowpartner.subagent_eventH\x00\x12/\n\x0b\x61gent_error\x18\r \x01(\x0b\x32\x18.flowpartner.agent_errorH\x00\x42\t\n\x07payload\"\x0e\n\x0cturn_started\"A\n\x0eturn_completed\x12\x1a\n\x12last_agent_message\x18\x01 \x01(\t\x12\x13\n\x0b\x64uration_ms\x18\x02 \x01(\x03\"\x1e\n\x0cturn_aborted\x12\x0e\n\x06reason\x18\x01 \x01(\t\"2\n\x0citem_started\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\"E\n\x0eitem_completed\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"L\n\nitem_delta\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\x12\r\n\x05\x64\x65lta\x18\x03 \x01(\t\x12\x0b\n\x03seq\x18\x04 \x01(\x05\"\xc0\x01\n\x0cusage_update\x12\x14\n\x0cinput_tokens\x18\x01 \x01(\x05\x12\x1b\n\x13\x63\x61\x63hed_input_tokens\x18\x02 \x01(\x05\x12\x15\n\routput_tokens\x18\x03 \x01(\x05\x12\x1f\n\x17reasoning_output_tokens\x18\x04 \x01(\x05\x12\x14\n\x0ctotal_tokens\x18\x05 \x01(\x05\x12\x1c\n\x14model_context_window\x18\x06 \x01(\x05\x12\x11\n\testimated\x18\x07 \x01(\x08\"g\n\x12permission_request\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0c\n\x04tool\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x11\n\toperation\x18\x04 \x01(\t\x12\x0e\n\x06\x64\x65tail\x18\x05 \x01(\t\"\xa5\x01\n\x0esubagent_event\x12\x12\n\nevent_type\x18\x01 \x01(\t\x12\x0f\n\x07span_id\x18\x02 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x03 \x01(\t\x12\x12\n\nagent_name\x18\x04 \x01(\t\x12\r\n\x05\x64\x65pth\x18\x05 \x01(\x05\x12\x10\n\x08trace_id\x18\x06 \x01(\t\x12\x16\n\x0eparent_span_id\x18\x07 \x01(\t\x12\x0f\n\x07payload\x18\x08 \x01(\t\"\xd1\x01\n\x0b\x61gent_error\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05guess\x18\x02 \x01(\t\x12\x32\n\x05level\x18\x03 \x01(\x0e\x32#.flowpartner.agent_error.ErrorLevel\"n\n\nErrorLevel\x12\x1b\n\x17\x45RROR_LEVEL_UNSPECIFIED\x10\x00\x12\x14\n\x10\x45RROR_LEVEL_ITEM\x10\x01\x12\x14\n\x10\x45RROR_LEVEL_TURN\x10\x02\x12\x17\n\x13\x45RROR_LEVEL_SESSION\x10\x03\"\xb4\x02\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12,\n\nstart_chat\x18\x02 \x01(\x0b\x32\x16.flowpartner.StartChatH\x00\x12\x32\n\rgraceful_stop\x18\x03 \x01(\x0b\x32\x19.flowpartner.GracefulStopH\x00\x12,\n\nforce_stop\x18\x04 \x01(\x0b\x32\x16.flowpartner.ForceStopH\x00\x12>\n\x13permission_response\x18\x05 \x01(\x0b\x32\x1f.flowpartner.PermissionResponseH\x00\x12\x34\n\x0e\x61gents_changed\x18\x06 \x01(\x0b\x32\x1a.flowpartner.AgentsChangedH\x00\x42\t\n\x07\x63ommand\"f\n\tStartChat\x12\x14\n\x0cuser_message\x18\x01 \x01(\t\x12\x0f\n\x07history\x18\x02 \x01(\t\x12\x19\n\x11\x65xecutor_agent_id\x18\x03 \x01(\t\x12\x17\n\x0finject_agent_id\x18\x04 \x01(\t\"\x0e\n\x0cGracefulStop\"\x0b\n\tForceStop\"[\n\x12PermissionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x31\n\x08\x64\x65\x63ision\x18\x02 \x01(\x0e\x32\x1f.flowpartner.PermissionDecision\"\x0f\n\rAgentsChanged\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"\xab\x01\n\x0bLLMResponse\x12\x12\n\nmessage_id\x18\x01 \x01(\t\x12&\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x15.flowpartner.LLMChunkH\x00\x12,\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x1b.flowpartner.LLMStreamErrorH\x00\x12(\n\x05usage\x18\x04 \x01(\x0b\x32\x19.flowpartner.UsagePayloadB\x08\n\x06result\"!\n\x08LLMChunk\x12\x15\n\rjson_response\x18\x01 \x01(\t\"\'\n\x0eLLMStreamError\x12\x15\n\rjson_response\x18\x01 \x01(\t\"\x8f\x01\n\x0cUsagePayload\x12\x14\n\x0cinput_tokens\x18\x01 \x01(\x05\x12\x1b\n\x13\x63\x61\x63hed_input_tokens\x18\x02 \x01(\x05\x12\x15\n\routput_tokens\x18\x03 \x01(\x05\x12\x1f\n\x17reasoning_output_tokens\x18\x04 \x01(\x05\x12\x14\n\x0ctotal_tokens\x18\x05 \x01(\x05\"\\\n\x0bToolRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x11\n\targuments\x18\x03 \x01(\t\x12\x13\n\x0b\x61pproval_id\x18\x04 \x01(\t\"\xa6\x01\n\x0cToolResponse\x12+\n\x07success\x18\x01 \x01(\x0b\x32\x18.flowpartner.ToolSuccessH\x00\x12\'\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x16.flowpartner.ToolErrorH\x00\x12\x35\n\npermission\x18\x03 \x01(\x0b\x32\x1f.flowpartner.PermissionRequiredH\x00\x42\t\n\x07outcome\"\x1d\n\x0bToolSuccess\x12\x0e\n\x06result\x18\x01 \x01(\t\"K\n\tToolError\x12.\n\nerror_code\x18\x01 \x01(\x0e\x32\x1a.flowpartner.ToolErrorCode\x12\x0e\n\x06result\x18\x02 \x01(\t\"(\n\x12PermissionRequired\x12\x12\n\nrequest_id\x18\x01 \x01(\t\"x\n\x08\x41gentDef\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x15\n\rsystem_prompt\x18\x04 \x01(\t\x12\x12\n\ncreated_at\x18\x05 \x01(\x03\x12\x12\n\nupdated_at\x18\x06 \x01(\x03\"\x15\n\x07\x41gentId\x12\n\n\x02id\x18\x01 \x01(\t\"5\n\x0c\x41gentDefList\x12%\n\x06\x61gents\x18\x01 \x03(\x0b\x32\x15.flowpartner.AgentDef*\x9d\x01\n\x12PermissionDecision\x12#\n\x1fPERMISSION_DECISION_UNSPECIFIED\x10\x00\x12\x1d\n\x19PERMISSION_DECISION_ALLOW\x10\x01\x12%\n!PERMISSION_DECISION_ALLOW_SESSION\x10\x02\x12\x1c\n\x18PERMISSION_DECISION_DENY\x10\x03*\xca\x02\n\rToolErrorCode\x12\x1f\n\x1bTOOL_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n\x1eTOOL_ERROR_CODE_TOOL_NOT_FOUND\x10\x01\x12*\n&TOOL_ERROR_CODE_PATH_OUTSIDE_WORKSPACE\x10\x02\x12\"\n\x1eTOOL_ERROR_CODE_FILE_TOO_LARGE\x10\x03\x12\x1e\n\x1aTOOL_ERROR_CODE_TOOL_ERROR\x10\x04\x12*\n&TOOL_ERROR_CODE_EDIT_MATCH_COUNT_ERROR\x10\x05\x12)\n%TOOL_ERROR_CODE_TOOL_DELETION_BLOCKED\x10\x06\x12-\n)TOOL_ERROR_CODE_TOOL_TRASH_NOT_CONFIGURED\x10\x07\x32\xda\x02\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12>\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x12\x42\n\x0b\x45xecuteTool\x12\x18.flowpartner.ToolRequest\x1a\x19.flowpartner.ToolResponse\x12?\n\nListAgents\x12\x16.google.protobuf.Empty\x1a\x19.flowpartner.AgentDefList\x12\x37\n\x08GetAgent\x12\x14.flowpartner.AgentId\x1a\x15.flowpartner.AgentDefB7Z5github.com/SongHuang1/FlowPartner/backend/proto;protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x0b\x66lowpartner\x1a\x1bgoogle/protobuf/empty.proto\"\xdf\x04\n\nAgentEvent\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x0f\n\x07turn_id\x18\x02 \x01(\t\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\x12\x31\n\x0cturn_started\x18\x04 \x01(\x0b\x32\x19.flowpartner.turn_startedH\x00\x12\x35\n\x0eturn_completed\x18\x05 \x01(\x0b\x32\x1b.flowpartner.turn_completedH\x00\x12\x31\n\x0cturn_aborted\x18\x06 \x01(\x0b\x32\x19.flowpartner.turn_abortedH\x00\x12\x31\n\x0citem_started\x18\x07 \x01(\x0b\x32\x19.flowpartner.item_startedH\x00\x12\x35\n\x0eitem_completed\x18\x08 \x01(\x0b\x32\x1b.flowpartner.item_completedH\x00\x12-\n\nitem_delta\x18\t \x01(\x0b\x32\x17.flowpartner.item_deltaH\x00\x12\x31\n\x0cusage_update\x18\n \x01(\x0b\x32\x19.flowpartner.usage_updateH\x00\x12=\n\x12permission_request\x18\x0b \x01(\x0b\x32\x1f.flowpartner.permission_requestH\x00\x12\x35\n\x0esubagent_event\x18\x0c \x01(\x0b\x32\x1b.flowpartner.subagent_eventH\x00\x12/\n\x0b\x61gent_error\x18\r \x01(\x0b\x32\x18.flowpartner.agent_errorH\x00\x42\t\n\x07payload\"\x0e\n\x0cturn_started\"A\n\x0eturn_completed\x12\x1a\n\x12last_agent_message\x18\x01 \x01(\t\x12\x13\n\x0b\x64uration_ms\x18\x02 \x01(\x03\"\x1e\n\x0cturn_aborted\x12\x0e\n\x06reason\x18\x01 \x01(\t\"2\n\x0citem_started\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\"E\n\x0eitem_completed\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\x12\x0f\n\x07payload\x18\x03 \x01(\t\"L\n\nitem_delta\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\titem_type\x18\x02 \x01(\t\x12\r\n\x05\x64\x65lta\x18\x03 \x01(\t\x12\x0b\n\x03seq\x18\x04 \x01(\x05\"\xc0\x01\n\x0cusage_update\x12\x14\n\x0cinput_tokens\x18\x01 \x01(\x05\x12\x1b\n\x13\x63\x61\x63hed_input_tokens\x18\x02 \x01(\x05\x12\x15\n\routput_tokens\x18\x03 \x01(\x05\x12\x1f\n\x17reasoning_output_tokens\x18\x04 \x01(\x05\x12\x14\n\x0ctotal_tokens\x18\x05 \x01(\x05\x12\x1c\n\x14model_context_window\x18\x06 \x01(\x05\x12\x11\n\testimated\x18\x07 \x01(\x08\"g\n\x12permission_request\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0c\n\x04tool\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x11\n\toperation\x18\x04 \x01(\t\x12\x0e\n\x06\x64\x65tail\x18\x05 \x01(\t\"\xa5\x01\n\x0esubagent_event\x12\x12\n\nevent_type\x18\x01 \x01(\t\x12\x0f\n\x07span_id\x18\x02 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x03 \x01(\t\x12\x12\n\nagent_name\x18\x04 \x01(\t\x12\r\n\x05\x64\x65pth\x18\x05 \x01(\x05\x12\x10\n\x08trace_id\x18\x06 \x01(\t\x12\x16\n\x0eparent_span_id\x18\x07 \x01(\t\x12\x0f\n\x07payload\x18\x08 \x01(\t\"\xd1\x01\n\x0b\x61gent_error\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05guess\x18\x02 \x01(\t\x12\x32\n\x05level\x18\x03 \x01(\x0e\x32#.flowpartner.agent_error.ErrorLevel\"n\n\nErrorLevel\x12\x1b\n\x17\x45RROR_LEVEL_UNSPECIFIED\x10\x00\x12\x14\n\x10\x45RROR_LEVEL_ITEM\x10\x01\x12\x14\n\x10\x45RROR_LEVEL_TURN\x10\x02\x12\x17\n\x13\x45RROR_LEVEL_SESSION\x10\x03\"\x92\x03\n\rServerCommand\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12,\n\nstart_chat\x18\x02 \x01(\x0b\x32\x16.flowpartner.StartChatH\x00\x12\x32\n\rgraceful_stop\x18\x03 \x01(\x0b\x32\x19.flowpartner.GracefulStopH\x00\x12,\n\nforce_stop\x18\x04 \x01(\x0b\x32\x16.flowpartner.ForceStopH\x00\x12>\n\x13permission_response\x18\x05 \x01(\x0b\x32\x1f.flowpartner.PermissionResponseH\x00\x12\x34\n\x0e\x61gents_changed\x18\x06 \x01(\x0b\x32\x1a.flowpartner.AgentsChangedH\x00\x12,\n\nabort_turn\x18\x07 \x01(\x0b\x32\x16.flowpartner.AbortTurnH\x00\x12.\n\x0bsteer_input\x18\x08 \x01(\x0b\x32\x17.flowpartner.SteerInputH\x00\x42\t\n\x07\x63ommand\"f\n\tStartChat\x12\x14\n\x0cuser_message\x18\x01 \x01(\t\x12\x0f\n\x07history\x18\x02 \x01(\t\x12\x19\n\x11\x65xecutor_agent_id\x18\x03 \x01(\t\x12\x17\n\x0finject_agent_id\x18\x04 \x01(\t\"\x0e\n\x0cGracefulStop\"\x0b\n\tForceStop\"[\n\x12PermissionResponse\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x31\n\x08\x64\x65\x63ision\x18\x02 \x01(\x0e\x32\x1f.flowpartner.PermissionDecision\"\x0f\n\rAgentsChanged\",\n\tAbortTurn\x12\x0f\n\x07turn_id\x18\x01 \x01(\t\x12\x0e\n\x06reason\x18\x02 \x01(\t\".\n\nSteerInput\x12\x0f\n\x07turn_id\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"6\n\nLLMRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x14\n\x0cjson_payload\x18\x02 \x01(\t\"\xab\x01\n\x0bLLMResponse\x12\x12\n\nmessage_id\x18\x01 \x01(\t\x12&\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x15.flowpartner.LLMChunkH\x00\x12,\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x1b.flowpartner.LLMStreamErrorH\x00\x12(\n\x05usage\x18\x04 \x01(\x0b\x32\x19.flowpartner.UsagePayloadB\x08\n\x06result\"!\n\x08LLMChunk\x12\x15\n\rjson_response\x18\x01 \x01(\t\"\'\n\x0eLLMStreamError\x12\x15\n\rjson_response\x18\x01 \x01(\t\"\x8f\x01\n\x0cUsagePayload\x12\x14\n\x0cinput_tokens\x18\x01 \x01(\x05\x12\x1b\n\x13\x63\x61\x63hed_input_tokens\x18\x02 \x01(\x05\x12\x15\n\routput_tokens\x18\x03 \x01(\x05\x12\x1f\n\x17reasoning_output_tokens\x18\x04 \x01(\x05\x12\x14\n\x0ctotal_tokens\x18\x05 \x01(\x05\"\\\n\x0bToolRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x11\n\targuments\x18\x03 \x01(\t\x12\x13\n\x0b\x61pproval_id\x18\x04 \x01(\t\"\xa6\x01\n\x0cToolResponse\x12+\n\x07success\x18\x01 \x01(\x0b\x32\x18.flowpartner.ToolSuccessH\x00\x12\'\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x16.flowpartner.ToolErrorH\x00\x12\x35\n\npermission\x18\x03 \x01(\x0b\x32\x1f.flowpartner.PermissionRequiredH\x00\x42\t\n\x07outcome\"\x1d\n\x0bToolSuccess\x12\x0e\n\x06result\x18\x01 \x01(\t\"K\n\tToolError\x12.\n\nerror_code\x18\x01 \x01(\x0e\x32\x1a.flowpartner.ToolErrorCode\x12\x0e\n\x06result\x18\x02 \x01(\t\"(\n\x12PermissionRequired\x12\x12\n\nrequest_id\x18\x01 \x01(\t\"x\n\x08\x41gentDef\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\x12\x15\n\rsystem_prompt\x18\x04 \x01(\t\x12\x12\n\ncreated_at\x18\x05 \x01(\x03\x12\x12\n\nupdated_at\x18\x06 \x01(\x03\"\x15\n\x07\x41gentId\x12\n\n\x02id\x18\x01 \x01(\t\"5\n\x0c\x41gentDefList\x12%\n\x06\x61gents\x18\x01 \x03(\x0b\x32\x15.flowpartner.AgentDef*\x9d\x01\n\x12PermissionDecision\x12#\n\x1fPERMISSION_DECISION_UNSPECIFIED\x10\x00\x12\x1d\n\x19PERMISSION_DECISION_ALLOW\x10\x01\x12%\n!PERMISSION_DECISION_ALLOW_SESSION\x10\x02\x12\x1c\n\x18PERMISSION_DECISION_DENY\x10\x03*\xca\x02\n\rToolErrorCode\x12\x1f\n\x1bTOOL_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n\x1eTOOL_ERROR_CODE_TOOL_NOT_FOUND\x10\x01\x12*\n&TOOL_ERROR_CODE_PATH_OUTSIDE_WORKSPACE\x10\x02\x12\"\n\x1eTOOL_ERROR_CODE_FILE_TOO_LARGE\x10\x03\x12\x1e\n\x1aTOOL_ERROR_CODE_TOOL_ERROR\x10\x04\x12*\n&TOOL_ERROR_CODE_EDIT_MATCH_COUNT_ERROR\x10\x05\x12)\n%TOOL_ERROR_CODE_TOOL_DELETION_BLOCKED\x10\x06\x12-\n)TOOL_ERROR_CODE_TOOL_TRASH_NOT_CONFIGURED\x10\x07\x32\xda\x02\n\x12\x46lowPartnerService\x12\x46\n\x0bSyncChannel\x12\x17.flowpartner.AgentEvent\x1a\x1a.flowpartner.ServerCommand(\x01\x30\x01\x12>\n\x07\x43\x61llLLM\x12\x17.flowpartner.LLMRequest\x1a\x18.flowpartner.LLMResponse0\x01\x12\x42\n\x0b\x45xecuteTool\x12\x18.flowpartner.ToolRequest\x1a\x19.flowpartner.ToolResponse\x12?\n\nListAgents\x12\x16.google.protobuf.Empty\x1a\x19.flowpartner.AgentDefList\x12\x37\n\x08GetAgent\x12\x14.flowpartner.AgentId\x1a\x15.flowpartner.AgentDefB7Z5github.com/SongHuang1/FlowPartner/backend/proto;protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +33,10 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'agent_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z5github.com/SongHuang1/FlowPartner/backend/proto;proto'
-  _globals['_PERMISSIONDECISION']._serialized_start=3283
-  _globals['_PERMISSIONDECISION']._serialized_end=3440
-  _globals['_TOOLERRORCODE']._serialized_start=3443
-  _globals['_TOOLERRORCODE']._serialized_end=3773
+  _globals['_PERMISSIONDECISION']._serialized_start=3471
+  _globals['_PERMISSIONDECISION']._serialized_end=3628
+  _globals['_TOOLERRORCODE']._serialized_start=3631
+  _globals['_TOOLERRORCODE']._serialized_end=3961
   _globals['_AGENTEVENT']._serialized_start=58
   _globals['_AGENTEVENT']._serialized_end=665
   _globals['_TURN_STARTED']._serialized_start=128
@@ -62,43 +62,47 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_AGENT_ERROR_ERRORLEVEL']._serialized_start=1551
   _globals['_AGENT_ERROR_ERRORLEVEL']._serialized_end=1661
   _globals['_SERVERCOMMAND']._serialized_start=1664
-  _globals['_SERVERCOMMAND']._serialized_end=1972
-  _globals['_STARTCHAT']._serialized_start=1974
-  _globals['_STARTCHAT']._serialized_end=2076
-  _globals['_GRACEFULSTOP']._serialized_start=2078
-  _globals['_GRACEFULSTOP']._serialized_end=2092
-  _globals['_FORCESTOP']._serialized_start=2094
-  _globals['_FORCESTOP']._serialized_end=2105
-  _globals['_PERMISSIONRESPONSE']._serialized_start=2107
-  _globals['_PERMISSIONRESPONSE']._serialized_end=2198
-  _globals['_AGENTSCHANGED']._serialized_start=2200
-  _globals['_AGENTSCHANGED']._serialized_end=2215
-  _globals['_LLMREQUEST']._serialized_start=2217
-  _globals['_LLMREQUEST']._serialized_end=2271
-  _globals['_LLMRESPONSE']._serialized_start=2274
-  _globals['_LLMRESPONSE']._serialized_end=2445
-  _globals['_LLMCHUNK']._serialized_start=2447
-  _globals['_LLMCHUNK']._serialized_end=2480
-  _globals['_LLMSTREAMERROR']._serialized_start=2482
-  _globals['_LLMSTREAMERROR']._serialized_end=2521
-  _globals['_USAGEPAYLOAD']._serialized_start=2524
-  _globals['_USAGEPAYLOAD']._serialized_end=2667
-  _globals['_TOOLREQUEST']._serialized_start=2669
-  _globals['_TOOLREQUEST']._serialized_end=2761
-  _globals['_TOOLRESPONSE']._serialized_start=2764
-  _globals['_TOOLRESPONSE']._serialized_end=2930
-  _globals['_TOOLSUCCESS']._serialized_start=2932
-  _globals['_TOOLSUCCESS']._serialized_end=2961
-  _globals['_TOOLERROR']._serialized_start=2963
-  _globals['_TOOLERROR']._serialized_end=3038
-  _globals['_PERMISSIONREQUIRED']._serialized_start=3040
-  _globals['_PERMISSIONREQUIRED']._serialized_end=3080
-  _globals['_AGENTDEF']._serialized_start=3082
-  _globals['_AGENTDEF']._serialized_end=3202
-  _globals['_AGENTID']._serialized_start=3204
-  _globals['_AGENTID']._serialized_end=3225
-  _globals['_AGENTDEFLIST']._serialized_start=3227
-  _globals['_AGENTDEFLIST']._serialized_end=3280
-  _globals['_FLOWPARTNERSERVICE']._serialized_start=3776
-  _globals['_FLOWPARTNERSERVICE']._serialized_end=4122
+  _globals['_SERVERCOMMAND']._serialized_end=2066
+  _globals['_STARTCHAT']._serialized_start=2068
+  _globals['_STARTCHAT']._serialized_end=2170
+  _globals['_GRACEFULSTOP']._serialized_start=2172
+  _globals['_GRACEFULSTOP']._serialized_end=2186
+  _globals['_FORCESTOP']._serialized_start=2188
+  _globals['_FORCESTOP']._serialized_end=2199
+  _globals['_PERMISSIONRESPONSE']._serialized_start=2201
+  _globals['_PERMISSIONRESPONSE']._serialized_end=2292
+  _globals['_AGENTSCHANGED']._serialized_start=2294
+  _globals['_AGENTSCHANGED']._serialized_end=2309
+  _globals['_ABORTTURN']._serialized_start=2311
+  _globals['_ABORTTURN']._serialized_end=2355
+  _globals['_STEERINPUT']._serialized_start=2357
+  _globals['_STEERINPUT']._serialized_end=2403
+  _globals['_LLMREQUEST']._serialized_start=2405
+  _globals['_LLMREQUEST']._serialized_end=2459
+  _globals['_LLMRESPONSE']._serialized_start=2462
+  _globals['_LLMRESPONSE']._serialized_end=2633
+  _globals['_LLMCHUNK']._serialized_start=2635
+  _globals['_LLMCHUNK']._serialized_end=2668
+  _globals['_LLMSTREAMERROR']._serialized_start=2670
+  _globals['_LLMSTREAMERROR']._serialized_end=2709
+  _globals['_USAGEPAYLOAD']._serialized_start=2712
+  _globals['_USAGEPAYLOAD']._serialized_end=2855
+  _globals['_TOOLREQUEST']._serialized_start=2857
+  _globals['_TOOLREQUEST']._serialized_end=2949
+  _globals['_TOOLRESPONSE']._serialized_start=2952
+  _globals['_TOOLRESPONSE']._serialized_end=3118
+  _globals['_TOOLSUCCESS']._serialized_start=3120
+  _globals['_TOOLSUCCESS']._serialized_end=3149
+  _globals['_TOOLERROR']._serialized_start=3151
+  _globals['_TOOLERROR']._serialized_end=3226
+  _globals['_PERMISSIONREQUIRED']._serialized_start=3228
+  _globals['_PERMISSIONREQUIRED']._serialized_end=3268
+  _globals['_AGENTDEF']._serialized_start=3270
+  _globals['_AGENTDEF']._serialized_end=3390
+  _globals['_AGENTID']._serialized_start=3392
+  _globals['_AGENTID']._serialized_end=3413
+  _globals['_AGENTDEFLIST']._serialized_start=3415
+  _globals['_AGENTDEFLIST']._serialized_end=3468
+  _globals['_FLOWPARTNERSERVICE']._serialized_start=3964
+  _globals['_FLOWPARTNERSERVICE']._serialized_end=4310
 # @@protoc_insertion_point(module_scope)
