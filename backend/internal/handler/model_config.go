@@ -83,6 +83,8 @@ func (h *ModelConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TimeoutSecs:    req.TimeoutSecs,
 	}
 
+	normalizeModelConfig(&cfg)
+
 	if err := validateModelConfig(&cfg); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest,
 			response.Error(response.CodeInvalidParam, err.Error()))
@@ -153,6 +155,8 @@ func (h *ModelConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ResponseFormat: req.ResponseFormat,
 		TimeoutSecs:    req.TimeoutSecs,
 	}
+
+	normalizeModelConfig(&cfg)
 
 	if err := validateModelConfig(&cfg); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest,
@@ -324,6 +328,19 @@ func (h *ModelConfigHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, response.Success(map[string]string{
 		"message": "配置已激活",
 	}))
+}
+
+// normalizeModelConfig 补齐可选配置项的默认值。
+//
+// TimeoutSecs 的 0 值会让 context.WithTimeout 立即过期，上层表现为"每次调用
+// 都瞬间超时"，而且错误提示会把人引向网络问题；更新接口又是整体替换语义，
+// 请求里不带 timeout_secs 时会把已有值洗成 0，所以必须兜底。
+func normalizeModelConfig(cfg *ModelConfig) {
+	const defaultTimeoutSecs = 30
+
+	if cfg.TimeoutSecs <= 0 {
+		cfg.TimeoutSecs = defaultTimeoutSecs
+	}
 }
 
 func validateModelConfig(cfg *ModelConfig) error {

@@ -14,12 +14,13 @@ import (
 	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
-// StreamRequest 流式请求参数
+// StreamRequest 流式请求参数。
+//
+// 请求体以 RawPayload 为唯一来源（由 Python 侧构造）。这里的 Model /
+// Temperature / ResponseFormat 是服务端权威配置，会在发送前覆盖请求体里的
+// 同名字段；其余字段原样透传。
 type StreamRequest struct {
 	RawPayload     []byte
-	Messages       []byte
-	Tools          []byte
-	ToolChoice     []byte
 	Model          string
 	Temperature    float64
 	ResponseFormat string
@@ -92,13 +93,22 @@ func (c *LLMClient) Stream(ctx context.Context, req StreamRequest) (<-chan Strea
 		return nil, fmt.Errorf("target URL is required")
 	}
 
+	// 0 或负值会让 context.WithTimeout 立即过期，表现为"每次调用都瞬间超时"，
+	// 而且错误提示会把用户引向网络问题。这里兜底而不是报错：超时是配置项，
+	// 不该因为一个字段缺失就让整条链路由此不可用。
+	const defaultTimeout = 30 * time.Second
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+
 	// 64 是经验值：足够吸收网络抖动造成的突发，又不会在消费者变慢时堆积太多
 	// 未处理数据；缓冲满会让发送阻塞，进而反压到 TCP，让服务商降速。
 	const chunkBufferSize = 64
 
 	chunkChan := make(chan StreamChunk, chunkBufferSize)
 
-	go c.streamWithRetry(ctx, targetURL, body, req.APIKey, req.Timeout, chunkChan)
+	go c.streamWithRetry(ctx, targetURL, body, req.APIKey, timeout, chunkChan)
 
 	return chunkChan, nil
 }
@@ -288,18 +298,19 @@ func jsonInt32(obj map[string]interface{}, key string) int32 {
 	return int32(value)
 }
 
+// buildRequestBody 组装发给服务商的请求体。
+//
+// 请求体以 RawPayload 为唯一来源（由 Python 侧构造），这里只做服务端权威的
+// 覆盖：model / temperature / response_format / stream。其余字段（tools、
+// tool_choice、max_tokens 等）原样透传，Go 不改写也不重新解析。
 func buildRequestBody(req StreamRequest) ([]byte, error) {
-	var payload map[string]interface{}
-	if len(req.RawPayload) > 0 {
-		if err := json.Unmarshal(req.RawPayload, &payload); err != nil {
-			return nil, InvalidJSONError()
-		}
-	} else if len(req.Messages) > 0 {
-		if err := json.Unmarshal(req.Messages, &payload); err != nil {
-			return nil, InvalidJSONError()
-		}
-	} else {
+	if len(req.RawPayload) == 0 {
 		return nil, MessagesEmptyError()
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(req.RawPayload, &payload); err != nil {
+		return nil, InvalidJSONError()
 	}
 
 	messages, ok := payload["messages"].([]interface{})
@@ -314,24 +325,6 @@ func buildRequestBody(req StreamRequest) ([]byte, error) {
 
 	if req.ResponseFormat != "" && req.ResponseFormat != "text" {
 		payload["response_format"] = map[string]string{"type": req.ResponseFormat}
-	}
-
-	if len(req.Tools) > 0 {
-		var tools interface{}
-		if err := json.Unmarshal(req.Tools, &tools); err != nil {
-			log.Printf("[LLM] Warning: tools JSON parse error: %v", err)
-		} else {
-			payload["tools"] = tools
-		}
-	}
-
-	if len(req.ToolChoice) > 0 {
-		var toolChoice interface{}
-		if err := json.Unmarshal(req.ToolChoice, &toolChoice); err != nil {
-			log.Printf("[LLM] Warning: tool_choice JSON parse error: %v", err)
-		} else {
-			payload["tool_choice"] = toolChoice
-		}
 	}
 
 	return json.Marshal(payload)

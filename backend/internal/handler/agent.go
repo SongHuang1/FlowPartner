@@ -157,21 +157,8 @@ func (h *AgentHandler) CallLLM(req *proto.LLMRequest, stream proto.FlowPartnerSe
 		})
 	}
 
-	var tools, toolChoice []byte
-	if t, ok := payload["tools"].([]interface{}); ok {
-		tools, _ = json.Marshal(t)
-	}
-	if tc, ok := payload["tool_choice"]; ok {
-		toolChoice, _ = json.Marshal(tc)
-	}
-
-	messagesJSON, _ := json.Marshal(payload["messages"])
-
 	streamReq := llm.StreamRequest{
 		RawPayload:     []byte(req.JsonPayload),
-		Messages:       messagesJSON,
-		Tools:          tools,
-		ToolChoice:     toolChoice,
 		Model:          cfg.ModelName,
 		Temperature:    cfg.Temperature,
 		ResponseFormat: cfg.ResponseFormat,

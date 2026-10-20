@@ -201,11 +201,11 @@ func TestStream_Success(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, err := client.Stream(t.Context(), req)
@@ -254,11 +254,11 @@ func TestStream_Unauthorized(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, err := client.Stream(t.Context(), req)
@@ -300,11 +300,11 @@ func TestStream_RetryNetworkError(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -339,11 +339,11 @@ func TestStream_NoRetryAfterChunks(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -374,11 +374,11 @@ func TestStream_Timeout(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   1 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    1 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -410,7 +410,7 @@ func TestStream_ResponseFormat(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:       []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		RawPayload:     []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
 		Model:          "gpt-4",
 		ResponseFormat: "json_object",
 		APIKey:         []byte("sk-test-not-a-real-key"),
@@ -442,11 +442,11 @@ func TestStream_OverrideModel(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
-		Model:     "gpt-4o",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4o",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -479,11 +479,11 @@ func TestStream_ToolCallsPassthrough(t *testing.T) {
 
 	client := NewClient()
 	req := StreamRequest{
-		Messages:  []byte(`{"messages":[{"role":"user","content":"weather?"}]}`),
-		Model:     "gpt-4",
-		APIKey:    []byte("sk-test-not-a-real-key"),
-		TargetURL: server.URL + "/chat/completions",
-		Timeout:   5 * time.Second,
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"weather?"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		Timeout:    5 * time.Second,
 	}
 
 	chunkChan, _ := client.Stream(t.Context(), req)
@@ -512,8 +512,8 @@ func TestStream_ToolCallsPassthrough(t *testing.T) {
 
 func TestBuildRequestBody_MessagesEmpty(t *testing.T) {
 	_, err := buildRequestBody(StreamRequest{
-		Messages: []byte(`{"messages":[]}`),
-		Model:    "gpt-4",
+		RawPayload: []byte(`{"messages":[]}`),
+		Model:      "gpt-4",
 	})
 	if err == nil {
 		t.Fatal("expected error for empty messages")
@@ -522,8 +522,8 @@ func TestBuildRequestBody_MessagesEmpty(t *testing.T) {
 
 func TestBuildRequestBody_InvalidJSON(t *testing.T) {
 	_, err := buildRequestBody(StreamRequest{
-		Messages: []byte(`not json`),
-		Model:    "gpt-4",
+		RawPayload: []byte(`not json`),
+		Model:      "gpt-4",
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -586,5 +586,43 @@ func TestParseUsage_MapsOpenAIFieldsToProto(t *testing.T) {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStream_ZeroTimeoutFallsBackToDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient()
+	req := StreamRequest{
+		RawPayload: []byte(`{"messages":[{"role":"user","content":"hi"}]}`),
+		Model:      "gpt-4",
+		APIKey:     []byte("sk-test-not-a-real-key"),
+		TargetURL:  server.URL + "/chat/completions",
+		// Timeout 故意留 0：0 值曾让 context.WithTimeout 立即过期，
+		// 表现为每次调用都瞬间"请求超时"。
+	}
+
+	chunkChan, err := client.Stream(t.Context(), req)
+	if err != nil {
+		t.Fatalf("stream error: %v", err)
+	}
+
+	var chunks []string
+	for chunk := range chunkChan {
+		if chunk.Done && chunk.Data != "" {
+			t.Fatalf("unexpected error chunk: %s", chunk.Data)
+		}
+		if !chunk.Done && chunk.Data != "" {
+			chunks = append(chunks, chunk.Data)
+		}
+	}
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 }
