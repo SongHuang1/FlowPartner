@@ -399,12 +399,13 @@ func (h *Handler) handleTurnInterrupt(params json.RawMessage) (interface{}, *Han
 	return map[string]string{"threadId": p.ThreadID, "status": "aborting"}, nil
 }
 
-// interruptReleaseTimeout 中断后等待 Python 确认 turn_aborted 的上限。
-const interruptReleaseTimeout = 10 * time.Second
-
 // releaseTurnAfterInterrupt 在超时后释放仍处于 TurnAborting 的回合。
 // 若 Python 已正常回报 turn_aborted（状态已非 TurnAborting），则不做任何事。
 func (h *Handler) releaseTurnAfterInterrupt(threadID, turnID string) {
+	// 等待 Python 确认 turn_aborted 的上限：超时后必须强制释放，否则线程会
+	// 永久卡在 TurnAborting，用户再也发起不了新回合。
+	const interruptReleaseTimeout = 10 * time.Second
+
 	timer := time.NewTimer(interruptReleaseTimeout)
 	defer timer.Stop()
 	<-timer.C

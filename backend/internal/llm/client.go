@@ -14,8 +14,6 @@ import (
 	"github.com/SongHuang1/FlowPartner/backend/proto"
 )
 
-const defaultChunkBufferSize = 64
-
 // StreamRequest 流式请求参数
 type StreamRequest struct {
 	RawPayload     []byte
@@ -94,7 +92,11 @@ func (c *LLMClient) Stream(ctx context.Context, req StreamRequest) (<-chan Strea
 		return nil, fmt.Errorf("target URL is required")
 	}
 
-	chunkChan := make(chan StreamChunk, defaultChunkBufferSize)
+	// 64 是经验值：足够吸收网络抖动造成的突发，又不会在消费者变慢时堆积太多
+	// 未处理数据；缓冲满会让发送阻塞，进而反压到 TCP，让服务商降速。
+	const chunkBufferSize = 64
+
+	chunkChan := make(chan StreamChunk, chunkBufferSize)
 
 	go c.streamWithRetry(ctx, targetURL, body, req.APIKey, req.Timeout, chunkChan)
 

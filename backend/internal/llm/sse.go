@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-const (
-	maxScanTokenSize = 1024 * 1024 // 1MB
-)
-
 // SSEEvent 表示一个 SSE 事件
 type SSEEvent struct {
 	Data string
@@ -24,6 +20,10 @@ type SSEScanner struct {
 
 // NewSSEScanner 创建 SSE 解析器
 func NewSSEScanner(r io.Reader) *SSEScanner {
+	// 单条事件上限 1MB：够容纳超长 tool_call 参数，又能让异常巨大的单行尽早
+	// 失败，而不是让 bufio 无限扩张内存。
+	const maxScanTokenSize = 1024 * 1024
+
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxScanTokenSize)
 	return &SSEScanner{scanner: scanner}
