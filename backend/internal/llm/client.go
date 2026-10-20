@@ -240,37 +240,50 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 	}
 }
 
-// parseUsage 尝试从 SSE chunk JSON 中提取 usage 尾帧
+// parseUsage 尝试从 SSE chunk JSON 中提取 usage 尾帧。
+//
+// 这里是全项目唯一接触 OpenAI 字段名（prompt_tokens / completion_tokens）的地方：
+// proto 与前端统一使用 input_tokens / output_tokens，翻译只发生在这一层。
 func parseUsage(data string) (*proto.UsagePayload, bool) {
 	var chunk map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 		return nil, false
 	}
-	usageRaw, ok := chunk["usage"]
-	if !ok || usageRaw == nil {
+	usage := jsonObject(chunk, "usage")
+	if usage == nil {
 		return nil, false
 	}
-	usageMap, ok := usageRaw.(map[string]interface{})
+
+	// 缓存命中与推理 token 不在 usage 顶层，而在两个 *_details 子对象里。
+	promptDetails := jsonObject(usage, "prompt_tokens_details")
+	completionDetails := jsonObject(usage, "completion_tokens_details")
+
+	return &proto.UsagePayload{
+		InputTokens:           jsonInt32(usage, "prompt_tokens"),
+		CachedInputTokens:     jsonInt32(promptDetails, "cached_tokens"),
+		OutputTokens:          jsonInt32(usage, "completion_tokens"),
+		ReasoningOutputTokens: jsonInt32(completionDetails, "reasoning_tokens"),
+		TotalTokens:           jsonInt32(usage, "total_tokens"),
+	}, true
+}
+
+// jsonObject 取出嵌套的 JSON 对象；缺失或类型不符时返回 nil。
+func jsonObject(obj map[string]interface{}, key string) map[string]interface{} {
+	nested, ok := obj[key].(map[string]interface{})
 	if !ok {
-		return nil, false
+		return nil
 	}
-	u := &proto.UsagePayload{}
-	if v, ok := usageMap["prompt_tokens"].(float64); ok {
-		u.PromptTokens = int32(v)
+	return nested
+}
+
+// jsonInt32 取出 JSON 数字并转成 int32；缺失或类型不符时返回 0。
+// encoding/json 把数字统一解成 float64，所以这里必须按 float64 断言。
+func jsonInt32(obj map[string]interface{}, key string) int32 {
+	value, ok := obj[key].(float64)
+	if !ok {
+		return 0
 	}
-	if v, ok := usageMap["cached_tokens"].(float64); ok {
-		u.CachedTokens = int32(v)
-	}
-	if v, ok := usageMap["completion_tokens"].(float64); ok {
-		u.CompletionTokens = int32(v)
-	}
-	if v, ok := usageMap["reasoning_tokens"].(float64); ok {
-		u.ReasoningTokens = int32(v)
-	}
-	if v, ok := usageMap["total_tokens"].(float64); ok {
-		u.TotalTokens = int32(v)
-	}
-	return u, true
+	return int32(value)
 }
 
 func buildRequestBody(req StreamRequest) ([]byte, error) {

@@ -232,11 +232,11 @@ func TestStream_Success(t *testing.T) {
 	if usage == nil {
 		t.Fatal("expected usage in Done chunk, got nil")
 	}
-	if usage.PromptTokens != 10 {
-		t.Errorf("expected prompt_tokens=10, got %d", usage.PromptTokens)
+	if usage.InputTokens != 10 {
+		t.Errorf("expected input_tokens=10, got %d", usage.InputTokens)
 	}
-	if usage.CompletionTokens != 2 {
-		t.Errorf("expected completion_tokens=2, got %d", usage.CompletionTokens)
+	if usage.OutputTokens != 2 {
+		t.Errorf("expected output_tokens=2, got %d", usage.OutputTokens)
 	}
 	if usage.TotalTokens != 12 {
 		t.Errorf("expected total_tokens=12, got %d", usage.TotalTokens)
@@ -527,5 +527,64 @@ func TestBuildRequestBody_InvalidJSON(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestParseUsage_MapsOpenAIFieldsToProto(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want *proto.UsagePayload
+		ok   bool
+	}{
+		{
+			name: "顶层基础字段",
+			body: `{"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
+			want: &proto.UsagePayload{InputTokens: 10, OutputTokens: 2, TotalTokens: 12},
+			ok:   true,
+		},
+		{
+			name: "缓存命中与推理 token 在 *_details 里",
+			body: `{"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,` +
+				`"prompt_tokens_details":{"cached_tokens":8},` +
+				`"completion_tokens_details":{"reasoning_tokens":5}}}`,
+			want: &proto.UsagePayload{
+				InputTokens:           10,
+				CachedInputTokens:     8,
+				OutputTokens:          2,
+				ReasoningOutputTokens: 5,
+				TotalTokens:           12,
+			},
+			ok: true,
+		},
+		{
+			name: "usage 为 null",
+			body: `{"usage":null}`,
+			ok:   false,
+		},
+		{
+			name: "没有 usage 字段",
+			body: `{"choices":[{"delta":{"content":"hi"}}]}`,
+			ok:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseUsage(tt.body)
+			if ok != tt.ok {
+				t.Fatalf("ok: got %v, want %v", ok, tt.ok)
+			}
+			if !tt.ok {
+				return
+			}
+			if got.InputTokens != tt.want.InputTokens ||
+				got.CachedInputTokens != tt.want.CachedInputTokens ||
+				got.OutputTokens != tt.want.OutputTokens ||
+				got.ReasoningOutputTokens != tt.want.ReasoningOutputTokens ||
+				got.TotalTokens != tt.want.TotalTokens {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
