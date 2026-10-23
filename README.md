@@ -117,6 +117,15 @@ FlowPartner/
 | Encryption | AES-256-GCM + Argon2id | API Key encrypted storage |
 | Build | Makefile + GitHub Actions | CI/CD + cross-platform compilation |
 
+## Proxy
+
+macOS / Linux require environment variables (Windows picks up the system proxy automatically):
+
+```bash
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).

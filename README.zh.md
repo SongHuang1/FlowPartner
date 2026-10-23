@@ -117,6 +117,15 @@ FlowPartner/
 | 加密 | AES-256-GCM + Argon2id | API Key 加密存储 |
 | 构建 | Makefile + GitHub Actions | CI/CD + 跨平台编译 |
 
+## 代理
+
+macOS / Linux 需通过环境变量设置代理（Windows 会自动读取系统代理）：
+
+```bash
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1
+```
+
 ## 贡献
 
 参见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
