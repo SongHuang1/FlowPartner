@@ -8,17 +8,17 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/SongHuang1/FlowPartner/backend/proto"
+	"golang.org/x/net/http/httpproxy"
 )
 
 // StreamRequest 流式请求参数。
-//
-// 请求体以 RawPayload 为唯一来源（由 Python 侧构造）。这里的 Model /
-// Temperature / ResponseFormat 是服务端权威配置，会在发送前覆盖请求体里的
-// 同名字段；其余字段原样透传。
+// 请求体以 RawPayload 为唯一来源；Model/Temperature/ResponseFormat 由服务端配置
+// 覆盖，其余字段原样透传。
 type StreamRequest struct {
 	RawPayload     []byte
 	Model          string
@@ -63,22 +63,90 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return resp, nil
 }
 
-// NewClient 创建 LLMClient
+// NewClient 创建 LLMClient。
 func NewClient() *LLMClient {
-	transport := &http.Transport{
-		MaxIdleConns:    20,
-		IdleConnTimeout: 120 * time.Second,
-		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-
 	return &LLMClient{
 		httpClient: &http.Client{
-			Transport: &loggingTransport{base: transport},
+			Transport: &loggingTransport{base: newTransport()},
 		},
 	}
+}
+
+// newTransport 以 http.DefaultTransport 为基底构造传输层：提高单域名连接复用，
+// 建连与握手快速失败。
+func newTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 20
+	transport.MaxIdleConnsPerHost = 20
+	transport.IdleConnTimeout = 120 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.DialContext = (&net.Dialer{
+		Timeout: 10 * time.Second,
+	}).DialContext
+	// 设置 DialContext 会关闭标准库的 HTTP/2 自动协商，需显式开启。
+	transport.ForceAttemptHTTP2 = true
+	// 环境变量优先，系统代理兜底；回环地址由 httpproxy 放行。
+	transport.Proxy = envFirst(http.ProxyFromEnvironment, osProxy())
+	return transport
+}
+
+// envFirst 环境变量优先，其次 osDefault；osDefault 为 nil 时直接用 env。
+// 独立成函数，以便脱离真实环境变量与注册表验证优先级。
+func envFirst(env, osDefault func(*http.Request) (*url.URL, error)) func(*http.Request) (*url.URL, error) {
+	if osDefault == nil {
+		return env
+	}
+	return func(req *http.Request) (*url.URL, error) {
+		if u, err := env(req); err != nil || u != nil {
+			return u, err
+		}
+		return osDefault(req)
+	}
+}
+
+// winINETProxyConfig 把注册表值转换为 httpproxy 配置。
+// 例外列表复用 NO_PROXY 的匹配规则；Windows 专有的 <local> 不在该语义内，忽略。
+func winINETProxyConfig(server, override string) *httpproxy.Config {
+	httpProxy, httpsProxy := splitWinINETProxyServer(server)
+	if httpProxy == "" && httpsProxy == "" {
+		return nil
+	}
+	return &httpproxy.Config{
+		HTTPProxy:  httpProxy,
+		HTTPSProxy: httpsProxy,
+		NoProxy:    strings.ReplaceAll(override, ";", ","),
+	}
+}
+
+// splitWinINETProxyServer 解析 ProxyServer："host:port" 表示所有协议共用，
+// "http=...;https=..." 表示按协议指定；只配一侧时另一侧沿用。
+func splitWinINETProxyServer(server string) (httpProxy, httpsProxy string) {
+	server = strings.TrimSpace(server)
+	if !strings.Contains(server, "=") {
+		return server, server
+	}
+
+	for _, part := range strings.Split(server, ";") {
+		scheme, addr, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		addr = strings.TrimSpace(addr)
+		switch strings.ToLower(strings.TrimSpace(scheme)) {
+		case "http":
+			httpProxy = addr
+		case "https", "ssl":
+			httpsProxy = addr
+		}
+	}
+
+	if httpsProxy == "" {
+		httpsProxy = httpProxy
+	}
+	if httpProxy == "" {
+		httpProxy = httpsProxy
+	}
+	return httpProxy, httpsProxy
 }
 
 // Stream 发起流式 HTTP 调用，返回 chunk 通道
@@ -93,17 +161,15 @@ func (c *LLMClient) Stream(ctx context.Context, req StreamRequest) (<-chan Strea
 		return nil, fmt.Errorf("target URL is required")
 	}
 
-	// 0 或负值会让 context.WithTimeout 立即过期，表现为"每次调用都瞬间超时"，
-	// 而且错误提示会把用户引向网络问题。这里兜底而不是报错：超时是配置项，
-	// 不该因为一个字段缺失就让整条链路由此不可用。
+	// 0 或负值会让 context.WithTimeout 立即过期，按默认值兜底而非报错：
+	// 超时属于配置项，不应让整条链路不可用。
 	const defaultTimeout = 30 * time.Second
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
 
-	// 64 是经验值：足够吸收网络抖动造成的突发，又不会在消费者变慢时堆积太多
-	// 未处理数据；缓冲满会让发送阻塞，进而反压到 TCP，让服务商降速。
+	// 64：吸收网络突发，同时限制消费端变慢时的内存占用。
 	const chunkBufferSize = 64
 
 	chunkChan := make(chan StreamChunk, chunkBufferSize)
@@ -252,10 +318,8 @@ func (c *LLMClient) doStream(ctx context.Context, targetURL string, body []byte,
 	}
 }
 
-// parseUsage 尝试从 SSE chunk JSON 中提取 usage 尾帧。
-//
-// 这里是全项目唯一接触 OpenAI 字段名（prompt_tokens / completion_tokens）的地方：
-// proto 与前端统一使用 input_tokens / output_tokens，翻译只发生在这一层。
+// parseUsage 从 SSE chunk 中提取用量。
+// OpenAI 字段名只在这一层转换为 proto 字段名。
 func parseUsage(data string) (*proto.UsagePayload, bool) {
 	var chunk map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
@@ -279,7 +343,7 @@ func parseUsage(data string) (*proto.UsagePayload, bool) {
 	}, true
 }
 
-// jsonObject 取出嵌套的 JSON 对象；缺失或类型不符时返回 nil。
+// jsonObject 取出嵌套对象；缺失或类型不符时返回 nil。
 func jsonObject(obj map[string]interface{}, key string) map[string]interface{} {
 	nested, ok := obj[key].(map[string]interface{})
 	if !ok {
@@ -288,8 +352,7 @@ func jsonObject(obj map[string]interface{}, key string) map[string]interface{} {
 	return nested
 }
 
-// jsonInt32 取出 JSON 数字并转成 int32；缺失或类型不符时返回 0。
-// encoding/json 把数字统一解成 float64，所以这里必须按 float64 断言。
+// jsonInt32 取出整数；encoding/json 把数字解成 float64，故按 float64 断言。
 func jsonInt32(obj map[string]interface{}, key string) int32 {
 	value, ok := obj[key].(float64)
 	if !ok {
@@ -298,11 +361,8 @@ func jsonInt32(obj map[string]interface{}, key string) int32 {
 	return int32(value)
 }
 
-// buildRequestBody 组装发给服务商的请求体。
-//
-// 请求体以 RawPayload 为唯一来源（由 Python 侧构造），这里只做服务端权威的
-// 覆盖：model / temperature / response_format / stream。其余字段（tools、
-// tool_choice、max_tokens 等）原样透传，Go 不改写也不重新解析。
+// buildRequestBody 组装请求体：RawPayload 为唯一来源，仅覆盖服务端权威字段
+// （model / temperature / response_format / stream），其余原样透传。
 func buildRequestBody(req StreamRequest) ([]byte, error) {
 	if len(req.RawPayload) == 0 {
 		return nil, MessagesEmptyError()
