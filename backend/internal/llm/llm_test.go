@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -625,4 +626,157 @@ func TestStream_ZeroTimeoutFallsBackToDefault(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("解析 URL %q 失败: %v", raw, err)
+	}
+	return u
+}
+
+func TestEnvFirst(t *testing.T) {
+	envURL := mustParseURL(t, "http://10.0.0.1:3128")
+	osURL := mustParseURL(t, "http://10.0.0.2:7890")
+
+	alwaysEnv := func(*http.Request) (*url.URL, error) { return envURL, nil }
+	neverEnv := func(*http.Request) (*url.URL, error) { return nil, nil }
+	alwaysOS := func(*http.Request) (*url.URL, error) { return osURL, nil }
+
+	tests := []struct {
+		name string
+		env  func(*http.Request) (*url.URL, error)
+		os   func(*http.Request) (*url.URL, error)
+		want *url.URL
+	}{
+		{"环境变量优先", alwaysEnv, alwaysOS, envURL},
+		{"环境变量为空时回退系统设置", neverEnv, alwaysOS, osURL},
+		{"两者都没有则直连", neverEnv, nil, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &http.Request{URL: mustParseURL(t, "https://api.openai.com/v1/chat/completions")}
+			got, err := envFirst(tt.env, tt.os)(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			switch {
+			case tt.want == nil && got != nil:
+				t.Errorf("期望直连，却得到代理 %v", got)
+			case tt.want != nil && got == nil:
+				t.Errorf("期望代理 %v，却是直连", tt.want)
+			case tt.want != nil && got.String() != tt.want.String():
+				t.Errorf("代理地址不符: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTransportNegotiatesHTTP2(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	transport := newTransport()
+	// 测试服务器用的是自签证书，只有根证书需要替换；其余配置与生产一致，
+	// 从而验证"设了 DialContext 之后 HTTP/2 仍然可用"。
+	transport.TLSClientConfig = server.Client().Transport.(*http.Transport).TLSClientConfig
+
+	client := &http.Client{Transport: transport}
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("期望协议为 HTTP/2，实际为 %s", resp.Proto)
+	}
+}
+
+func TestSplitWinINETProxyServer(t *testing.T) {
+	tests := []struct {
+		name      string
+		server    string
+		wantHTTP  string
+		wantHTTPS string
+	}{
+		{"单一代理", "127.0.0.1:7890", "127.0.0.1:7890", "127.0.0.1:7890"},
+		{"按协议指定", "http=10.0.0.1:8080;https=10.0.0.1:8443", "10.0.0.1:8080", "10.0.0.1:8443"},
+		{"只配 http 时 https 沿用", "http=10.0.0.1:8080", "10.0.0.1:8080", "10.0.0.1:8080"},
+		{"只配 https 时 http 沿用", "https=10.0.0.1:8443", "10.0.0.1:8443", "10.0.0.1:8443"},
+		{"两侧空白", " http=10.0.0.1:8080 ; https=10.0.0.1:8443 ", "10.0.0.1:8080", "10.0.0.1:8443"},
+		{"SSL 别名", "ssl=10.0.0.1:8443", "10.0.0.1:8443", "10.0.0.1:8443"},
+		{"忽略无关协议", "http=10.0.0.1:8080;ftp=10.0.0.1:21", "10.0.0.1:8080", "10.0.0.1:8080"},
+		{"空值", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			httpProxy, httpsProxy := splitWinINETProxyServer(tt.server)
+			if httpProxy != tt.wantHTTP {
+				t.Errorf("http proxy: got %q, want %q", httpProxy, tt.wantHTTP)
+			}
+			if httpsProxy != tt.wantHTTPS {
+				t.Errorf("https proxy: got %q, want %q", httpsProxy, tt.wantHTTPS)
+			}
+		})
+	}
+}
+
+func TestWinINETProxyConfig(t *testing.T) {
+	t.Run("空配置返回 nil", func(t *testing.T) {
+		if cfg := winINETProxyConfig("", ""); cfg != nil {
+			t.Fatalf("期望 nil，得到 %+v", cfg)
+		}
+	})
+
+	t.Run("按协议选代理并遵守例外列表", func(t *testing.T) {
+		cfg := winINETProxyConfig(
+			"http=10.0.0.1:8080;https=10.0.0.1:8443",
+			"localhost;*.local;192.168.*",
+		)
+		if cfg == nil {
+			t.Fatal("期望得到配置，实际为 nil")
+		}
+
+		proxyFor := cfg.ProxyFunc()
+		tests := []struct {
+			name      string
+			rawURL    string
+			wantProxy string
+		}{
+			{"https 走 https 代理", "https://api.openai.com/v1/chat/completions", "http://10.0.0.1:8443"},
+			{"http 走 http 代理", "http://example.com/api", "http://10.0.0.1:8080"},
+			{"*.local 例外直连", "http://printer.local/status", ""},
+			{"localhost 例外直连", "http://localhost:11434/api/chat", ""},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := proxyFor(mustParseURL(t, tt.rawURL))
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if tt.wantProxy == "" {
+					if got != nil {
+						t.Errorf("期望直连，却得到代理 %v", got)
+					}
+					return
+				}
+				if got == nil {
+					t.Fatalf("期望代理 %s，却是直连", tt.wantProxy)
+				}
+				if got.String() != tt.wantProxy {
+					t.Errorf("代理地址不符: got %s, want %s", got, tt.wantProxy)
+				}
+			})
+		}
+	})
 }
