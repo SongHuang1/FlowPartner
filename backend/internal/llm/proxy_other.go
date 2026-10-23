@@ -9,7 +9,7 @@ import (
 
 // osProxy has no system-level implementation on non-Windows platforms. These platforms can
 // still configure a proxy through the HTTP_PROXY / HTTPS_PROXY / NO_PROXY
-// environment variables, which systemProxy handles.
+// environment variables, which the transport honors.
 func osProxy() func(*http.Request) (*url.URL, error) {
 	return nil
 }
